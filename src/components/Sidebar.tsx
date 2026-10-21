@@ -2,9 +2,11 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
+import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
 
 interface NavItem {
   label: string;
@@ -22,9 +24,10 @@ const navGroups: NavGroup[] = [
   {
     groupLabel: 'PATIENT CARE',
     items: [
+      { label: 'Messages', href: '/messages', icon: 'ChatBubbleLeftRightIcon' },
       { label: 'Content', href: '/content-management', icon: 'BookOpenIcon' },
       { label: 'Surveys', href: '/survey-management', icon: 'ClipboardDocumentListIcon' },
-      { label: 'Alerts', href: '/alerts', icon: 'BellAlertIcon', badge: 3 },
+      { label: 'Alerts', href: '/alerts', icon: 'BellAlertIcon' },
     ],
   },
   {
@@ -48,6 +51,15 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { signOut } = useAuth();
+  const { openCount } = useOpenAlerts();
+  const badgeFor = (item: NavItem) => (item.href === '/alerts' ? openCount : item.badge);
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.replace('/sign-up-login');
+  };
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -104,14 +116,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 {!collapsed && (
                   <span className="flex-1 text-[13.5px]">{item.label}</span>
                 )}
-                {!collapsed && item.badge && item.badge > 0 ? (
-                  <span className="bg-primary text-primary-foreground text-[10px] font-700 rounded-full w-4.5 h-4.5 flex items-center justify-center leading-none px-1">
-                    {item.badge}
+                {!collapsed && (badgeFor(item) ?? 0) > 0 ? (
+                  <span className="bg-primary text-primary-foreground text-[10px] font-700 rounded-full min-w-[18px] h-[18px] flex items-center justify-center leading-none px-1">
+                    {(badgeFor(item) ?? 0) > 99 ? '99+' : badgeFor(item)}
                   </span>
                 ) : null}
-                {collapsed && item.badge && item.badge > 0 ? (
-                  <span className="absolute top-1 right-1 bg-primary text-primary-foreground text-[9px] font-700 rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
-                    {item.badge}
+                {collapsed && (badgeFor(item) ?? 0) > 0 ? (
+                  <span className="absolute top-1 right-1 bg-primary text-primary-foreground text-[9px] font-700 rounded-full min-w-[14px] h-3.5 flex items-center justify-center leading-none px-0.5">
+                    {(badgeFor(item) ?? 0) > 99 ? '99+' : badgeFor(item)}
                   </span>
                 ) : null}
               </Link>
@@ -138,8 +150,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           />
           {!collapsed && <span className="text-[13px]">Collapse</span>}
         </button>
-        <Link
-          href="/sign-up-login"
+        <button
+          onClick={handleSignOut}
           className={`
             w-full flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium
             text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150
@@ -149,7 +161,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         >
           <Icon name="ArrowRightOnRectangleIcon" size={16} variant="outline" />
           {!collapsed && <span className="text-[13px]">Sign Out</span>}
-        </Link>
+        </button>
       </div>
     </aside>
   );

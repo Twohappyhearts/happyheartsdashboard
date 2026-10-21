@@ -4,7 +4,7 @@ import AnalyticsClient from './components/AnalyticsClient';
 
 export default function AnalyticsPage() {
   return (
-    <AppLayout alertCount={3}>
+    <AppLayout>
       <AnalyticsClient />
     </AppLayout>
   );

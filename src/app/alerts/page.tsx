@@ -4,7 +4,7 @@ import AlertsClient from './components/AlertsClient';
 
 export default function AlertsPage() {
   return (
-    <AppLayout alertCount={3}>
+    <AppLayout>
       <AlertsClient />
     </AppLayout>
   );

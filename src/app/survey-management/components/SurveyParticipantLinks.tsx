@@ -1,38 +1,70 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
+import { displayName } from '@/contexts/AuthContext';
+import { listUsers, type ManagedUser } from '@/lib/users';
+import { completionsForSurvey, personalizedLink, type CompletionInfo } from '@/lib/surveys';
 import type { Survey } from './SurveyManagementClient';
-
-const mockUsers = [
-  { id: 'user-001', username: 'rocketcar', fullName: 'Maria Gonzalez' },
-  { id: 'user-002', username: 'sunflower42', fullName: 'James Okafor' },
-  { id: 'user-003', username: 'heartstrong', fullName: 'Linda Chen' },
-  { id: 'user-004', username: 'blueskies99', fullName: 'Robert Williams' },
-  { id: 'user-005', username: 'calmwaters', fullName: 'Priya Patel' },
-  { id: 'user-006', username: 'morningstar', fullName: 'David Kim' },
-  { id: 'user-007', username: 'steadypace', fullName: 'Angela Torres' },
-  { id: 'user-008', username: 'brightpath', fullName: 'Marcus Johnson' },
-  { id: 'user-009', username: 'hopefulday', fullName: 'Susan Martinez' },
-  { id: 'user-010', username: 'gentlebreeze', fullName: 'Kevin Park' },
-];
 
 interface SurveyParticipantLinksProps {
   surveys: Survey[];
 }
 
 export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLinksProps) {
+  const supabase = useMemo(() => createClient(), []);
   const [search, setSearch] = useState('');
-  const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(surveys[0] || null);
+  const [selectedId, setSelectedId] = useState<string | null>(surveys[0]?.id ?? null);
+  const [patients, setPatients] = useState<ManagedUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [done, setDone] = useState<Map<string, CompletionInfo>>(new Map());
 
-  const filteredUsers = mockUsers.filter(u =>
-    u.username.toLowerCase().includes(search.toLowerCase()) ||
-    u.fullName.toLowerCase().includes(search.toLowerCase())
-  );
+  const selectedSurvey = surveys.find(s => s.id === selectedId) ?? surveys[0] ?? null;
 
-  const buildLink = (survey: Survey, username: string) =>
-    `${survey.redcapUrl}&participant_code=${username}`;
+  // Every active patient account (the app builds the same link for them).
+  useEffect(() => {
+    let cancelled = false;
+    listUsers(supabase)
+      .then(list => {
+        if (!cancelled) setPatients(list.filter(u => u.role === 'patient' && u.active));
+      })
+      .catch(e => {
+        if (!cancelled) setUsersError(e instanceof Error ? e.message : 'Could not load patients.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingUsers(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Completions recorded for the selected survey (via the REDCap redirect).
+  useEffect(() => {
+    if (!selectedSurvey) return;
+    let cancelled = false;
+    completionsForSurvey(supabase, selectedSurvey.id)
+      .then(map => {
+        if (!cancelled) setDone(map);
+      })
+      .catch(() => {
+        if (!cancelled) setDone(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, selectedSurvey]);
+
+  const filteredUsers = patients.filter(u => {
+    const q = search.toLowerCase();
+    return u.username.toLowerCase().includes(q) || u.fullName.toLowerCase().includes(q) || u.displayId.toLowerCase().includes(q);
+  });
+
+  const buildLink = (survey: Survey, username: string) => personalizedLink(survey.url, username);
 
   const handleCopy = (link: string, username: string) => {
     navigator.clipboard.writeText(link);
@@ -75,7 +107,7 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
           <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">Survey</label>
           <select
             value={selectedSurvey?.id || ''}
-            onChange={e => setSelectedSurvey(surveys.find(s => s.id === e.target.value) || null)}
+            onChange={e => setSelectedId(e.target.value)}
             className="px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-ring"
           >
             {surveys.map(s => (
@@ -113,7 +145,7 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
           <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
             <div>
               <p className="text-[13px] font-600 text-foreground">{selectedSurvey.title}</p>
-              <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[400px]">{selectedSurvey.redcapUrl}</p>
+              <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[400px]">{selectedSurvey.url}</p>
             </div>
             <span className="text-[12px] text-muted-foreground">{filteredUsers.length} participants</span>
           </div>
@@ -124,22 +156,56 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
                   <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Patient</th>
                   <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Username (Participant Code)</th>
                   <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Personalized Survey Link</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Completed</th>
                   <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">Copy</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map(user => {
+                {loadingUsers ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-4"><Skeleton className="h-16 w-full" /></td>
+                  </tr>
+                ) : usersError ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-8 text-center text-[12px] text-danger">{usersError}</td>
+                  </tr>
+                ) : filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-8 text-center text-[12px] text-muted-foreground">
+                      {patients.length === 0 ? 'No active patient accounts yet.' : 'No patients match your search.'}
+                    </td>
+                  </tr>
+                ) : filteredUsers.map(user => {
                   const link = buildLink(selectedSurvey, user.username);
+                  const completion = done.get(user.id);
                   return (
                     <tr key={`plink-${user.id}-${selectedSurvey.id}`} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors duration-100">
                       <td className="px-5 py-3">
-                        <p className="text-[13px] font-500 text-foreground">{user.fullName}</p>
+                        <p className="text-[13px] font-500 text-foreground">{displayName({ fullName: user.fullName, username: user.username })}</p>
+                        {user.displayId && <p className="text-[11px] text-muted-foreground">{user.displayId}</p>}
                       </td>
                       <td className="px-5 py-3">
                         <code className="text-[12px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">{user.username}</code>
                       </td>
                       <td className="px-5 py-3">
-                        <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[320px]" title={link}>{link}</p>
+                        {/* Full link, wrapped — the participant_code part is what differs per patient. */}
+                        <p className="text-[11px] font-mono text-muted-foreground break-all max-w-[460px]" title={link}>
+                          {link.slice(0, link.length - (`participant_code=${encodeURIComponent(user.username)}`).length)}
+                          <wbr />
+                          <span className="text-foreground font-600 bg-success/10 rounded px-0.5 whitespace-nowrap">
+                            participant_code={encodeURIComponent(user.username)}
+                          </span>
+                        </p>
+                      </td>
+                      <td className="px-5 py-3 text-[12px] whitespace-nowrap">
+                        {completion ? (
+                          <span className="text-success font-500" title={`${completion.count} completion${completion.count === 1 ? '' : 's'} recorded`}>
+                            ✓ {new Date(completion.lastAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {completion.count > 1 ? ` (×${completion.count})` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3">
                         <button

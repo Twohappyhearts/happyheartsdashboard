@@ -3,14 +3,19 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
+import { displayName, initials, useAuth } from '@/contexts/AuthContext';
+import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
 
 interface TopbarProps {
   sidebarCollapsed: boolean;
-  alertCount?: number;
 }
 
-export default function Topbar({ sidebarCollapsed, alertCount = 3 }: TopbarProps) {
+export default function Topbar({ sidebarCollapsed }: TopbarProps) {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const { profile, user } = useAuth();
+  const { openCount: alertCount } = useOpenAlerts();
+  const name = profile?.fullName?.trim() || user?.email || displayName(profile);
+  const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Staff';
 
   const sidebarWidth = sidebarCollapsed ? 'ml-16' : 'ml-60';
 
@@ -43,12 +48,12 @@ export default function Topbar({ sidebarCollapsed, alertCount = 3 }: TopbarProps
         <Link
           href="/alerts"
           className="relative p-2 rounded-lg hover:bg-muted transition-colors duration-150"
-          title="View Alerts"
+          title={alertCount > 0 ? `${alertCount} open alert${alertCount === 1 ? '' : 's'}` : 'No open alerts'}
         >
           <Icon name="BellIcon" size={18} variant="outline" className="text-secondary-foreground" />
           {alertCount > 0 && (
             <span className="absolute top-1 right-1 bg-primary text-primary-foreground text-[9px] font-700 rounded-full w-4 h-4 flex items-center justify-center leading-none">
-              {alertCount}
+              {alertCount > 99 ? '99+' : alertCount}
             </span>
           )}
         </Link>
@@ -59,11 +64,11 @@ export default function Topbar({ sidebarCollapsed, alertCount = 3 }: TopbarProps
         {/* User avatar */}
         <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted transition-colors duration-150">
           <div className="w-7 h-7 rounded-full gradient-primary flex items-center justify-center text-primary-foreground text-xs font-700">
-            SC
+            {initials(name)}
           </div>
           <div className="hidden md:block text-left">
-            <p className="text-[12px] font-600 text-foreground leading-tight">Sarah Chen</p>
-            <p className="text-[10px] text-muted-foreground leading-tight">Coordinator</p>
+            <p className="text-[12px] font-600 text-foreground leading-tight max-w-[180px] truncate">{name}</p>
+            <p className="text-[10px] text-muted-foreground leading-tight">{roleLabel}</p>
           </div>
           <Icon name="ChevronDownIcon" size={14} variant="outline" className="text-muted-foreground hidden md:block" />
         </button>

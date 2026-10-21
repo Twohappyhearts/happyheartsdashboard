@@ -5,16 +5,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
-const data = [
-  { week: 'Aug 18', completions: 24, opens: 41 },
-  { week: 'Aug 25', completions: 31, opens: 52 },
-  { week: 'Sep 1', completions: 28, opens: 48 },
-  { week: 'Sep 8', completions: 45, opens: 67 },
-  { week: 'Sep 15', completions: 38, opens: 59 },
-  { week: 'Sep 22', completions: 52, opens: 78 },
-  { week: 'Sep 29', completions: 47, opens: 71 },
-  { week: 'Oct 6', completions: 61, opens: 88 },
-];
+import type { WeeklyPoint } from '@/lib/analytics';
+
+function weekLabel(isoDate: string) {
+  // isoDate is a calendar date (YYYY-MM-DD); format without timezone shifts.
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -26,16 +23,17 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {entry.name}: {entry.value}
         </p>
       ))}
-      {payload.length === 2 && (
+      {payload.length === 2 && payload[0].value > 0 && (
         <p className="text-[11px] text-muted-foreground mt-1">
-          Rate: {Math.round((payload[0].value / payload[1].value) * 100)}%
+          Rate: {Math.round((payload[1].value / payload[0].value) * 100)}%
         </p>
       )}
     </div>
   );
 };
 
-export default function WeeklyCompletionsChart() {
+export default function WeeklyCompletionsChart({ data: points }: { data: WeeklyPoint[] }) {
+  const data = points.map((p) => ({ week: weekLabel(p.weekStart), opens: p.opens, completions: p.completions }));
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={data} barGap={4} barCategoryGap="30%">
@@ -51,7 +49,7 @@ export default function WeeklyCompletionsChart() {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis dataKey="week" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
         <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--muted)', opacity: 0.4 }} />
         <Legend
           wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}

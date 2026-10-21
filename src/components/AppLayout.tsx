@@ -1,30 +1,86 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
+import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
+import ChangePasswordGate from '@/components/ChangePasswordGate';
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  alertCount?: number;
+  /** Full-height content without page padding (used by Messages). */
+  fullBleed?: boolean;
 }
 
-export default function AppLayout({ children, alertCount = 3 }: AppLayoutProps) {
+export default function AppLayout({ children, fullBleed = false }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, isStaff, loading, signOut, profile } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace(`/sign-up-login?next=${encodeURIComponent(pathname || '/')}`);
+    }
+  }, [loading, user, router, pathname]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Icon name="ArrowPathIcon" size={22} variant="outline" className="animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!isStaff) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="bg-card border border-border rounded-xl shadow-card p-8 max-w-sm text-center">
+          <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+            <Icon name="LockClosedIcon" size={24} variant="outline" className="text-muted-foreground" />
+          </div>
+          <h1 className="text-[16px] font-600 text-foreground mb-1">Staff access only</h1>
+          <p className="text-[13px] text-muted-foreground mb-5">
+            {user.email} is not an active staff account. Ask an admin to grant the staff role.
+          </p>
+          <button
+            onClick={async () => {
+              await signOut();
+              router.replace('/sign-up-login');
+            }}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (profile?.mustChangePassword) {
+    // Account created / reset by an admin with a temporary password.
+    return <ChangePasswordGate />;
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-      <Topbar sidebarCollapsed={collapsed} alertCount={alertCount} />
+      <Topbar sidebarCollapsed={collapsed} />
       <main
         className={`
           pt-16 min-h-screen content-transition
           ${collapsed ? 'ml-16' : 'ml-60'}
         `}
       >
-        <div className="p-6 xl:p-8 max-w-screen-2xl mx-auto">
-          {children}
-        </div>
+        {fullBleed ? (
+          <div className="h-[calc(100vh-4rem)]">{children}</div>
+        ) : (
+          <div className="p-6 xl:p-8 max-w-screen-2xl mx-auto">
+            {children}
+          </div>
+        )}
       </main>
     </div>
   );

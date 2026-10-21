@@ -1,71 +1,59 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import { toast } from 'sonner';
+import { AuthError, useAuth } from '@/contexts/AuthContext';
 
 interface LoginFormData {
   email: string;
   password: string;
-  rememberMe: boolean;
 }
 
-interface DemoCredential {
-  role: string;
-  email: string;
-  password: string;
-  initials: string;
-  name: string;
+function safeNext(raw: string | null) {
+  // Only allow same-site relative paths.
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/messages';
+  if (raw.startsWith('/sign-up-login')) return '/messages';
+  return raw;
 }
-
-const demoCredentials: DemoCredential[] = [
-  { role: 'Clinical Coordinator', email: 'coordinator@happyhearts.uci.edu', password: 'HHCoord2026!', initials: 'SC', name: 'Sarah Chen' },
-  { role: 'Research Admin', email: 'admin@happyhearts.uci.edu', password: 'HHAdmin2026!', initials: 'MR', name: 'Michael Reyes' },
-];
 
 export default function LoginClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get('next'));
+  const { signIn, isStaff, loading: authLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
     setError,
   } = useForm<LoginFormData>({
-    defaultValues: { email: '', password: '', rememberMe: false },
+    defaultValues: { email: '', password: '' },
   });
 
-  const handleCopy = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 1500);
-  };
-
-  const handleUseCredential = (cred: DemoCredential) => {
-    setValue('email', cred.email);
-    setValue('password', cred.password);
-  };
+  // Already signed in as staff -> skip the form.
+  useEffect(() => {
+    if (!authLoading && isStaff) router.replace(next);
+  }, [authLoading, isStaff, next, router]);
 
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    // TODO: POST to /api/auth/login with data.email and data.password
-
-    const valid = demoCredentials.find(c => c.email === data.email && c.password === data.password);
-    if (!valid) {
+    try {
+      await signIn(data.email.trim(), data.password);
+      toast.success('Signed in');
+      router.replace(next);
+    } catch (e) {
+      const message =
+        e instanceof AuthError ? e.message : 'Could not reach the server. Check your connection and try again.';
+      setError('password', { message });
       setLoading(false);
-      setError('email', { message: "Invalid credentials — use the demo accounts below to sign in" });
-      return;
     }
-    toast.success(`Welcome back, ${valid.name}`);
-    router.push('/');
   };
 
   return (
@@ -198,21 +186,6 @@ export default function LoginClient() {
               {errors.password && <p className="text-[11px] text-danger mt-1">{errors.password.message}</p>}
             </div>
 
-            {/* Remember me + forgot */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  {...register('rememberMe')}
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
-                />
-                <span className="text-[13px] text-foreground">Remember me</span>
-              </label>
-              <button type="button" className="text-[13px] text-primary hover:underline font-500">
-                Forgot password?
-              </button>
-            </div>
-
             {/* Submit */}
             <button
               type="submit"
@@ -228,54 +201,8 @@ export default function LoginClient() {
             </button>
           </form>
 
-          {/* Demo credentials */}
-          <div className="mt-6 p-4 bg-muted/50 rounded-xl border border-border">
-            <div className="flex items-center gap-2 mb-3">
-              <Icon name="KeyIcon" size={14} variant="outline" className="text-muted-foreground" />
-              <p className="text-[12px] font-600 text-muted-foreground uppercase tracking-wider">Demo Credentials</p>
-            </div>
-            <div className="space-y-2">
-              {demoCredentials.map((cred) => (
-                <div key={`cred-${cred.role}`} className="flex items-center gap-3 p-2.5 bg-card rounded-lg border border-border">
-                  <div className="w-7 h-7 rounded-full gradient-primary flex items-center justify-center text-primary-foreground text-[10px] font-700 shrink-0">
-                    {cred.initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-600 text-foreground">{cred.role}</p>
-                    <p className="text-[10px] font-mono text-muted-foreground truncate">{cred.email}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(cred.email, `email-${cred.role}`)}
-                      title="Copy email"
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
-                    >
-                      <Icon name={copiedField === `email-${cred.role}` ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={12} variant="outline" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(cred.password, `pw-${cred.role}`)}
-                      title="Copy password"
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
-                    >
-                      <Icon name={copiedField === `pw-${cred.role}` ? 'CheckIcon' : 'LockClosedIcon'} size={12} variant="outline" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleUseCredential(cred)}
-                      className="px-2.5 py-1 bg-primary/10 text-primary rounded-md text-[11px] font-600 hover:bg-primary/20 transition-colors duration-150"
-                    >
-                      Use
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <p className="text-center text-[11px] text-muted-foreground mt-6">
-            Staff-only access · Patient accounts are managed from the dashboard
+            Staff-only access · Accounts are provisioned by an admin in Supabase
           </p>
         </div>
       </div>

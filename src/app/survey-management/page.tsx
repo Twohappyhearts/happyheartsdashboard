@@ -4,7 +4,7 @@ import SurveyManagementClient from './components/SurveyManagementClient';
 
 export default function SurveyManagementPage() {
   return (
-    <AppLayout alertCount={3}>
+    <AppLayout>
       <SurveyManagementClient />
     </AppLayout>
   );

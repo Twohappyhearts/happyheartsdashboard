@@ -1,88 +1,190 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
 import Badge from '@/components/ui/Badge';
 
 import SlideOver from '@/components/ui/SlideOver';
 import EmptyState from '@/components/ui/EmptyState';
+import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
+import { displayName, initials, useAuth } from '@/contexts/AuthContext';
+import { openConversationForPatient } from '@/lib/chat';
+import { ROLE_LABELS, UsersError, formatPhone, listUsers, updateUser, type AccountRole, type ManagedUser } from '@/lib/users';
+import AddUserModal from './AddUserModal';
+import EditUserModal from './EditUserModal';
+import BroadcastModal from './BroadcastModal';
+import ReenableConfirmModal from './ReenableConfirmModal';
 
-type UserStatus = 'active' | 'inactive' | 'suspended';
+type StatusFilter = 'all' | 'active' | 'disabled';
+type RoleFilter = 'all' | AccountRole;
+type SortKey = 'name' | 'username' | 'displayId' | 'role' | 'createdAt' | 'lastActiveAt' | 'lessonsOpened' | 'alertsSent' | 'active';
 
-interface Patient {
-  id: string;
-  username: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  joinDate: string;
-  lastActive: string;
-  sessionsOpened: number;
-  alertsSent: number;
-  surveysCompleted: number;
-  status: UserStatus;
-  enrollmentId: string;
+const PAGE_SIZE = 20;
+
+// Theme colors are CSS variables, so /opacity modifiers don't apply: outline pills.
+const ROLE_PILL: Record<AccountRole, string> = {
+  patient: 'text-info border border-current',
+  staff: 'text-success border border-current',
+  admin: 'text-primary border border-current',
+};
+
+function RolePill({ role }: { role: AccountRole }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-700 tracking-wider ${ROLE_PILL[role]}`}>
+      {ROLE_LABELS[role]}
+    </span>
+  );
 }
 
-const mockPatients: Patient[] = [
-  { id: 'user-001', username: 'rocketcar', fullName: 'Maria Gonzalez', email: 'maria.gonzalez@email.com', phone: '(714) 555-0182', joinDate: '2026-08-01', lastActive: '2026-10-07', sessionsOpened: 7, alertsSent: 1, surveysCompleted: 1, status: 'active', enrollmentId: 'HH-2026-001' },
-  { id: 'user-002', username: 'sunflower42', fullName: 'James Okafor', email: 'j.okafor@email.com', phone: '(949) 555-0247', joinDate: '2026-08-03', lastActive: '2026-10-06', sessionsOpened: 5, alertsSent: 1, surveysCompleted: 1, status: 'active', enrollmentId: 'HH-2026-002' },
-  { id: 'user-003', username: 'heartstrong', fullName: 'Linda Chen', email: 'linda.chen@email.com', phone: '(562) 555-0391', joinDate: '2026-08-05', lastActive: '2026-10-07', sessionsOpened: 6, alertsSent: 1, surveysCompleted: 2, status: 'active', enrollmentId: 'HH-2026-003' },
-  { id: 'user-004', username: 'blueskies99', fullName: 'Robert Williams', email: 'r.williams@email.com', phone: '(213) 555-0148', joinDate: '2026-08-08', lastActive: '2026-10-06', sessionsOpened: 4, alertsSent: 1, surveysCompleted: 1, status: 'active', enrollmentId: 'HH-2026-004' },
-  { id: 'user-005', username: 'calmwaters', fullName: 'Priya Patel', email: 'priya.patel@email.com', phone: '(626) 555-0274', joinDate: '2026-08-10', lastActive: '2026-10-05', sessionsOpened: 6, alertsSent: 1, surveysCompleted: 2, status: 'active', enrollmentId: 'HH-2026-005' },
-  { id: 'user-006', username: 'morningstar', fullName: 'David Kim', email: 'd.kim@email.com', phone: '(310) 555-0315', joinDate: '2026-08-12', lastActive: '2026-10-05', sessionsOpened: 5, alertsSent: 1, surveysCompleted: 1, status: 'active', enrollmentId: 'HH-2026-006' },
-  { id: 'user-007', username: 'steadypace', fullName: 'Angela Torres', email: 'a.torres@email.com', phone: '(818) 555-0429', joinDate: '2026-08-15', lastActive: '2026-10-04', sessionsOpened: 3, alertsSent: 1, surveysCompleted: 1, status: 'active', enrollmentId: 'HH-2026-007' },
-  { id: 'user-008', username: 'brightpath', fullName: 'Marcus Johnson', email: 'm.johnson@email.com', phone: '(323) 555-0183', joinDate: '2026-08-18', lastActive: '2026-10-03', sessionsOpened: 2, alertsSent: 0, surveysCompleted: 1, status: 'inactive', enrollmentId: 'HH-2026-008' },
-  { id: 'user-009', username: 'hopefulday', fullName: 'Susan Martinez', email: 's.martinez@email.com', phone: '(714) 555-0562', joinDate: '2026-08-20', lastActive: '2026-09-28', sessionsOpened: 1, alertsSent: 0, surveysCompleted: 1, status: 'inactive', enrollmentId: 'HH-2026-009' },
-  { id: 'user-010', username: 'gentlebreeze', fullName: 'Kevin Park', email: 'k.park@email.com', phone: '(949) 555-0637', joinDate: '2026-08-22', lastActive: '2026-09-15', sessionsOpened: 0, alertsSent: 0, surveysCompleted: 0, status: 'suspended', enrollmentId: 'HH-2026-010' },
-];
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const nameOf = (u: ManagedUser) => displayName({ fullName: u.fullName, username: u.username });
 
 export default function UserManagementClient() {
-  const [patients, setPatients] = useState<Patient[]>(mockPatients);
+  const router = useRouter();
+  const { profile } = useAuth();
+  const callerIsAdmin = profile?.role === 'admin';
+
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | UserStatus>('all');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [sortKey, setSortKey] = useState<keyof Patient>('lastActive');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
 
-  const filtered = patients
-    .filter(p => {
-      const matchSearch =
-        p.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        p.username.toLowerCase().includes(search.toLowerCase()) ||
-        p.email.toLowerCase().includes(search.toLowerCase()) ||
-        p.enrollmentId.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === 'all' ? true : p.status === statusFilter;
-      return matchSearch && matchStatus;
-    })
-    .sort((a, b) => {
-      const av = a[sortKey] as string | number;
-      const bv = b[sortKey] as string | number;
-      if (typeof av === 'string' && typeof bv === 'string') {
-        return sortDir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv);
+  const [addOpen, setAddOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [editing, setEditing] = useState<ManagedUser | null>(null);
+  const [reenableTarget, setReenableTarget] = useState<ManagedUser | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const list = await listUsers(createClient());
+      setUsers(list);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof UsersError ? e.message : 'Could not load users.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const selectedPatient = users.find((u) => u.id === selectedId) ?? null;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const val = (u: ManagedUser): string | number => {
+      switch (sortKey) {
+        case 'name': return nameOf(u).toLowerCase();
+        case 'username': return u.username.toLowerCase();
+        case 'displayId': return u.displayId.toLowerCase();
+        case 'role': return u.role;
+        case 'createdAt': return u.createdAt;
+        case 'lastActiveAt': return u.lastActiveAt ?? '';
+        case 'lessonsOpened': return u.lessonsOpened;
+        case 'alertsSent': return u.alertsSent;
+        case 'active': return u.active ? 1 : 0;
       }
-      return sortDir === 'desc' ? (bv as number) - (av as number) : (av as number) - (bv as number);
-    });
+    };
+    return users
+      .filter((u) => {
+        const matchSearch =
+          !q ||
+          u.username.toLowerCase().includes(q) ||
+          u.id.toLowerCase().includes(q) ||
+          u.displayId.toLowerCase().includes(q) ||
+          u.fullName.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          u.phone.replace(/[^0-9]/g, '').includes(q.replace(/[^0-9]/g, '') || '\u0000');
+        const matchStatus = statusFilter === 'all' ? true : statusFilter === 'active' ? u.active : !u.active;
+        const matchRole = roleFilter === 'all' ? true : u.role === roleFilter;
+        return matchSearch && matchStatus && matchRole;
+      })
+      .sort((a, b) => {
+        const av = val(a);
+        const bv = val(b);
+        if (typeof av === 'string' && typeof bv === 'string') {
+          return sortDir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv);
+        }
+        return sortDir === 'desc' ? (bv as number) - (av as number) : (av as number) - (bv as number);
+      });
+  }, [users, search, statusFilter, roleFilter, sortKey, sortDir]);
 
-  const handleSort = (key: keyof Patient) => {
+  useEffect(() => setPage(1), [search, statusFilter, roleFilter]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('desc'); }
   };
 
-  const handleStatusChange = (id: string, status: UserStatus) => {
-    setPatients(prev => prev.map(p => p.id === id ? { ...p, status } : p));
-    if (selectedPatient?.id === id) setSelectedPatient(prev => prev ? { ...prev, status } : null);
-    toast.success(`Patient account ${status}`);
+  const canManage = (u: ManagedUser) => u.id !== profile?.id && (callerIsAdmin || u.role !== 'admin');
+
+  const setActive = async (u: ManagedUser, active: boolean) => {
+    setBusyId(u.id);
+    try {
+      await updateUser(u.id, { isActive: active });
+      toast.success(active ? `@${u.username} re-enabled` : `@${u.username} disabled — they can no longer sign in`);
+      setReenableTarget(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof UsersError ? e.message : 'Could not change the account status.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const SortIcon = ({ col }: { col: keyof Patient }) => (
+  const requestToggle = (u: ManagedUser) => {
+    if (!canManage(u)) {
+      toast.error(u.id === profile?.id ? 'You can’t disable your own account.' : 'Only an Admin can change Admin accounts.');
+      return;
+    }
+    if (u.active) setActive(u, false);
+    else setReenableTarget(u); // warning dialog first
+  };
+
+  const openChat = async (u: ManagedUser) => {
+    if (u.role !== 'patient') return;
+    if (!u.active) {
+      toast.error('Re-enable this account before messaging.');
+      return;
+    }
+    setBusyId(u.id);
+    try {
+      const id = await openConversationForPatient(createClient(), u.id);
+      router.push(`/messages?c=${encodeURIComponent(id)}`);
+    } catch {
+      toast.error('Could not open the conversation.');
+      setBusyId(null);
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => (
     <span className={`ml-1 text-[10px] ${sortKey === col ? 'text-primary' : 'text-muted-foreground'}`}>
       {sortKey === col ? (sortDir === 'desc' ? '↓' : '↑') : '↕'}
     </span>
   );
 
-  const activePct = Math.round((patients.filter(p => p.status === 'active').length / patients.length) * 100);
+  const count = (f: (u: ManagedUser) => boolean) => users.filter(f).length;
 
   return (
     <div className="space-y-5">
@@ -91,29 +193,40 @@ export default function UserManagementClient() {
         <div>
           <h1 className="text-[22px] font-700 text-foreground">User Management</h1>
           <p className="text-[13px] text-muted-foreground mt-0.5">
-            Patient accounts — usernames serve as REDCap participant codes.
+            Patient, Careteam, and Admin accounts — patient usernames serve as REDCap participant codes.
           </p>
         </div>
-        <button
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm"
-          onClick={() => toast.success('Invite sent — patient will receive onboarding email')}
-        >
-          <Icon name="UserPlusIcon" size={16} variant="outline" />
-          Invite Patient
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 border border-border bg-card text-foreground rounded-lg text-[13px] font-600 hover:bg-muted transition-all duration-150 active:scale-95 whitespace-nowrap"
+            onClick={() => setBroadcastOpen(true)}
+            disabled={loading}
+          >
+            <Icon name="MegaphoneIcon" size={16} variant="outline" />
+            Broadcast Message
+          </button>
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
+            onClick={() => setAddOpen(true)}
+          >
+            <Icon name="UserPlusIcon" size={16} variant="outline" />
+            Add User
+          </button>
+        </div>
       </div>
 
       {/* Summary row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: 'Total Enrolled', value: patients.length, color: 'text-foreground', bg: 'bg-card border-border' },
-          { label: 'Active', value: patients.filter(p => p.status === 'active').length, color: 'text-success', bg: 'bg-success/5 border-success/20' },
-          { label: 'Inactive', value: patients.filter(p => p.status === 'inactive').length, color: 'text-warning', bg: 'bg-warning/5 border-warning/20' },
-          { label: 'Suspended', value: patients.filter(p => p.status === 'suspended').length, color: 'text-danger', bg: 'bg-danger/5 border-danger/20' },
+          { label: 'Total Users', value: users.length, color: 'text-foreground', bg: 'bg-card border-border' },
+          { label: 'Active Users', value: count(u => u.active), color: 'text-success', bg: 'bg-success/5 border-success/20' },
+          { label: 'Admins', value: count(u => u.role === 'admin'), color: 'text-primary', bg: 'bg-primary/5 border-primary/20' },
+          { label: 'Careteam', value: count(u => u.role === 'staff'), color: 'text-success', bg: 'bg-card border-border' },
+          { label: 'Patients', value: count(u => u.role === 'patient'), color: 'text-info', bg: 'bg-info/5 border-info/20' },
         ].map(stat => (
           <div key={`ustat-${stat.label}`} className={`rounded-xl border p-4 ${stat.bg}`}>
             <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</p>
-            <p className={`text-[28px] font-700 tabular-nums ${stat.color}`}>{stat.value}</p>
+            {loading ? <Skeleton className="h-9 w-12" /> : <p className={`text-[28px] font-700 tabular-nums ${stat.color}`}>{stat.value}</p>}
           </div>
         ))}
       </div>
@@ -124,14 +237,14 @@ export default function UserManagementClient() {
           <Icon name="MagnifyingGlassIcon" size={14} variant="outline" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search by name, username, email, or enrollment ID..."
+            placeholder="Search users by username or ID..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring w-80"
           />
         </div>
         <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-          {(['all', 'active', 'inactive', 'suspended'] as const).map(f => (
+          {(['all', 'active', 'disabled'] as const).map(f => (
             <button
               key={`uf-${f}`}
               onClick={() => setStatusFilter(f)}
@@ -144,133 +257,213 @@ export default function UserManagementClient() {
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-muted-foreground ml-auto">{filtered.length} of {patients.length} patients</span>
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+          {([
+            { key: 'all', label: 'All roles' },
+            { key: 'patient', label: 'Patients' },
+            { key: 'staff', label: 'Careteam' },
+            { key: 'admin', label: 'Admins' },
+          ] as { key: RoleFilter; label: string }[]).map(f => (
+            <button
+              key={`rf-${f.key}`}
+              onClick={() => setRoleFilter(f.key)}
+              className={`
+                px-3 py-1.5 rounded-md text-[12px] font-500 transition-all duration-150
+                ${roleFilter === f.key ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'}
+              `}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[12px] text-muted-foreground ml-auto">Users ({filtered.length} results)</span>
       </div>
 
       {/* Table */}
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full min-w-[980px]">
+          <table className="w-full min-w-[1080px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                {[
-                  { key: 'fullName', label: 'Patient' },
+                {([
+                  { key: 'name', label: 'User' },
                   { key: 'username', label: 'Username / Code' },
-                  { key: 'enrollmentId', label: 'Enrollment ID' },
-                  { key: 'joinDate', label: 'Enrolled' },
-                  { key: 'lastActive', label: 'Last Active' },
-                  { key: 'sessionsOpened', label: 'Sessions' },
+                  { key: 'displayId', label: 'Display ID' },
+                  { key: 'role', label: 'Role' },
+                  { key: 'createdAt', label: 'Joined' },
+                  { key: 'lastActiveAt', label: 'Last Active' },
+                  { key: 'lessonsOpened', label: 'Sessions' },
                   { key: 'alertsSent', label: 'Alerts' },
-                  { key: 'surveysCompleted', label: 'Surveys' },
-                  { key: 'status', label: 'Status' },
-                ].map(col => (
+                  { key: 'active', label: 'Status' },
+                ] as { key: SortKey; label: string }[]).map(col => (
                   <th
                     key={`uth-${col.key}`}
-                    onClick={() => handleSort(col.key as keyof Patient)}
+                    onClick={() => handleSort(col.key)}
                     className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none whitespace-nowrap"
                   >
                     {col.label}
-                    <SortIcon col={col.key as keyof Patient} />
+                    <SortIcon col={col.key} />
                   </th>
                 ))}
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">Actions</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-32">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={`u-skel-${i}`} className="border-b border-border last:border-0">
+                    <td colSpan={10} className="px-4 py-3"><Skeleton className="h-8 w-full" /></td>
+                  </tr>
+                ))
+              ) : error ? (
+                <tr>
+                  <td colSpan={10}>
+                    <EmptyState icon="ExclamationTriangleIcon" title="Could not load users" description={error} action={{ label: 'Retry', onClick: () => { setLoading(true); load(); } }} />
+                  </td>
+                </tr>
+              ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={10}>
                     <EmptyState
                       icon="UsersIcon"
-                      title="No patients found"
-                      description="No patients match your current search or filter. Try adjusting your criteria or invite a new patient."
-                      action={{ label: 'Invite Patient', onClick: () => toast.success('Invite sent') }}
+                      title="No users found"
+                      description="No users match your current search or filter. Try adjusting your criteria or add a new user."
+                      action={{ label: 'Add User', onClick: () => setAddOpen(true) }}
                     />
                   </td>
                 </tr>
-              ) : filtered.map(patient => (
-                <tr
-                  key={patient.id}
-                  className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors duration-100 group cursor-pointer"
-                  onClick={() => setSelectedPatient(patient)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-primary-foreground text-[11px] font-700 shrink-0">
-                        {patient.fullName.split(' ').map(n => n[0]).join('')}
+              ) : pageRows.map(user => {
+                const name = nameOf(user);
+                const isPatient = user.role === 'patient';
+                const manageable = canManage(user);
+                return (
+                  <tr
+                    key={user.id}
+                    className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors duration-100 group cursor-pointer"
+                    onClick={() => setSelectedId(user.id)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-primary-foreground text-[11px] font-700 shrink-0">
+                          {initials(name)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-600 text-foreground truncate max-w-[200px]">{name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate max-w-[200px]">{user.email || '—'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[13px] font-600 text-foreground">{patient.fullName}</p>
-                        <p className="text-[11px] text-muted-foreground">{patient.email}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <code className="text-[12px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">{user.username}</code>
+                    </td>
+                    <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">{user.displayId || '—'}</td>
+                    <td className="px-4 py-3"><RolePill role={user.role} /></td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{fmtDate(user.createdAt)}</td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{fmtDate(user.lastActiveAt)}</td>
+                    <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{isPatient ? user.lessonsOpened : '—'}</td>
+                    <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{isPatient ? user.alertsSent : '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Badge variant={user.active ? 'active' : 'suspended'} label={user.active ? 'Active' : 'Disabled'} />
+                        {user.mustChangePassword && user.active && (
+                          <span className="text-[10px] text-muted-foreground" title="Must change the temporary password at next sign-in">temp password</span>
+                        )}
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <code className="text-[12px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">{patient.username}</code>
-                  </td>
-                  <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">{patient.enrollmentId}</td>
-                  <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{patient.joinDate}</td>
-                  <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{patient.lastActive}</td>
-                  <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{patient.sessionsOpened}</td>
-                  <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{patient.alertsSent}</td>
-                  <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{patient.surveysCompleted}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={patient.status} label={patient.status.charAt(0).toUpperCase() + patient.status.slice(1)} />
-                  </td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                      <button
-                        onClick={() => setSelectedPatient(patient)}
-                        title="View patient details"
-                        className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
-                      >
-                        <Icon name="EyeIcon" size={14} variant="outline" />
-                      </button>
-                      {patient.status !== 'suspended' ? (
+                    </td>
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
                         <button
-                          onClick={() => handleStatusChange(patient.id, 'suspended')}
-                          title="Suspend patient account"
-                          className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-colors duration-100"
+                          onClick={() => setEditing(user)}
+                          title="Edit user"
+                          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
                         >
-                          <Icon name="NoSymbolIcon" size={14} variant="outline" />
+                          <Icon name="PencilSquareIcon" size={14} variant="outline" />
                         </button>
-                      ) : (
+                        {user.active ? (
+                          <button
+                            onClick={() => requestToggle(user)}
+                            disabled={!manageable || busyId === user.id}
+                            title={manageable ? 'Disable account' : 'You can’t disable this account'}
+                            className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-colors duration-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+                          >
+                            <Icon name="NoSymbolIcon" size={14} variant="outline" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => requestToggle(user)}
+                            disabled={!manageable || busyId === user.id}
+                            title="Re-enable account"
+                            className="p-1.5 rounded-md hover:bg-success/10 text-muted-foreground hover:text-success transition-colors duration-100 disabled:opacity-40"
+                          >
+                            <Icon name="CheckCircleIcon" size={14} variant="outline" />
+                          </button>
+                        )}
+                        {isPatient && (
+                          <button
+                            onClick={() => openChat(user)}
+                            disabled={busyId === user.id}
+                            title="Open chat"
+                            className="p-1.5 rounded-md hover:bg-info/10 text-muted-foreground hover:text-info transition-colors duration-100 disabled:opacity-40"
+                          >
+                            <Icon name="ChatBubbleLeftRightIcon" size={14} variant="outline" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleStatusChange(patient.id, 'active')}
-                          title="Reactivate patient account"
-                          className="p-1.5 rounded-md hover:bg-success/10 text-muted-foreground hover:text-success transition-colors duration-100"
+                          onClick={() => setSelectedId(user.id)}
+                          title="View user details"
+                          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
                         >
-                          <Icon name="CheckCircleIcon" size={14} variant="outline" />
+                          <Icon name="EyeIcon" size={14} variant="outline" />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         {/* Pagination */}
         <div className="px-5 py-3 border-t border-border flex items-center justify-between">
-          <p className="text-[12px] text-muted-foreground">Showing {filtered.length} of {patients.length} patients</p>
+          <p className="text-[12px] text-muted-foreground">
+            Showing {pageRows.length} of {filtered.length} users
+          </p>
           <div className="flex items-center gap-1">
-            <button className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40" disabled>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40"
+            >
               ← Prev
             </button>
-            <button className="px-2.5 py-1.5 bg-primary text-primary-foreground rounded-md text-[12px] font-600">1</button>
-            <button className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40" disabled>
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map(n => (
+              <button
+                key={`page-${n}`}
+                onClick={() => setPage(n)}
+                className={n === currentPage
+                  ? 'px-2.5 py-1.5 bg-primary text-primary-foreground rounded-md text-[12px] font-600'
+                  : 'px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100'}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+              disabled={currentPage >= pageCount}
+              className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40"
+            >
               Next →
             </button>
           </div>
         </div>
       </div>
 
-      {/* Patient Detail SlideOver */}
+      {/* User Detail SlideOver */}
       <SlideOver
         open={!!selectedPatient}
-        onClose={() => setSelectedPatient(null)}
-        title="Patient Profile"
-        subtitle={selectedPatient ? `${selectedPatient.enrollmentId} · @${selectedPatient.username}` : ''}
+        onClose={() => setSelectedId(null)}
+        title="User Profile"
+        subtitle={selectedPatient ? `${ROLE_LABELS[selectedPatient.role]} · @${selectedPatient.username}` : ''}
         width="md"
       >
         {selectedPatient && (
@@ -278,46 +471,60 @@ export default function UserManagementClient() {
             {/* Avatar + info */}
             <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg border border-border">
               <div className="w-14 h-14 rounded-full gradient-primary flex items-center justify-center text-primary-foreground text-[18px] font-700 shrink-0">
-                {selectedPatient.fullName.split(' ').map(n => n[0]).join('')}
+                {initials(nameOf(selectedPatient))}
               </div>
-              <div>
-                <h3 className="text-[16px] font-600 text-foreground">{selectedPatient.fullName}</h3>
+              <div className="min-w-0">
+                <h3 className="text-[16px] font-600 text-foreground truncate">{nameOf(selectedPatient)}</h3>
                 <p className="text-[12px] font-mono text-muted-foreground">@{selectedPatient.username}</p>
-                <p className="text-[12px] text-muted-foreground">{selectedPatient.email}</p>
+                <p className="text-[12px] text-muted-foreground truncate">{selectedPatient.email || '—'}</p>
               </div>
             </div>
 
             {/* Status */}
             <div>
               <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Account Status</p>
-              <div className="flex items-center gap-2">
-                <Badge variant={selectedPatient.status} label={selectedPatient.status.charAt(0).toUpperCase() + selectedPatient.status.slice(1)} />
-                {selectedPatient.status !== 'active' && (
-                  <button
-                    onClick={() => handleStatusChange(selectedPatient.id, 'active')}
-                    className="px-3 py-1 bg-success/10 text-success rounded-lg text-[12px] font-600 hover:bg-success/20 transition-colors duration-150"
-                  >
-                    Reactivate
-                  </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={selectedPatient.active ? 'active' : 'suspended'} label={selectedPatient.active ? 'Active' : 'Disabled'} />
+                <RolePill role={selectedPatient.role} />
+                {canManage(selectedPatient) && (
+                  selectedPatient.active ? (
+                    <button
+                      onClick={() => requestToggle(selectedPatient)}
+                      disabled={busyId === selectedPatient.id}
+                      className="px-3 py-1 bg-warning/10 text-warning rounded-lg text-[12px] font-600 hover:bg-warning/20 transition-colors duration-150"
+                    >
+                      Disable
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => requestToggle(selectedPatient)}
+                      disabled={busyId === selectedPatient.id}
+                      className="px-3 py-1 bg-success/10 text-success rounded-lg text-[12px] font-600 hover:bg-success/20 transition-colors duration-150"
+                    >
+                      Re-enable
+                    </button>
+                  )
                 )}
-                {selectedPatient.status === 'active' && (
-                  <button
-                    onClick={() => handleStatusChange(selectedPatient.id, 'inactive')}
-                    className="px-3 py-1 bg-warning/10 text-warning rounded-lg text-[12px] font-600 hover:bg-warning/20 transition-colors duration-150"
-                  >
-                    Set Inactive
-                  </button>
-                )}
+                <button
+                  onClick={() => setEditing(selectedPatient)}
+                  className="px-3 py-1 bg-muted text-foreground rounded-lg text-[12px] font-600 hover:bg-muted/70 transition-colors duration-150"
+                >
+                  Edit
+                </button>
               </div>
+              {selectedPatient.mustChangePassword && (
+                <p className="text-[11px] text-muted-foreground mt-2">Has a temporary password — must choose a new one at next sign-in.</p>
+              )}
             </div>
 
             {/* Key details */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Enrollment ID', value: selectedPatient.enrollmentId },
-                { label: 'Phone', value: selectedPatient.phone },
-                { label: 'Enrolled', value: selectedPatient.joinDate },
-                { label: 'Last Active', value: selectedPatient.lastActive },
+                { label: 'Display ID', value: selectedPatient.displayId || '—' },
+                { label: 'Phone', value: formatPhone(selectedPatient.phone) || '—' },
+                { label: 'Joined', value: fmtDate(selectedPatient.createdAt) },
+                { label: 'Last Sign-in', value: fmtDate(selectedPatient.lastSignInAt) },
+                { label: 'Last Active', value: fmtDate(selectedPatient.lastActiveAt) },
               ].map(detail => (
                 <div key={`detail-${detail.label}`} className="p-3 bg-muted/30 rounded-lg">
                   <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{detail.label}</p>
@@ -326,42 +533,72 @@ export default function UserManagementClient() {
               ))}
             </div>
 
-            {/* Activity stats */}
-            <div>
-              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Activity Summary</p>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Sessions', value: selectedPatient.sessionsOpened, icon: 'BookOpenIcon' },
-                  { label: 'Alerts', value: selectedPatient.alertsSent, icon: 'BellAlertIcon' },
-                  { label: 'Surveys', value: selectedPatient.surveysCompleted, icon: 'ClipboardDocumentListIcon' },
-                ].map(stat => (
-                  <div key={`pstat-${stat.label}`} className="p-3 bg-muted/30 rounded-lg text-center">
-                    <Icon name={stat.icon as Parameters<typeof Icon>[0]['name']} size={16} variant="outline" className="text-muted-foreground mx-auto mb-1" />
-                    <p className="text-[20px] font-700 tabular-nums text-foreground">{stat.value}</p>
-                    <p className="text-[10px] text-muted-foreground">{stat.label}</p>
+            {selectedPatient.role === 'patient' && (
+              <>
+                {/* Activity stats */}
+                <div>
+                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Activity Summary</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Sessions', value: selectedPatient.lessonsOpened, icon: 'BookOpenIcon' },
+                      { label: 'Completed', value: selectedPatient.lessonsCompleted, icon: 'CheckCircleIcon' },
+                      { label: 'Alerts', value: selectedPatient.alertsSent, icon: 'BellAlertIcon' },
+                    ].map(stat => (
+                      <div key={`pstat-${stat.label}`} className="p-3 bg-muted/30 rounded-lg text-center">
+                        <Icon name={stat.icon as Parameters<typeof Icon>[0]['name']} size={16} variant="outline" className="text-muted-foreground mx-auto mb-1" />
+                        <p className="text-[20px] font-700 tabular-nums text-foreground">{stat.value}</p>
+                        <p className="text-[10px] text-muted-foreground">{stat.label}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            {/* REDCap participant code */}
-            <div>
-              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">REDCap Participant Code</p>
-              <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2.5 border border-border">
-                <code className="text-[13px] font-mono text-foreground flex-1">{selectedPatient.username}</code>
+                {/* REDCap participant code */}
+                <div>
+                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">REDCap Participant Code</p>
+                  <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2.5 border border-border">
+                    <code className="text-[13px] font-mono text-foreground flex-1">{selectedPatient.username}</code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(selectedPatient.username); toast.success('Participant code copied'); }}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
+                      title="Copy participant code"
+                    >
+                      <Icon name="ClipboardDocumentIcon" size={14} variant="outline" />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">This username is automatically appended to all REDCap survey links for this patient.</p>
+                </div>
+
                 <button
-                  onClick={() => { navigator.clipboard.writeText(selectedPatient.username); toast.success('Participant code copied'); }}
-                  className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
-                  title="Copy participant code"
+                  onClick={() => openChat(selectedPatient)}
+                  disabled={busyId === selectedPatient.id}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 disabled:opacity-60"
                 >
-                  <Icon name="ClipboardDocumentIcon" size={14} variant="outline" />
+                  <Icon name="ChatBubbleLeftRightIcon" size={15} variant="outline" />
+                  Open Chat
                 </button>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">This username is automatically appended to all REDCap survey links for this patient.</p>
-            </div>
+              </>
+            )}
           </div>
         )}
       </SlideOver>
+
+      <AddUserModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={load} canCreateAdmin={callerIsAdmin} />
+      <EditUserModal
+        user={editing}
+        callerId={profile?.id ?? null}
+        callerIsAdmin={callerIsAdmin}
+        onClose={() => setEditing(null)}
+        onSaved={load}
+      />
+      <BroadcastModal open={broadcastOpen} users={users} onClose={() => setBroadcastOpen(false)} onSent={load} />
+      <ReenableConfirmModal
+        open={!!reenableTarget}
+        username={reenableTarget?.username ?? ''}
+        busy={busyId === reenableTarget?.id}
+        onCancel={() => setReenableTarget(null)}
+        onConfirm={() => reenableTarget && setActive(reenableTarget, true)}
+      />
     </div>
   );
 }

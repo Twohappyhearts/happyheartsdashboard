@@ -32,7 +32,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 fade-in"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"

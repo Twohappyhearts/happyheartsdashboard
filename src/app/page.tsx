@@ -4,7 +4,7 @@ import ContentManagementClient from '@/app/content-management/components/Content
 
 export default function ContentManagementPage() {
   return (
-    <AppLayout alertCount={3}>
+    <AppLayout>
       <ContentManagementClient />
     </AppLayout>
   );
