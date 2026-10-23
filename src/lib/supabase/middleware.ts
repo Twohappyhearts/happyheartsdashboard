@@ -2,7 +2,9 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from './config';
 
-const PUBLIC_PATHS = ['/sign-up-login'];
+// '/m' = pages shown inside the mobile app's WebView; they authenticate API calls
+// with the patient's Bearer token, not the dashboard cookie.
+const PUBLIC_PATHS = ['/sign-up-login', '/m'];
 
 /**
  * Refreshes the Supabase auth session cookie on each request and sends
@@ -34,6 +36,11 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+
+  // The mobile app calls the agent API with a Bearer token instead of the cookie;
+  // those routes verify the token themselves (src/lib/server/agent/auth.ts).
+  const hasBearer = /^Bearer\s+\S+$/i.test(request.headers.get('authorization') ?? '');
+  if (!signedIn && hasBearer && path.startsWith('/api/agent/')) return response;
 
   if (!signedIn && path.startsWith('/api/')) {
     // API callers get JSON, not a redirect to the sign-in page.

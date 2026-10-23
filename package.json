@@ -48,7 +48,13 @@
     "serve": "next start",
     "type-check": "tsc --noEmit"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
+    "@ai-sdk/deepseek": "^3.0.72",
+    "@ai-sdk/openai-compatible": "^3.0.77",
+    "@ai-sdk/react": "^4.0.154",
     "@dhiwise/component-tagger": "^1.0.16",
     "@heroicons/react": "^2.2.0",
     "@supabase/ssr": "^0.12.7",
@@ -59,21 +65,30 @@
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
+    "ai": "^7.0.150",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
+    "mammoth": "^1.13.0",
+    "markdown-it": "^14.1.0",
     "next": "15.5.18",
     "react": "19.0.3",
     "react-dom": "19.0.3",
     "react-hook-form": "^7.89.0",
     "recharts": "^2.15.2",
     "server-only": "^0.0.1",
-    "sonner": "^1.7.4"
+    "sonner": "^1.7.4",
+    "turndown": "^7.2.0",
+    "unpdf": "^1.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@netlify/plugin-nextjs": "^5.11.1",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^20",
     "@types/react": "19.0.3",
     "@types/react-dom": "19.0.3",
+    "@types/turndown": "^5.0.5",
     "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^8.29.0",
     "autoprefixer": "10.4.2",

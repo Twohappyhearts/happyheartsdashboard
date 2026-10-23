@@ -3,7 +3,16 @@ import { imageHosts } from './image-hosts.config.mjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   productionBrowserSourceMaps: true,
+  // Knowledge-base parsing/chunking runs only on the server; load these from
+  // node_modules at runtime instead of bundling them.
+  serverExternalPackages: ['unpdf', 'mammoth', 'turndown', 'jszip', 'markdown-it'],
   distDir: process.env.DIST_DIR || '.next',
+  // Local dev: let the phone / emulator load the dev server by LAN IP
+  // (e.g. DEV_ALLOWED_ORIGINS=192.168.1.20,10.0.2.2). Ignored in production.
+  allowedDevOrigins: (process.env.DEV_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean),
 
   typescript: {
     ignoreBuildErrors: true,

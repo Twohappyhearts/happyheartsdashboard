@@ -37,6 +37,13 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    groupLabel: 'AI ASSISTANT',
+    items: [
+      { label: 'AI Chat', href: '/ai-chat', icon: 'SparklesIcon' },
+      { label: 'Knowledge Base', href: '/knowledge-base', icon: 'CircleStackIcon' },
+    ],
+  },
+  {
     groupLabel: 'ADMIN',
     items: [
       { label: 'Users', href: '/user-management', icon: 'UsersIcon' },
