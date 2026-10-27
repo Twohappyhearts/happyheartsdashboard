@@ -5,17 +5,20 @@
  * Shared by server and client, so no server-only imports here.
  */
 
-const SOURCES_LINE = /\n*\s*\[sources?:\s*([\d\s,]*)\]\s*$/i;
+// Usually the last line, but the model sometimes puts it before the closing sentence.
+const SOURCES_MARKER = /[ \t]*\[sources?:\s*([\d\s,]*)\][ \t]*/gi;
 
-/** The answer without its "[sources: …]" line, and the refs it listed. */
+/** The answer without its "[sources: …]" marker(s), and the refs listed. */
 export function splitSources(text: string): { text: string; refs: number[] } {
-  const m = SOURCES_LINE.exec(text);
-  if (!m) return { text, refs: [] };
-  const refs = m[1]
-    .split(',')
-    .map((r) => Number(r.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0);
-  return { text: text.slice(0, m.index).trimEnd(), refs };
+  const refs: number[] = [];
+  const stripped = text.replace(SOURCES_MARKER, (_m, list: string) => {
+    for (const r of list.split(',')) {
+      const n = Number(r.trim());
+      if (Number.isInteger(n) && n > 0 && !refs.includes(n)) refs.push(n);
+    }
+    return '';
+  });
+  return refs.length ? { text: stripped.replace(/\n{3,}/g, '\n\n').trimEnd(), refs } : { text, refs };
 }
 
 /** "the National Institutes of Health (Eunice Kennedy Shriver …)" → "National Institutes of Health". */
