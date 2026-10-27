@@ -11,6 +11,8 @@ export const SEARCH_TOOL = 'searchKnowledge';
 const MAX_CHUNK_CHARS = 2000;
 /** Two chunks per document at most, so a second source that disagrees can make the top results. */
 const MAX_CHUNKS_PER_DOCUMENT = 2;
+/** Eight results: a section that answers "when / how much" often ranks 6th to 8th behind overview sections. */
+const DEFAULT_TOP_K = 8;
 
 export interface SearchResultItem {
   /** Number the model cites in its "[sources: …]" line; unique within one reply. */
@@ -71,10 +73,10 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
         "Use it before answering a general health-education question. Do not use it for questions about the user's own health, symptoms, numbers or medicines.",
       inputSchema: z.object({
         query: z.string().min(1).max(500).describe('What to look for, phrased as a search query.'),
-        topK: z.number().int().min(1).max(8).optional().describe('How many passages to return (default 5).'),
+        topK: z.number().int().min(1).max(8).optional().describe(`How many passages to return (default ${DEFAULT_TOP_K}).`),
       }),
       execute: async ({ query, topK }): Promise<SearchToolOutput> => {
-        const r = await retrieve(caller.admin, { query, topK: topK ?? 5, maxPerDocument: MAX_CHUNKS_PER_DOCUMENT });
+        const r = await retrieve(caller.admin, { query, topK: topK ?? DEFAULT_TOP_K, maxPerDocument: MAX_CHUNKS_PER_DOCUMENT });
         const sources = await documentSources(caller, r.results.map((c) => c.documentId));
         return {
           results: r.results.map((c) => ({
