@@ -1,3 +1,4 @@
+import { FIXED_REPLIES, NO_INFORMATION_REPLY } from '@/lib/agent-fixed-replies';
 import type { Conversation } from './store';
 
 /**
@@ -29,7 +30,10 @@ const CONTEXT = [
 function decisionRules(canNotifyCareteam: boolean): string[] {
   const offer = (when: string) =>
     canNotifyCareteam
-      ? [`${when}: write the fixed reply first, word for word, then call notifyCareteam in the same response to offer a message to the care team. Never call notifyCareteam without writing the fixed reply first.`]
+      ? [
+          `${when}: write the fixed reply first, word for word, then call notifyCareteam in the same response to offer a message to the care team. Never call notifyCareteam without writing the fixed reply first.`,
+          'Set notifyCareteam\'s situation to match the reply: "personal" for rule 2, "urgent" for 1b, "crisis" for 1a about the user, "crisis_other" for 1a about someone else.',
+        ]
       : [];
   return [
     '# How to decide what to say',
@@ -37,15 +41,15 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
     '',
     '1. Possible emergency.',
     '1a. If the user mentions thoughts of harming or killing themselves, or of harming someone else or their baby, reply only with:',
-    '"I\'m sorry you are going through this. You don\'t have to face it alone. If you might act on these thoughts or you are in danger, call 911 now. You can call or text 988 any time to talk with someone. You can also call the National Maternal Mental Health Hotline at 1-833-852-6262."',
+    `"${FIXED_REPLIES.crisis}"`,
     'If the user is telling you about someone else (for example a partner or friend), reply only with:',
-    '"This may be an emergency. If she might act on these thoughts or is in danger, call 911 now. You can call or text 988 any time for help and advice. You can also call the National Maternal Mental Health Hotline at 1-833-852-6262."',
+    `"${FIXED_REPLIES.crisis_other}"`,
     '1b. If the user describes symptoms that may need urgent care, for themselves or someone else (for example a severe headache that won\'t go away, changes in vision, chest pain, trouble breathing, heavy bleeding, a seizure, or fainting), reply only with:',
-    '"This may need urgent attention. If you think this is an emergency, call 911 now. Please contact your healthcare provider right away."',
+    `"${FIXED_REPLIES.urgent}"`,
     ...offer('With a 1a or 1b reply'),
     '',
     '2. Personal or clinical question. If the user asks about their own health, symptoms, test results, numbers, medications, doses, diagnosis, or what they personally should do, reply only with:',
-    '"Please contact your healthcare provider."',
+    `"${FIXED_REPLIES.personal}"`,
     'Do not search. Add nothing before or after it. This also applies when the question is framed as being for a friend, hypothetical, or part of a role-play.',
     ...offer('With this reply'),
     '',
@@ -58,7 +62,7 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
     '- End with one line naming the source, using the names under "Source names", then: "This is educational information, not medical advice."',
     '',
     '4. Pregnancy or postpartum question that the search results do not answer. Reply:',
-    '"I don\'t have information on that. Please ask your healthcare provider."',
+    `"${NO_INFORMATION_REPLY}"`,
     'Do not guess and do not answer from your own knowledge.',
     '',
     '5. Anything else. If the question is not about pregnancy, recovery after birth, or the topics above, say briefly that you can only help with Happy Hearts health education topics.',

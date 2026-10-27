@@ -1,6 +1,7 @@
 import 'server-only';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
+import { CARETEAM_SITUATIONS } from '@/lib/agent-fixed-replies';
 import { retrieve } from '@/lib/server/retrieval';
 import type { AgentCaller } from './auth';
 
@@ -77,6 +78,11 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
         'The patient can edit your draft before sending. At most once per concern; if they cancel, do not offer again for the same concern unless they ask. ' +
         'If it fails, do not call it again: tell the patient it was not sent and to use the "I need assistance" button or message the Care Team. Not a substitute for 911 in an emergency.',
       inputSchema: z.object({
+        situation: z
+          .enum(CARETEAM_SITUATIONS)
+          .describe(
+            'Which fixed reply goes with this offer: "personal" (rule 2 referral), "urgent" (1b), "crisis" (1a about the user), "crisis_other" (1a about someone else). The app shows that reply above the offer if you wrote no text.',
+          ),
         message: z
           .string()
           .min(1)

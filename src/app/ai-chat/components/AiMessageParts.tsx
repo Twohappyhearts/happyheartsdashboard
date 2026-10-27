@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
+import { FIXED_REPLIES, isCareteamSituation } from '@/lib/agent-fixed-replies';
 
 // html: false → any HTML in model output is escaped, never injected.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -30,10 +31,12 @@ interface Props {
 }
 
 export default function AiMessageParts({ message, canRespond, streaming, onApproval, inlineApproval = true }: Props) {
+  let hasText = false;
   return (
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === 'text') {
+          if (part.text.trim()) hasText = true;
           return part.text.trim() ? <Markdown key={`t-${i}`} text={part.text} /> : null;
         }
         if (part.type === 'reasoning') {
@@ -43,8 +46,16 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
           const name = getToolName(part);
           if (name === 'searchKnowledge') return <SearchCard key={part.toolCallId} part={part as ToolPart} />;
           if (name === 'notifyCareteam') {
+            // The model sometimes offers the care-team message without writing the fixed reply
+            // (referral / 911 / 988) first; show that reply from code so it is never missing.
+            const situation = (part.input as { situation?: unknown } | undefined)?.situation;
+            const fallback = !hasText && isCareteamSituation(situation) ? FIXED_REPLIES[situation] : null;
+            if (fallback) hasText = true;
             return (
-              <CareteamCard key={part.toolCallId} part={part as ToolPart} canRespond={canRespond} inline={inlineApproval} onApproval={onApproval} />
+              <React.Fragment key={part.toolCallId}>
+                {fallback && <Markdown text={fallback} />}
+                <CareteamCard part={part as ToolPart} canRespond={canRespond} inline={inlineApproval} onApproval={onApproval} />
+              </React.Fragment>
             );
           }
           return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
