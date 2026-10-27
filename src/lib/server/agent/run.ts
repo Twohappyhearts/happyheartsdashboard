@@ -9,6 +9,7 @@ import {
   streamText,
   type UIMessage,
 } from 'ai';
+import { FIXED_REPLIES, type CareteamSituation } from '@/lib/agent-fixed-replies';
 import { ApiError } from '@/lib/server/staff-auth';
 import { applyApprovals, type ApprovalAnswer } from './approval';
 import type { AgentCaller } from './auth';
@@ -40,6 +41,18 @@ const needsApproval = new Set<string>(TOOLS_NEEDING_APPROVAL);
 /** Each search is an embedding + hybrid search + rerank plus another model step; cap them per turn. */
 const MAX_SEARCHES_PER_TURN = 2;
 const lastUserId = (messages: UIMessage[]) => [...messages].reverse().find((m) => m.role === 'user')?.id ?? null;
+
+/** Spanish wording of the rule 2 reply (the prompt quotes it word for word). */
+const PERSONAL_REPLY_ES = 'Por favor, comuníquese con su proveedor de atención médica.';
+const squash = (t: string) => t.replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase();
+
+/** Which fixed reply (rule 1a / 1b / 2) the text contains, if any. Longer replies first. */
+export function fixedReplySituation(text: string): CareteamSituation | null {
+  const t = squash(text);
+  const order: CareteamSituation[] = ['crisis_other', 'crisis', 'urgent', 'personal'];
+  for (const situation of order) if (t.includes(squash(FIXED_REPLIES[situation]))) return situation;
+  return t.includes(squash(PERSONAL_REPLY_ES)) ? 'personal' : null;
+}
 
 /**
  * One agent turn:
@@ -149,7 +162,30 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     // One id for the reply, injected into the stream's start event (a continuation keeps the old id).
     generateId: randomUUID,
     execute: async ({ writer }) => {
-      writer.merge(result.toUIMessageStream({ sendReasoning: true, onError: streamError }));
+      writer.merge(result.toUIMessageStream({ sendReasoning: true, sendFinish: false, onError: streamError }));
+      // Every rule 1a / 1b / 2 reply comes with an offer to message the care team (the user still
+      // has to press Send). If the model wrote the fixed reply but made no offer, ask for the offer
+      // in one more, forced call; its tool call joins the same reply message.
+      const situation = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
+      if (situation) {
+        console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer missing after a "${situation}" reply; asking for it`);
+        const followUp = streamText({
+          model: chatModel(cfg),
+          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}" and a draft in the user's words. Write no other text.`,
+          messages: [...modelMessages, ...(await result.responseMessages)],
+          tools,
+          activeTools: ['notifyCareteam'],
+          toolChoice: { type: 'tool', toolName: 'notifyCareteam' },
+          toolApproval: ({ toolCall }) => (needsApproval.has(toolCall.toolName) ? 'user-approval' : undefined),
+          experimental_toolApprovalSecret: cfg.toolApprovalSecret,
+          stopWhen: isStepCount(1),
+          providerOptions: thinkingOptions(cfg, false),
+        });
+        void followUp.consumeStream({ onError: (e) => console.error('[agent] care-team follow-up stream error', e) });
+        writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
+      } else {
+        writer.write({ type: 'finish' });
+      }
       if (titleFor) {
         const title = await titleFor; // usually long done by now; never longer than TITLE_TIMEOUT_MS
         // transient: delivered to the client only, never stored in the message parts.
@@ -229,5 +265,19 @@ async function compressAfterTurn(caller: AgentCaller, conversationId: string, cf
     if (buildContext(state, cfg, opts).needsSummary) await summarize(caller.admin, state, cfg);
   } catch (e) {
     console.warn('[agent] background summary failed', e);
+  }
+}
+
+/**
+ * The situation of a fixed reply that came without a care-team offer, or null
+ * (no fixed reply, an offer was made, or the turn failed).
+ */
+async function missingCareteamOffer(result: { steps: PromiseLike<Array<{ text: string; toolCalls: Array<{ toolName: string }> }>> }) {
+  try {
+    const steps = await result.steps;
+    if (steps.some((st) => st.toolCalls.some((c) => c.toolName === 'notifyCareteam'))) return null;
+    return fixedReplySituation(steps.map((st) => st.text).join('\n'));
+  } catch {
+    return null;
   }
 }

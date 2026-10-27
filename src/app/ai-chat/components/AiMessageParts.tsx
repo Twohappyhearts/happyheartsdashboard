@@ -5,6 +5,7 @@ import MarkdownIt from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
 import { FIXED_REPLIES, isCareteamSituation } from '@/lib/agent-fixed-replies';
+import { displaySource, splitSources } from '@/lib/agent-sources';
 
 // html: false → any HTML in model output is escaped, never injected.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -31,13 +32,21 @@ interface Props {
 }
 
 export default function AiMessageParts({ message, canRespond, streaming, onApproval, inlineApproval = true }: Props) {
+  const searchResults = useMemo(() => collectSearchResults(message), [message]);
   let hasText = false;
   return (
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === 'text') {
-          if (part.text.trim()) hasText = true;
-          return part.text.trim() ? <Markdown key={`t-${i}`} text={part.text} /> : null;
+          if (!part.text.trim()) return null;
+          hasText = true;
+          const { text, refs } = splitSources(part.text);
+          return (
+            <React.Fragment key={`t-${i}`}>
+              {text.trim() && <Markdown text={text} />}
+              {refs.length > 0 && <SourceChips refs={refs} results={searchResults} />}
+            </React.Fragment>
+          );
         }
         if (part.type === 'reasoning') {
           return part.text.trim() ? <Reasoning key={`r-${i}`} text={part.text} active={streaming && i === message.parts.length - 1} /> : null;
@@ -61,6 +70,53 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
           return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
         }
         return null;
+      })}
+    </div>
+  );
+}
+
+interface SearchResult {
+  ref?: number;
+  title: string;
+  source?: string | null;
+  url?: string | null;
+}
+
+/** ref → search result, over every searchKnowledge call in this reply. */
+function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
+  const byRef = new Map<number, SearchResult>();
+  for (const part of message.parts) {
+    if (!isToolUIPart(part) || getToolName(part) !== 'searchKnowledge' || part.state !== 'output-available') continue;
+    for (const r of (part.output as { results?: SearchResult[] } | undefined)?.results ?? []) {
+      if (typeof r.ref === 'number') byRef.set(r.ref, r);
+    }
+  }
+  return byRef;
+}
+
+/** One chip per document the answer cited: organization · title, linking to the original page. */
+function SourceChips({ refs, results }: { refs: number[]; results: Map<number, SearchResult> }) {
+  const docs = new Map<string, SearchResult>();
+  for (const ref of refs) {
+    const r = results.get(ref);
+    if (r && !docs.has(r.title)) docs.set(r.title, r);
+  }
+  if (!docs.size) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+      <span className="text-muted-foreground">Source:</span>
+      {Array.from(docs.values()).map((d) => {
+        const label = [displaySource(d.source), d.title].filter(Boolean).join(' · ');
+        const chip = 'inline-flex max-w-full items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-secondary-foreground';
+        return d.url ? (
+          <a key={d.title} href={d.url} target="_blank" rel="noopener noreferrer" className={`${chip} hover:bg-muted truncate`} title={label}>
+            {label}
+          </a>
+        ) : (
+          <span key={d.title} className={`${chip} truncate`} title={label}>
+            {label}
+          </span>
+        );
       })}
     </div>
   );

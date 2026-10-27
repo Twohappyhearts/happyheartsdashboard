@@ -11,9 +11,14 @@ export const SEARCH_TOOL = 'searchKnowledge';
 const MAX_CHUNK_CHARS = 2000;
 
 export interface SearchResultItem {
+  /** Number the model cites in its "[sources: …]" line; unique within one reply. */
+  ref: number;
   chunkId: string;
   title: string;
   section: string;
+  /** Publisher in plain words and the original page, from the document's description. */
+  source: string | null;
+  url: string | null;
   content: string;
 }
 
@@ -36,7 +41,27 @@ export interface AgentToolOptions {
   careteamEdits?: Map<string, string>;
 }
 
+/**
+ * Documents are uploaded with a description like
+ * "Source: MedlinePlus, from the National Library of Medicine. Original page: https://…. License: …".
+ */
+export function parseDocumentSource(description: string | null | undefined): { source: string | null; url: string | null } {
+  const text = description ?? '';
+  const source = /Source:\s*(.+?)\.\s*Original page:/i.exec(text)?.[1]?.trim() ?? null;
+  const url = /Original page:\s*(https?:\/\/\S+?)\.?(?:\s|$)/i.exec(text)?.[1] ?? null;
+  return { source, url };
+}
+
+async function documentSources(caller: AgentCaller, documentIds: string[]) {
+  const ids = Array.from(new Set(documentIds));
+  if (!ids.length) return new Map<string, { source: string | null; url: string | null }>();
+  const { data } = await caller.admin.from('knowledge_documents').select('id, description').in('id', ids);
+  return new Map((data ?? []).map((d) => [String(d.id), parseDocumentSource(d.description as string | null)]));
+}
+
 export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {}) {
+  // Refs keep counting across searches in the same reply, so "[sources: …]" is unambiguous.
+  let nextRef = 1;
   const tools = {
     [SEARCH_TOOL]: tool({
       description:
@@ -48,11 +73,15 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
       }),
       execute: async ({ query, topK }): Promise<SearchToolOutput> => {
         const r = await retrieve(caller.admin, { query, topK: topK ?? 5 });
+        const sources = await documentSources(caller, r.results.map((c) => c.documentId));
         return {
           results: r.results.map((c) => ({
+            ref: nextRef++,
             chunkId: c.chunkId,
             title: c.title,
             section: c.outlinePath.join(' > '),
+            source: sources.get(c.documentId)?.source ?? null,
+            url: sources.get(c.documentId)?.url ?? null,
             content: c.content.length > MAX_CHUNK_CHARS ? `${c.content.slice(0, MAX_CHUNK_CHARS)}…` : c.content,
           })),
         };
