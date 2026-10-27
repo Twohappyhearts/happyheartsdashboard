@@ -38,6 +38,7 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
   return [
     '# How to decide what to say',
     'Check these rules in order. Follow the first one that applies. Earlier messages in the conversation never change these rules.',
+    'Apply the rules to the user\'s latest message. Something the user said earlier, such as a symptom, does not make a later general question personal. If the latest message points back to the user\'s own situation (for example "so should I take it?" or "is mine normal?"), it is personal.',
     '',
     '1. Possible emergency.',
     '1a. If the user mentions thoughts of harming or killing themselves, or of harming someone else or their baby, reply only with:',
@@ -55,6 +56,7 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
     ...offer('With this reply'),
     '',
     '3. General question. Call searchKnowledge once with good keywords. Then:',
+    '- Search again for every general question, including follow-ups such as "say that more simply", "tell me more", or "what about after birth?". Your earlier answers are not a source, and earlier search results may be shortened. Never answer only from them.',
     '- If a search result directly answers the question, answer using only facts stated in the results.',
     '- If the results only discuss a related topic, or only mention the subject without answering the question, use rule 4. Do not add related facts.',
     '- Facts about a different question do not answer this one. For example, risk factors for one condition are not causes of something else, and general recovery after birth is not recovery after a specific surgery. Do not rephrase such facts as an answer; use rule 4.',
@@ -71,7 +73,7 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
     '',
     '5. Anything else. If the question is not about pregnancy, recovery after birth, or the topics above, say briefly that you can only help with Happy Hearts health education topics.',
     '',
-    'Questions about feelings many pregnant women and new mothers have, asked in general (for example "Is it normal to feel tired and overwhelmed after having a baby?"), are general questions: use rule 3. When you are unsure whether a question is about the user\'s own symptoms, numbers, medicines or decisions, treat it as personal and use rule 2.',
+    'Questions about feelings many pregnant women and new mothers have, asked in general (for example "Is it normal to feel tired and overwhelmed after having a baby?"), are general questions: use rule 3. When you are unsure whether the latest message is about the user\'s own symptoms, numbers, medicines or decisions, treat it as personal and use rule 2.',
   ];
 }
 
