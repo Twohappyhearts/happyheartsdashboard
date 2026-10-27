@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.72",
+    "@ai-sdk/openai": "^4.0.103",
     "@ai-sdk/openai-compatible": "^3.0.77",
     "@ai-sdk/react": "^4.0.154",
     "@dhiwise/component-tagger": "^1.0.16",

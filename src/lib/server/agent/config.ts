@@ -8,7 +8,7 @@ import type { SizeUnit } from './measure';
  *   >= trimAt     (50%) → shorten old searchKnowledge (RAG) results
  *   >= summarizeAt (80%) → LLM summary of older turns, keep the last `keepRecentTurns`
  */
-export type AgentProvider = 'dashscope' | 'deepseek';
+export type AgentProvider = 'openai' | 'dashscope' | 'deepseek';
 
 export interface AgentConfig {
   provider: AgentProvider;
@@ -28,6 +28,22 @@ export interface AgentConfig {
   toolApprovalSecret?: string;
 }
 
+const API_KEY_VAR: Record<AgentProvider, string> = {
+  openai: 'OPENAI_API_KEY',
+  dashscope: 'DASHSCOPE_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+};
+const BASE_URL_VAR: Record<AgentProvider, string> = {
+  openai: 'OPENAI_BASE_URL',
+  dashscope: 'DASHSCOPE_BASE_URL',
+  deepseek: 'DEEPSEEK_BASE_URL',
+};
+const DEFAULT_MODEL: Record<AgentProvider, string> = {
+  openai: 'gpt-6-luna',
+  dashscope: 'deepseek-v4.1-flash-1017',
+  deepseek: 'deepseek-v4.1-flash-1017',
+};
+
 const int = (name: string, d: number, min: number) => {
   const raw = process.env[name];
   if (raw == null || raw === '') return d;
@@ -45,14 +61,11 @@ const ratio = (name: string, d: number) => {
 };
 
 export function agentConfig(): AgentConfig {
-  const provider = (process.env.AGENT_PROVIDER || 'dashscope') as AgentProvider;
-  if (provider !== 'dashscope' && provider !== 'deepseek') throw new Error('AGENT_PROVIDER must be "dashscope" or "deepseek".');
-  const apiKey = provider === 'deepseek' ? process.env.DEEPSEEK_API_KEY : process.env.DASHSCOPE_API_KEY;
-  if (!apiKey) {
-    throw new Error(`The AI agent is not configured (${provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'DASHSCOPE_API_KEY'} missing on the server).`);
-  }
-  const baseURL =
-    process.env.AGENT_BASE_URL || (provider === 'deepseek' ? process.env.DEEPSEEK_BASE_URL : process.env.DASHSCOPE_BASE_URL) || undefined;
+  const provider = (process.env.AGENT_PROVIDER || 'openai') as AgentProvider;
+  if (!(provider in API_KEY_VAR)) throw new Error('AGENT_PROVIDER must be "openai", "dashscope" or "deepseek".');
+  const apiKey = process.env[API_KEY_VAR[provider]];
+  if (!apiKey) throw new Error(`The AI agent is not configured (${API_KEY_VAR[provider]} missing on the server).`);
+  const baseURL = process.env.AGENT_BASE_URL || process.env[BASE_URL_VAR[provider]] || undefined;
 
   const unit = (process.env.AGENT_CONTEXT_UNIT || 'chars') as SizeUnit;
   if (unit !== 'chars' && unit !== 'tokens') throw new Error('AGENT_CONTEXT_UNIT must be "chars" or "tokens".');
@@ -61,7 +74,7 @@ export function agentConfig(): AgentConfig {
   const summarizeAt = ratio('AGENT_SUMMARIZE_AT', 0.8);
   if (trimAt >= summarizeAt) throw new Error('AGENT_TRIM_AT must be lower than AGENT_SUMMARIZE_AT.');
 
-  const model = process.env.AGENT_MODEL || 'deepseek-v4.1-flash-1017';
+  const model = process.env.AGENT_MODEL || DEFAULT_MODEL[provider];
   return {
     provider,
     apiKey,

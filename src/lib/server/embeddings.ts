@@ -1,14 +1,16 @@
 import 'server-only';
 
 /**
- * Text embeddings via an OpenAI-compatible /embeddings API (Alibaba Cloud
- * Model Studio / DashScope by default). Server-only: the API key never reaches
- * the browser.
+ * Text embeddings via an OpenAI-compatible /embeddings API: OpenAI by default
+ * (EMBEDDING_PROVIDER=openai), or Alibaba Cloud Model Studio / DashScope
+ * (EMBEDDING_PROVIDER=dashscope). Server-only: the API key never reaches the browser.
+ * Changing the provider or model means re-chunking every document: vectors from
+ * different models can't be compared.
  */
 
 /** Must match knowledge_chunks.embedding vector(1024). */
 export const DB_EMBEDDING_DIMENSIONS = 1024;
-const BATCH_SIZE = 20; // the model accepts up to 25 inputs per request
+const BATCH_SIZE = 20; // DashScope accepts up to 25 inputs per request (OpenAI allows more)
 const PARALLEL_REQUESTS = 3;
 const MAX_RETRIES = 3;
 
@@ -19,16 +21,29 @@ export interface EmbeddingConfig {
   dimensions: number;
 }
 
+const PROVIDERS = {
+  openai: { keyVar: 'OPENAI_API_KEY', baseUrlVar: 'OPENAI_BASE_URL', baseUrl: 'https://api.openai.com/v1', model: 'text-embedding-3-small' },
+  dashscope: {
+    keyVar: 'DASHSCOPE_API_KEY',
+    baseUrlVar: 'DASHSCOPE_BASE_URL',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen3.7-text-embedding-flash',
+  },
+} as const;
+
 export function embeddingConfig(): EmbeddingConfig {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  const model = process.env.EMBEDDING_MODEL;
-  if (!apiKey || !model) throw new Error('Embeddings are not configured (DASHSCOPE_API_KEY / EMBEDDING_MODEL missing on the server).');
+  const name = (process.env.EMBEDDING_PROVIDER || 'openai') as keyof typeof PROVIDERS;
+  const provider = PROVIDERS[name];
+  if (!provider) throw new Error('EMBEDDING_PROVIDER must be "openai" or "dashscope".');
+  const apiKey = process.env[provider.keyVar];
+  if (!apiKey) throw new Error(`Embeddings are not configured (${provider.keyVar} missing on the server).`);
+  const model = process.env.EMBEDDING_MODEL || provider.model;
   const dimensions = Number(process.env.EMBEDDING_DIMENSIONS || DB_EMBEDDING_DIMENSIONS);
   if (dimensions !== DB_EMBEDDING_DIMENSIONS) {
     throw new Error(`EMBEDDING_DIMENSIONS is ${dimensions}, but the database stores ${DB_EMBEDDING_DIMENSIONS}-dimension vectors.`);
   }
   return {
-    baseUrl: (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/+$/, ''),
+    baseUrl: (process.env[provider.baseUrlVar] || provider.baseUrl).replace(/\/+$/, ''),
     apiKey,
     model,
     dimensions,

@@ -8,7 +8,7 @@ import { rerank, rerankModel } from './rerank';
  *
  *   query ─┬─ keyword search (Postgres full-text) → top keywordK ─┐
  *          └─ embed → vector search (pgvector)    → top vectorK  ─┴─ RRF merge → candidates
- *   candidates → rerank (qwen3.7-text-rerank) → top topK
+ *   candidates → rerank (qwen3.7-text-rerank, only when RERANK_MODEL is set) → top topK
  *
  * Degrades instead of failing: if embedding fails it is keyword-only; if rerank
  * fails the RRF order is used. `warnings` says what happened.
@@ -119,7 +119,7 @@ export async function retrieve(admin: SupabaseClient, opts: RetrievalOptions): P
   let results = fused.slice(0, topK);
   let reranked = false;
   const tRerank = Date.now();
-  if (opts.rerank !== false && fused.length > 0) {
+  if (opts.rerank !== false && rerankModel() && fused.length > 0) {
     try {
       const hits = await rerank(opts.query, fused.map((c) => c.searchText), topK);
       results = hits.map((h) => ({ ...fused[h.index], rerankScore: h.score }));

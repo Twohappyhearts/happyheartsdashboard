@@ -1,5 +1,6 @@
 import 'server-only';
 import { createDeepSeek } from '@ai-sdk/deepseek';
+import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel, streamText } from 'ai';
 
@@ -8,7 +9,8 @@ import type { AgentConfig } from './config';
 
 /**
  * The LLM behind the agent.
- *  - dashscope (default): DeepSeek models on Alibaba Cloud Model Studio, OpenAI-compatible API,
+ *  - openai (default): OpenAI Responses API (OPENAI_API_KEY).
+ *  - dashscope: DeepSeek models on Alibaba Cloud Model Studio, OpenAI-compatible API,
  *    same DASHSCOPE_API_KEY as embeddings / rerank.
  *  - deepseek: DeepSeek's own API (DEEPSEEK_API_KEY).
  */
@@ -19,7 +21,10 @@ let cached: { key: string; make: (id: string) => LanguageModel } | null = null;
 function factory(cfg: AgentConfig) {
   const key = `${cfg.provider}|${cfg.apiKey}|${cfg.baseURL ?? ''}`;
   if (!cached || cached.key !== key) {
-    if (cfg.provider === 'deepseek') {
+    if (cfg.provider === 'openai') {
+      const p = createOpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+      cached = { key, make: (id) => p.responses(id) };
+    } else if (cfg.provider === 'deepseek') {
       const p = createDeepSeek({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
       cached = { key, make: (id) => p(id) };
     } else {
@@ -35,14 +40,15 @@ function factory(cfg: AgentConfig) {
   return cached.make;
 }
 
-/** Main chat model (deepseek-v4.1-flash-1017 by default). */
+/** Main chat model (AGENT_MODEL, or the provider's default in config.ts). */
 export const chatModel = (cfg: AgentConfig) => factory(cfg)(cfg.model);
 
 /** Model used to write context summaries. */
 export const summaryModel = (cfg: AgentConfig) => factory(cfg)(cfg.summaryModel);
 
-/** providerOptions that switch DeepSeek's thinking mode on or off for the configured provider. */
+/** providerOptions that turn the model's thinking up or down (OpenAI reasoning effort, DeepSeek thinking mode). */
 export function thinkingOptions(cfg: AgentConfig, enabled: boolean): ProviderOptions {
+  if (cfg.provider === 'openai') return { openai: { reasoningEffort: enabled ? 'medium' : 'low' } };
   return cfg.provider === 'deepseek'
     ? { deepseek: { thinking: { type: enabled ? 'enabled' : 'disabled' } } }
     : { [PROVIDER_NAME.dashscope]: { enable_thinking: enabled } };
