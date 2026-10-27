@@ -1,6 +1,7 @@
 import 'server-only';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
+import { CARETEAM_SITUATIONS } from '@/lib/agent-fixed-replies';
 import { retrieve } from '@/lib/server/retrieval';
 import type { AgentCaller } from './auth';
 
@@ -8,11 +9,20 @@ import type { AgentCaller } from './auth';
 export const SEARCH_TOOL = 'searchKnowledge';
 
 const MAX_CHUNK_CHARS = 2000;
+/** Two chunks per document at most, so a second source that disagrees can make the top results. */
+const MAX_CHUNKS_PER_DOCUMENT = 2;
+/** Eight results: a section that answers "when / how much" often ranks 6th to 8th behind overview sections. */
+const DEFAULT_TOP_K = 8;
 
 export interface SearchResultItem {
+  /** Number the model cites in its "[sources: …]" line; unique within one reply. */
+  ref: number;
   chunkId: string;
   title: string;
   section: string;
+  /** Publisher in plain words and the original page, from the document's description. */
+  source: string | null;
+  url: string | null;
   content: string;
 }
 
@@ -35,23 +45,47 @@ export interface AgentToolOptions {
   careteamEdits?: Map<string, string>;
 }
 
+/**
+ * Documents are uploaded with a description like
+ * "Source: MedlinePlus, from the National Library of Medicine. Original page: https://…. License: …".
+ */
+export function parseDocumentSource(description: string | null | undefined): { source: string | null; url: string | null } {
+  const text = description ?? '';
+  const source = /Source:\s*(.+?)\.\s*Original page:/i.exec(text)?.[1]?.trim() ?? null;
+  const url = /Original page:\s*(https?:\/\/\S+?)\.?(?:\s|$)/i.exec(text)?.[1] ?? null;
+  return { source, url };
+}
+
+async function documentSources(caller: AgentCaller, documentIds: string[]) {
+  const ids = Array.from(new Set(documentIds));
+  if (!ids.length) return new Map<string, { source: string | null; url: string | null }>();
+  const { data } = await caller.admin.from('knowledge_documents').select('id, description').in('id', ids);
+  return new Map((data ?? []).map((d) => [String(d.id), parseDocumentSource(d.description as string | null)]));
+}
+
 export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {}) {
+  // Refs keep counting across searches in the same reply, so "[sources: …]" is unambiguous.
+  let nextRef = 1;
   const tools = {
     [SEARCH_TOOL]: tool({
       description:
         "Search the HappyHearts knowledge base (care-team approved education material). " +
-        "Use it for any health, recovery, medication or program question before answering.",
+        "Use it before answering a general health-education question. Do not use it for questions about the user's own health, symptoms, numbers or medicines.",
       inputSchema: z.object({
         query: z.string().min(1).max(500).describe('What to look for, phrased as a search query.'),
-        topK: z.number().int().min(1).max(8).optional().describe('How many passages to return (default 5).'),
+        topK: z.number().int().min(1).max(8).optional().describe(`How many passages to return (default ${DEFAULT_TOP_K}).`),
       }),
       execute: async ({ query, topK }): Promise<SearchToolOutput> => {
-        const r = await retrieve(caller.admin, { query, topK: topK ?? 5 });
+        const r = await retrieve(caller.admin, { query, topK: topK ?? DEFAULT_TOP_K, maxPerDocument: MAX_CHUNKS_PER_DOCUMENT });
+        const sources = await documentSources(caller, r.results.map((c) => c.documentId));
         return {
           results: r.results.map((c) => ({
+            ref: nextRef++,
             chunkId: c.chunkId,
             title: c.title,
             section: c.outlinePath.join(' > '),
+            source: sources.get(c.documentId)?.source ?? null,
+            url: sources.get(c.documentId)?.url ?? null,
             content: c.content.length > MAX_CHUNK_CHARS ? `${c.content.slice(0, MAX_CHUNK_CHARS)}…` : c.content,
           })),
         };
@@ -77,6 +111,11 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
         'The patient can edit your draft before sending. At most once per concern; if they cancel, do not offer again for the same concern unless they ask. ' +
         'If it fails, do not call it again: tell the patient it was not sent and to use the "I need assistance" button or message the Care Team. Not a substitute for 911 in an emergency.',
       inputSchema: z.object({
+        situation: z
+          .enum(CARETEAM_SITUATIONS)
+          .describe(
+            'Which fixed reply goes with this offer: "personal" (rule 2 referral), "urgent" (1b), "crisis" (1a about the user), "crisis_other" (1a about someone else). The app shows that reply above the offer if you wrote no text.',
+          ),
         message: z
           .string()
           .min(1)

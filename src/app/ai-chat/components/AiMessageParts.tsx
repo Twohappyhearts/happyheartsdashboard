@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
+import { FIXED_REPLIES, isCareteamSituation } from '@/lib/agent-fixed-replies';
+import { displaySource, splitSources } from '@/lib/agent-sources';
 
 // html: false → any HTML in model output is escaped, never injected.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -30,11 +32,21 @@ interface Props {
 }
 
 export default function AiMessageParts({ message, canRespond, streaming, onApproval, inlineApproval = true }: Props) {
+  const searchResults = useMemo(() => collectSearchResults(message), [message]);
+  let hasText = false;
   return (
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === 'text') {
-          return part.text.trim() ? <Markdown key={`t-${i}`} text={part.text} /> : null;
+          if (!part.text.trim()) return null;
+          hasText = true;
+          const { text, refs } = splitSources(part.text);
+          return (
+            <React.Fragment key={`t-${i}`}>
+              {text.trim() && <Markdown text={text} />}
+              {refs.length > 0 && <SourceChips refs={refs} results={searchResults} />}
+            </React.Fragment>
+          );
         }
         if (part.type === 'reasoning') {
           return part.text.trim() ? <Reasoning key={`r-${i}`} text={part.text} active={streaming && i === message.parts.length - 1} /> : null;
@@ -43,13 +55,74 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
           const name = getToolName(part);
           if (name === 'searchKnowledge') return <SearchCard key={part.toolCallId} part={part as ToolPart} />;
           if (name === 'notifyCareteam') {
+            // The model sometimes offers the care-team message without writing the fixed reply
+            // (referral / 911 / 988) first; show that reply from code so it is never missing.
+            const situation = (part.input as { situation?: unknown } | undefined)?.situation;
+            const fallback = !hasText && isCareteamSituation(situation) ? FIXED_REPLIES[situation] : null;
+            if (fallback) hasText = true;
             return (
-              <CareteamCard key={part.toolCallId} part={part as ToolPart} canRespond={canRespond} inline={inlineApproval} onApproval={onApproval} />
+              <React.Fragment key={part.toolCallId}>
+                {fallback && <Markdown text={fallback} />}
+                <CareteamCard
+                  part={part as ToolPart}
+                  canRespond={canRespond}
+                  lapsed={!canRespond && !streaming}
+                  inline={inlineApproval}
+                  onApproval={onApproval}
+                />
+              </React.Fragment>
             );
           }
           return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
         }
         return null;
+      })}
+    </div>
+  );
+}
+
+interface SearchResult {
+  ref?: number;
+  title: string;
+  source?: string | null;
+  url?: string | null;
+}
+
+/** ref → search result, over every searchKnowledge call in this reply. */
+function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
+  const byRef = new Map<number, SearchResult>();
+  for (const part of message.parts) {
+    if (!isToolUIPart(part) || getToolName(part) !== 'searchKnowledge' || part.state !== 'output-available') continue;
+    for (const r of (part.output as { results?: SearchResult[] } | undefined)?.results ?? []) {
+      if (typeof r.ref === 'number') byRef.set(r.ref, r);
+    }
+  }
+  return byRef;
+}
+
+/** One chip per document the answer cited: organization · title, linking to the original page. */
+function SourceChips({ refs, results }: { refs: number[]; results: Map<number, SearchResult> }) {
+  const docs = new Map<string, SearchResult>();
+  for (const ref of refs) {
+    const r = results.get(ref);
+    if (r && !docs.has(r.title)) docs.set(r.title, r);
+  }
+  if (!docs.size) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+      <span className="text-muted-foreground">Source:</span>
+      {Array.from(docs.values()).map((d) => {
+        const label = [displaySource(d.source), d.title].filter(Boolean).join(' · ');
+        const chip = 'inline-flex max-w-full items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-secondary-foreground';
+        return d.url ? (
+          <a key={d.title} href={d.url} target="_blank" rel="noopener noreferrer" className={`${chip} hover:bg-muted truncate`} title={label}>
+            {label}
+          </a>
+        ) : (
+          <span key={d.title} className={`${chip} truncate`} title={label}>
+            {label}
+          </span>
+        );
       })}
     </div>
   );
@@ -133,11 +206,14 @@ function SearchCard({ part }: { part: ToolPart }) {
 function CareteamCard({
   part,
   canRespond,
+  lapsed,
   inline,
   onApproval,
 }: {
   part: ToolPart;
   canRespond: boolean;
+  /** An older message: an unanswered offer here can no longer be answered. */
+  lapsed: boolean;
   inline: boolean;
   onApproval: Props['onApproval'];
 }) {
@@ -148,7 +224,23 @@ function CareteamCard({
       : undefined;
   const editing = part.state === 'approval-requested' && canRespond && inline;
   const [text, setText] = useState(draft);
+  // The card can mount while the draft is still streaming in; follow it until the user edits.
+  const edited = useRef(false);
+  useEffect(() => {
+    if (!edited.current) setText(draft);
+  }, [draft]);
   const shown = output?.sentMessage || draft;
+
+  // The user sent a new message instead of answering: this offer lapsed (a newer card, if any,
+  // is the live one). One line, so it does not read as a second card for the same concern.
+  if (part.state === 'approval-requested' && lapsed) {
+    return (
+      <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        <Icon name="BellAlertIcon" size={13} variant="outline" />
+        Care-team message not sent — the conversation moved on.
+      </p>
+    );
+  }
 
   let status: React.ReactNode = null;
   if (part.state === 'approval-requested' && canRespond && !inline) {
@@ -171,8 +263,6 @@ function CareteamCard({
         </button>
       </div>
     );
-  } else if (part.state === 'approval-requested') {
-    status = <p className="mt-2 text-muted-foreground">Not answered — the conversation moved on.</p>;
   } else if (part.state === 'approval-responded') {
     status = (
       <p className="mt-2 text-muted-foreground flex items-center gap-1.5">
@@ -207,7 +297,10 @@ function CareteamCard({
       {editing ? (
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            edited.current = true;
+            setText(e.target.value);
+          }}
           maxLength={1000}
           rows={3}
           className="mt-2 w-full resize-y px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"

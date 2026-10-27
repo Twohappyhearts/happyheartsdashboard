@@ -8,7 +8,7 @@ import { rerank, rerankModel } from './rerank';
  *
  *   query ─┬─ keyword search (Postgres full-text) → top keywordK ─┐
  *          └─ embed → vector search (pgvector)    → top vectorK  ─┴─ RRF merge → candidates
- *   candidates → rerank (qwen3.7-text-rerank) → top topK
+ *   candidates → rerank (qwen3.7-text-rerank, only when RERANK_MODEL is set) → top topK
  *
  * Degrades instead of failing: if embedding fails it is keyword-only; if rerank
  * fails the RRF order is used. `warnings` says what happened.
@@ -25,6 +25,8 @@ export interface RetrievalOptions {
   /** How many fused candidates go to the reranker. */
   candidates?: number;
   topK?: number;
+  /** At most this many chunks from one document, so other documents get a place in the top K. */
+  maxPerDocument?: number;
   rerank?: boolean;
 }
 
@@ -115,14 +117,15 @@ export async function retrieve(admin: SupabaseClient, opts: RetrievalOptions): P
     };
   });
 
-  // 3. Rerank the fused candidates, keep top K.
-  let results = fused.slice(0, topK);
+  // 3. Rerank the fused candidates, keep top K (capped per document).
+  const keep = (ordered: RetrievedChunk[]) => capPerDocument(ordered, opts.maxPerDocument).slice(0, topK);
+  let results = keep(fused);
   let reranked = false;
   const tRerank = Date.now();
-  if (opts.rerank !== false && fused.length > 0) {
+  if (opts.rerank !== false && rerankModel() && fused.length > 0) {
     try {
-      const hits = await rerank(opts.query, fused.map((c) => c.searchText), topK);
-      results = hits.map((h) => ({ ...fused[h.index], rerankScore: h.score }));
+      const hits = await rerank(opts.query, fused.map((c) => c.searchText), opts.maxPerDocument ? fused.length : topK);
+      results = keep(hits.map((h) => ({ ...fused[h.index], rerankScore: h.score })));
       reranked = true;
     } catch (e) {
       warnings.push(`Rerank skipped, showing RRF order — ${e instanceof Error ? e.message : 'rerank failed'}`);
@@ -138,4 +141,14 @@ export async function retrieve(admin: SupabaseClient, opts: RetrievalOptions): P
     warnings,
     timings: { embedMs, searchMs, rerankMs, totalMs: Date.now() - t0 },
   };
+}
+
+function capPerDocument(ordered: RetrievedChunk[], max: number | undefined): RetrievedChunk[] {
+  if (!max) return ordered;
+  const seen = new Map<string, number>();
+  return ordered.filter((c) => {
+    const n = (seen.get(c.documentId) ?? 0) + 1;
+    seen.set(c.documentId, n);
+    return n <= max;
+  });
 }
