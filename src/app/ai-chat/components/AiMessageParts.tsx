@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
@@ -148,6 +148,11 @@ function CareteamCard({
       : undefined;
   const editing = part.state === 'approval-requested' && canRespond && inline;
   const [text, setText] = useState(draft);
+  // The card can mount while the draft is still streaming in; follow it until the user edits.
+  const edited = useRef(false);
+  useEffect(() => {
+    if (!edited.current) setText(draft);
+  }, [draft]);
   const shown = output?.sentMessage || draft;
 
   let status: React.ReactNode = null;
@@ -207,7 +212,10 @@ function CareteamCard({
       {editing ? (
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            edited.current = true;
+            setText(e.target.value);
+          }}
           maxLength={1000}
           rows={3}
           className="mt-2 w-full resize-y px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
