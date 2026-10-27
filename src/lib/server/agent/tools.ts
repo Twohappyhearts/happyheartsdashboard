@@ -9,6 +9,8 @@ import type { AgentCaller } from './auth';
 export const SEARCH_TOOL = 'searchKnowledge';
 
 const MAX_CHUNK_CHARS = 2000;
+/** Two chunks per document at most, so a second source that disagrees can make the top results. */
+const MAX_CHUNKS_PER_DOCUMENT = 2;
 
 export interface SearchResultItem {
   /** Number the model cites in its "[sources: …]" line; unique within one reply. */
@@ -72,7 +74,7 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
         topK: z.number().int().min(1).max(8).optional().describe('How many passages to return (default 5).'),
       }),
       execute: async ({ query, topK }): Promise<SearchToolOutput> => {
-        const r = await retrieve(caller.admin, { query, topK: topK ?? 5 });
+        const r = await retrieve(caller.admin, { query, topK: topK ?? 5, maxPerDocument: MAX_CHUNKS_PER_DOCUMENT });
         const sources = await documentSources(caller, r.results.map((c) => c.documentId));
         return {
           results: r.results.map((c) => ({

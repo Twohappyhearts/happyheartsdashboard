@@ -63,7 +63,13 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
             return (
               <React.Fragment key={part.toolCallId}>
                 {fallback && <Markdown text={fallback} />}
-                <CareteamCard part={part as ToolPart} canRespond={canRespond} inline={inlineApproval} onApproval={onApproval} />
+                <CareteamCard
+                  part={part as ToolPart}
+                  canRespond={canRespond}
+                  lapsed={!canRespond && !streaming}
+                  inline={inlineApproval}
+                  onApproval={onApproval}
+                />
               </React.Fragment>
             );
           }
@@ -200,11 +206,14 @@ function SearchCard({ part }: { part: ToolPart }) {
 function CareteamCard({
   part,
   canRespond,
+  lapsed,
   inline,
   onApproval,
 }: {
   part: ToolPart;
   canRespond: boolean;
+  /** An older message: an unanswered offer here can no longer be answered. */
+  lapsed: boolean;
   inline: boolean;
   onApproval: Props['onApproval'];
 }) {
@@ -221,6 +230,17 @@ function CareteamCard({
     if (!edited.current) setText(draft);
   }, [draft]);
   const shown = output?.sentMessage || draft;
+
+  // The user sent a new message instead of answering: this offer lapsed (a newer card, if any,
+  // is the live one). One line, so it does not read as a second card for the same concern.
+  if (part.state === 'approval-requested' && lapsed) {
+    return (
+      <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        <Icon name="BellAlertIcon" size={13} variant="outline" />
+        Care-team message not sent — the conversation moved on.
+      </p>
+    );
+  }
 
   let status: React.ReactNode = null;
   if (part.state === 'approval-requested' && canRespond && !inline) {
@@ -243,8 +263,6 @@ function CareteamCard({
         </button>
       </div>
     );
-  } else if (part.state === 'approval-requested') {
-    status = <p className="mt-2 text-muted-foreground">Not answered — the conversation moved on.</p>;
   } else if (part.state === 'approval-responded') {
     status = (
       <p className="mt-2 text-muted-foreground flex items-center gap-1.5">
