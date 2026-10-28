@@ -5,6 +5,13 @@
  * Shared by server (prompt) and client (chat UI), so no server-only imports here.
  */
 
+/**
+ * The research team's disclaimer (Laura Narvaez, 2026-10-21), shown word for word as a fixed
+ * notice under the chat box on the dashboard and in the mobile app.
+ */
+export const AI_DISCLAIMER =
+  'Notice: AI-generated responses may occasionally be inaccurate or out of scope. Verify details and consult your healthcare provider. See Terms of Use.';
+
 /** Why the assistant is offering a care-team message; picks the fixed reply. */
 export const CARETEAM_SITUATIONS = ['personal', 'urgent', 'crisis', 'crisis_other'] as const;
 export type CareteamSituation = (typeof CARETEAM_SITUATIONS)[number];

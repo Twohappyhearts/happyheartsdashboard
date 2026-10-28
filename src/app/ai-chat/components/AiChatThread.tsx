@@ -2,6 +2,7 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
+import { AI_DISCLAIMER } from '@/lib/agent-fixed-replies';
 import { messageText as textOf, useAgentChat } from '@/lib/use-agent-chat';
 import Icon from '@/components/ui/AppIcon';
 import EmptyState from '@/components/ui/EmptyState';
@@ -185,13 +186,14 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
           )}
         </div>
         <div className="flex justify-between mt-1.5 px-1 text-[11px] text-muted-foreground max-w-3xl mx-auto">
-          <span>Enter to send · Shift+Enter for a new line · not medical advice</span>
+          <span>Enter to send · Shift+Enter for a new line</span>
           {draft.length > MAX_LENGTH - 400 && (
             <span className={tooLong ? 'text-danger font-600' : ''}>
               {draft.trim().length}/{MAX_LENGTH}
             </span>
           )}
         </div>
+        <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground max-w-3xl mx-auto">{AI_DISCLAIMER}</p>
       </div>
     </>
   );
