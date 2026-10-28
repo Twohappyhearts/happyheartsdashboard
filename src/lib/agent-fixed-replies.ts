@@ -19,8 +19,8 @@ export type CareteamSituation = (typeof CARETEAM_SITUATIONS)[number];
 export const FIXED_REPLIES: Record<CareteamSituation, string> = {
   // Rule 2: personal or clinical question.
   personal: 'Please contact your healthcare provider.',
-  // Rule 1b: symptoms that may need urgent care.
-  urgent: 'This may need urgent attention. If you think this is an emergency, call 911 now. Please contact your healthcare provider right away.',
+  // Rule 1b: symptoms that may need emergency care (worded so it fits the user or someone else).
+  urgent: 'These symptoms can be serious. Call 911 now or go to the nearest emergency room. Then let the healthcare provider know.',
   // Rule 1a: thoughts of harming oneself or others.
   crisis:
     "I'm sorry you are going through this. You don't have to face it alone. If you might act on these thoughts or you are in danger, call 911 now. You can call or text 988 any time to talk with someone. You can also call the National Maternal Mental Health Hotline at 1-833-852-6262.",

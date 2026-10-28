@@ -70,7 +70,8 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
     [SEARCH_TOOL]: tool({
       description:
         "Search the HappyHearts knowledge base (care-team approved education material). " +
-        "Use it before answering a general health-education question. Do not use it for questions about the user's own health, symptoms, numbers or medicines.",
+        "Use it before answering a general health-education question, including the general part of a question about the user's own situation. " +
+        "Never use the results to judge the user's own symptoms, numbers or medicines.",
       inputSchema: z.object({
         query: z.string().min(1).max(500).describe('What to look for, phrased as a search query.'),
         topK: z.number().int().min(1).max(8).optional().describe(`How many passages to return (default ${DEFAULT_TOP_K}).`),

@@ -183,11 +183,14 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     generateId: randomUUID,
     execute: async ({ writer }) => {
       writer.merge(result.toUIMessageStream({ sendReasoning: true, sendFinish: false, onError: streamError }));
-      // Every rule 1a / 1b / 2 reply comes with an offer to message the care team (the user still
+      // Every emergency reply (rule 1) comes with an offer to message the care team (the user still
       // has to press Send). If the model wrote the fixed reply but made no offer, ask for the offer
       // in one more, forced call; its tool call joins the same reply message.
+      // Rule 2 answers now carry general information and the referral sentence can appear in
+      // ordinary answers too, so a missing offer is only forced for emergencies.
       // Not when the user already cancelled an offer for the same kind of situation.
-      const missing = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
+      const found = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
+      const missing = found === 'personal' ? null : found;
       const situation = missing && !declinedCareteamSituations(original).has(missing) ? missing : null;
       if (missing && !situation) console.info(`[agent] ${conversationId.slice(0, 8)} no care-team offer: the user cancelled one for "${missing}" earlier`);
       if (situation) {

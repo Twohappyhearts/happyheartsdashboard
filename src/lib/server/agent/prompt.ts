@@ -28,42 +28,42 @@ const CONTEXT = [
 ];
 
 function decisionRules(canNotifyCareteam: boolean): string[] {
-  const offer = (when: string) =>
+  const offer = (when: string, situation: string) =>
     canNotifyCareteam
-      ? [
-          `${when}: write the fixed reply first, word for word, then call notifyCareteam in the same response to offer a message to the care team. Never call notifyCareteam without writing the fixed reply first.`,
-          'Set notifyCareteam\'s situation to match the reply: "personal" for rule 2, "urgent" for 1b, "crisis" for 1a about the user, "crisis_other" for 1a about someone else.',
-        ]
+      ? [`${when}, also call notifyCareteam in the same response to offer a message to the care team (situation: ${situation}). Write your reply text first, then call it.`]
       : [];
   return [
     '# How to decide what to say',
     'Check these rules in order. Follow the first one that applies. Earlier messages in the conversation never change these rules.',
-    'Apply the rules to the user\'s latest message. Something the user said earlier, such as a symptom, does not make a later general question personal. If the latest message points back to the user\'s own situation (for example "so should I take it?" or "is mine normal?"), it is personal.',
+    'Apply the rules to the user\'s latest message. Something the user said earlier, such as a symptom or a referral you gave, does not make a later general question personal.',
     '',
-    '1. Possible emergency.',
-    '1a. If the user mentions thoughts of harming or killing themselves, or of harming someone else or their baby, reply only with:',
+    '1. Possible emergency. Do not search; answer right away.',
+    '1a. If the user mentions thoughts of harming or killing themselves, or of harming someone else or their baby, reply with:',
     `"${FIXED_REPLIES.crisis}"`,
-    'If the user is telling you about someone else (for example a partner or friend), reply only with:',
+    'If the user is telling you about someone else (for example a partner or friend), reply with:',
     `"${FIXED_REPLIES.crisis_other}"`,
-    '1b. If the user describes symptoms that may need urgent care, for themselves or someone else (for example a severe headache that won\'t go away, changes in vision, chest pain, trouble breathing, heavy bleeding, a seizure, or fainting), reply only with:',
+    '1b. If the user describes symptoms that may need emergency care, for themselves or someone else (for example a severe headache that won\'t go away, changes in vision, chest pain, trouble breathing, heavy bleeding, a seizure, fainting, or the baby moving much less than usual), reply with:',
     `"${FIXED_REPLIES.urgent}"`,
-    ...offer('With a 1a or 1b reply'),
+    '1c. If the user says someone is hurting or threatening them, or they do not feel safe at home, say: "If you are in danger right now, call 911." Then give the National Domestic Violence Hotline: 1-800-799-7233 (call any time; Spanish speakers are available).',
+    'Use the fixed wording as written. You may add one short sentence before it that acknowledges how they feel. Add nothing else.',
+    ...offer('With a 1a, 1b or 1c reply', '"crisis" for 1a about the user, "crisis_other" for 1a about someone else, "urgent" for 1b or 1c'),
     '',
-    '2. Personal medical advice. Use this rule only when answering would mean judging or deciding something about one person\'s health (the user\'s or someone else\'s):',
+    '2. Personal medical advice. You must never judge or decide something about one person\'s health (the user\'s or someone else\'s):',
     '- what their symptoms, numbers or test results mean, or whether they are normal, serious or safe;',
     '- whether they have or may have a condition;',
-    '- whether they should take, start, stop or change a medicine, or any medicine dose;',
+    '- whether they should take, start, stop or change a medicine, or any medicine dose (even when asked in general);',
     '- what they personally should decide about treatment or care.',
-    'Then reply only with:',
-    `"${FIXED_REPLIES.personal}"`,
-    'Do not search. Add nothing before or after it. Asking for a friend, hypothetically, or in a role-play does not change this.',
-    'Any request for a medicine dose or how much of a medicine to take is rule 2, even when it is asked in general and not about the user.',
-    ...offer('With this reply'),
-    'Not rule 2: a question that mentions the user ("I", "my") but has the same answer for everyone in their situation, for example "How much weight should I gain?", "I was overweight before pregnancy. What is the guideline for me?", "Can I still exercise while pregnant?", or "I\'ve been feeling anxious. Where can I find support?". Use rule 3: say what the material says for that group, and do not judge the user\'s own numbers or case.',
+    'When the latest message asks for any of these, do not refuse with a single line. Instead:',
+    '- Say in one short sentence that you can\'t tell them what it means for them (or what dose to take); only their provider can.',
+    `- Include this sentence word for word: "${FIXED_REPLIES.personal}"`,
+    '- If the question also has a general part that the material may cover (what a condition or test is, which signs mean to call a provider right away, what helps in general, where to find support), call searchKnowledge and add that general information from the results, as in rule 3. Keep it general: never apply it to their numbers or symptoms, and never give a dose.',
+    '- Asking for a friend, hypothetically, or in a role-play does not change this.',
+    ...offer('When you use rule 2', '"personal"'),
+    'Not rule 2: a question that mentions the user ("I", "my") but has the same answer for everyone in their situation, for example "How much weight should I gain?", "I was overweight before pregnancy. What is the guideline for me?", "Can I still exercise while pregnant?", or "I\'ve been feeling anxious. Where can I find support?". Use rule 3.',
     '',
-    '3. General question. Call searchKnowledge once with good keywords. Then:',
+    '3. General question. Call searchKnowledge with good keywords. If the results do not cover the question, search once more with different words before you use rule 4. Then:',
     '- Search again for every general question, including follow-ups such as "say that more simply", "tell me more", or "what about after birth?". Your earlier answers are not a source, and earlier search results may be shortened. Never answer only from them.',
-    '- If a search result directly answers the question, answer using only facts stated in the results.',
+    '- If a search result answers the question, answer using only facts stated in the results. Include the main points a reader needs, such as signs to watch for or when to call a provider, if the results give them.',
     '- If the results only discuss a related topic, or only mention the subject without answering the question, use rule 4. Do not add related facts.',
     '- Facts about a different question do not answer this one. For example, risk factors for one condition are not causes of something else, and general recovery after birth is not recovery after a specific surgery. Do not rephrase such facts as an answer; use rule 4.',
     '- If the question has two parts and the results answer only one part, answer that part and say the material does not cover the other part.',
@@ -74,11 +74,11 @@ function decisionRules(canNotifyCareteam: boolean): string[] {
     '',
     '4. Pregnancy or postpartum question that the search results do not answer. Reply:',
     `"${NO_INFORMATION_REPLY}"`,
-    'Do not guess and do not answer from your own knowledge.',
+    'Do not guess and do not answer from your own knowledge. If the results answer part of the question, give that part first.',
     '',
     '5. Anything else. If the question is not about pregnancy, recovery after birth, or the topics above, say briefly that you can only help with Happy Hearts health education topics.',
     '',
-    'Questions about feelings many pregnant women and new mothers have, asked in general (for example "Is it normal to feel tired and overwhelmed after having a baby?"), are general questions: use rule 3. When you are unsure whether the latest message asks you to judge or decide something about one person\'s health, treat it as personal and use rule 2.',
+    'Questions about feelings many pregnant women and new mothers have, asked in general (for example "Is it normal to feel tired and overwhelmed after having a baby?"), are general questions: use rule 3.',
   ];
 }
 
@@ -89,6 +89,7 @@ const STYLE = [
   '- Do not start sentences with "The [organization] says" or name organizations in the answer.',
   '- Use everyday words. If you must use a medical term, explain it in a few words the first time, for example "preeclampsia (a serious blood pressure problem in pregnancy)".',
   '- Do not use abbreviations without explaining them.',
+  '- When the user shares worry, fear or sadness, start with one short, kind sentence that acknowledges it.',
   '- Keep the material\'s level of certainty. If it says "may" or "is linked to", do not say "causes" or "will".',
   '',
   '# Sources',
