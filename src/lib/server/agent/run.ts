@@ -5,7 +5,9 @@ import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  getToolName,
   isStepCount,
+  isToolUIPart,
   streamText,
   type UIMessage,
 } from 'ai';
@@ -52,6 +54,24 @@ export function fixedReplySituation(text: string): CareteamSituation | null {
   const order: CareteamSituation[] = ['crisis_other', 'crisis', 'urgent', 'personal'];
   for (const situation of order) if (t.includes(squash(FIXED_REPLIES[situation]))) return situation;
   return t.includes(squash(PERSONAL_REPLY_ES)) ? 'personal' : null;
+}
+
+/**
+ * Situations whose care-team offer the user turned down (pressed Cancel) earlier in the
+ * conversation. The prompt tells the model not to offer again for the same concern, so the
+ * forced follow-up must not offer it either. An offer that lapsed unanswered does not count.
+ */
+export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
+  const declined = new Set<string>();
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (!isToolUIPart(p) || getToolName(p) !== 'notifyCareteam') continue;
+      const cancelled = p.state === 'output-denied' || (p.state === 'approval-responded' && !p.approval.approved);
+      const situation = (p.input as { situation?: unknown } | undefined)?.situation;
+      if (cancelled && typeof situation === 'string') declined.add(situation);
+    }
+  }
+  return declined;
 }
 
 /**
@@ -163,10 +183,16 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     generateId: randomUUID,
     execute: async ({ writer }) => {
       writer.merge(result.toUIMessageStream({ sendReasoning: true, sendFinish: false, onError: streamError }));
-      // Every rule 1a / 1b / 2 reply comes with an offer to message the care team (the user still
+      // Every emergency reply (rule 1) comes with an offer to message the care team (the user still
       // has to press Send). If the model wrote the fixed reply but made no offer, ask for the offer
       // in one more, forced call; its tool call joins the same reply message.
-      const situation = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
+      // Rule 2 answers now carry general information and the referral sentence can appear in
+      // ordinary answers too, so a missing offer is only forced for emergencies.
+      // Not when the user already cancelled an offer for the same kind of situation.
+      const found = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
+      const missing = found === 'personal' ? null : found;
+      const situation = missing && !declinedCareteamSituations(original).has(missing) ? missing : null;
+      if (missing && !situation) console.info(`[agent] ${conversationId.slice(0, 8)} no care-team offer: the user cancelled one for "${missing}" earlier`);
       if (situation) {
         console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer missing after a "${situation}" reply; asking for it`);
         const followUp = streamText({
