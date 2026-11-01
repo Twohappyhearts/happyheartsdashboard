@@ -12,7 +12,11 @@ import AnswerRatingBar from './AnswerRatingBar';
 
 const MAX_LENGTH = 4000;
 
-const SUGGESTIONS = ['What should I eat after my procedure?', 'I feel a bit dizzy today', 'Can you contact my care team?'];
+const SUGGESTIONS = [
+  'What are the warning signs of preeclampsia?',
+  'How can I sleep better during pregnancy?',
+  'Where can I find support for anxiety?',
+];
 
 interface Props {
   conversationId: string | null;
@@ -164,7 +168,7 @@ export default function MobileChatThread({
               <Icon name="SparklesIcon" size={24} variant="outline" />
             </div>
             <p className="text-[16px] font-600">How can I help today?</p>
-            <p className="text-[13px] text-muted-foreground mt-1 mb-5">Ask about your recovery, or tell me how you are feeling.</p>
+            <p className="text-[13px] text-muted-foreground mt-1 mb-5">Ask about pregnancy or recovery after birth.</p>
             <div className="flex flex-col gap-2 w-full max-w-xs">
               {SUGGESTIONS.map((s) => (
                 <button
