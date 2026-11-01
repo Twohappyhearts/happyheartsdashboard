@@ -62,6 +62,26 @@ export async function deleteAgentConversation(conversationId: string, auth?: Age
   await request<{ ok: boolean }>(`/api/agent/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' }, auth);
 }
 
+export interface AnswerRating {
+  messageId: string;
+  usability: number;
+  safety: number;
+  comment: string;
+}
+
+export async function loadAnswerRatings(conversationId: string, auth?: AgentAuth): Promise<AnswerRating[]> {
+  const url = `/api/agent/conversations/${encodeURIComponent(conversationId)}/ratings`;
+  return (await request<{ ratings: AnswerRating[] }>(url, {}, auth)).ratings;
+}
+
+export async function saveAnswerRating(rating: AnswerRating, auth?: AgentAuth): Promise<void> {
+  await request<{ ok: boolean }>(
+    '/api/agent/ratings',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rating) },
+    auth,
+  );
+}
+
 export const conversationTitle = (c: Pick<AgentConversation, 'title'>) => c.title?.trim() || 'New conversation';
 
 export const historyToUIMessages = (messages: AgentHistoryMessage[]): UIMessage[] =>

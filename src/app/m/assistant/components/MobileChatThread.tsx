@@ -4,9 +4,11 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
 import { AI_DISCLAIMER } from '@/lib/agent-fixed-replies';
+import { loadAnswerRatings, type AnswerRating } from '@/lib/agent-chat';
 import { bearerAuth, postToApp, requestFreshToken } from '@/lib/agent-bridge';
 import { messageText, pendingApproval, useAgentChat } from '@/lib/use-agent-chat';
 import AiMessageParts from '@/app/ai-chat/components/AiMessageParts';
+import AnswerRatingBar from './AnswerRatingBar';
 
 const MAX_LENGTH = 4000;
 
@@ -51,6 +53,21 @@ export default function MobileChatThread({
   useEffect(() => {
     if (conversationId && !busy) onMessagesChange?.(conversationId, messages);
   }, [conversationId, messages, busy, onMessagesChange]);
+
+  // Trial ratings of this conversation's answers (a rating made just now wins over the loaded list).
+  const [ratings, setRatings] = useState<Record<string, AnswerRating>>({});
+  useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+    loadAnswerRatings(conversationId, bearerAuth)
+      .then((list) => {
+        if (!cancelled) setRatings((now) => ({ ...Object.fromEntries(list.map((r) => [r.messageId, r])), ...now }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
 
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -182,6 +199,13 @@ export default function MobileChatThread({
                       inlineApproval={false}
                       onApproval={answer}
                     />
+                    {!(busy && i === messages.length - 1) && !(pending && i === messages.length - 1) && (
+                      <AnswerRatingBar
+                        messageId={m.id}
+                        rating={ratings[m.id] ?? null}
+                        onSaved={(r) => setRatings((now) => ({ ...now, [r.messageId]: r }))}
+                      />
+                    )}
                   </div>
                 </div>
               ),
