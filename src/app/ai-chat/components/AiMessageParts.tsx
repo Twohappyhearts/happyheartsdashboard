@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
-import { FIXED_REPLIES, isCareteamSituation } from '@/lib/agent-fixed-replies';
+import { fixedReply, isAgentLanguage, isCareteamSituation } from '@/lib/agent-fixed-replies';
 import { displaySource, splitSources } from '@/lib/agent-sources';
 
 // html: false → any HTML in model output is escaped, never injected.
@@ -57,8 +57,9 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
           if (name === 'notifyCareteam') {
             // The model sometimes offers the care-team message without writing the fixed reply
             // (referral / 911 / 988) first; show that reply from code so it is never missing.
-            const situation = (part.input as { situation?: unknown } | undefined)?.situation;
-            const fallback = !hasText && isCareteamSituation(situation) ? FIXED_REPLIES[situation] : null;
+            const { situation, language } = (part.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
+            const fallback =
+              !hasText && isCareteamSituation(situation) ? fixedReply(situation, isAgentLanguage(language) ? language : 'en') : null;
             if (fallback) hasText = true;
             return (
               <React.Fragment key={part.toolCallId}>
