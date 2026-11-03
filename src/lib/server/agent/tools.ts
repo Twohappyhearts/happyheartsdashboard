@@ -1,7 +1,7 @@
 import 'server-only';
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { CARETEAM_SITUATIONS } from '@/lib/agent-fixed-replies';
+import { AGENT_LANGUAGES, CARETEAM_SITUATIONS } from '@/lib/agent-fixed-replies';
 import { retrieve } from '@/lib/server/retrieval';
 import type { AgentCaller } from './auth';
 
@@ -117,6 +117,10 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
           .describe(
             'Which fixed reply goes with this offer: "personal" (rule 2 referral), "urgent" (1b), "crisis" (1a about the user), "crisis_other" (1a about someone else). The app shows that reply above the offer if you wrote no text.',
           ),
+        language: z
+          .enum(AGENT_LANGUAGES)
+          .optional()
+          .describe('Language of your reply: "es" for Spanish, otherwise "en". The app shows the fixed reply in this language if you wrote no text.'),
         message: z
           .string()
           .min(1)
