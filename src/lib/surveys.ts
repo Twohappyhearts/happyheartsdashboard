@@ -15,6 +15,14 @@ export const CODE_RE = /^[A-Z][A-Z0-9_]{0,49}$/;
 export const SURVEY_CATEGORIES = ['Emotional Assessment', 'Basic Needs Assessment'] as const;
 export const SURVEY_FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'As needed', 'One time'] as const;
 
+/** Where the app lists a link (survey_links.placement). Both open the same way (REDCap web view). */
+export type SurveyPlacement = 'resource' | 'survey';
+export const SURVEY_PLACEMENTS: { value: SurveyPlacement; label: string; hint: string }[] = [
+  { value: 'resource', label: 'Resources', hint: 'Resources tab (bottom navigation)' },
+  { value: 'survey', label: 'Survey', hint: 'Survey, in the side menu' },
+];
+export const placementLabel = (p: SurveyPlacement) => SURVEY_PLACEMENTS.find((x) => x.value === p)?.label ?? 'Resources';
+
 export interface SurveyLink {
   id: string;
   title: string;
@@ -24,6 +32,7 @@ export interface SurveyLink {
   category: string;
   frequency: string;
   duration: string;
+  placement: SurveyPlacement;
   sortOrder: number;
   active: boolean;
   createdAt: string;
@@ -50,7 +59,7 @@ function fail(e: { code?: string; message?: string } | null, fallback: string): 
   return new SurveyError(e.message || fallback, e.code);
 }
 
-const COLUMNS = 'id, title, code, url, description, category, frequency, duration, sort_order, is_active, created_at';
+const COLUMNS = 'id, title, code, url, description, category, frequency, duration, placement, sort_order, is_active, created_at';
 
 function toSurvey(r: Row): SurveyLink {
   return {
@@ -62,6 +71,7 @@ function toSurvey(r: Row): SurveyLink {
     category: String(r.category ?? ''),
     frequency: String(r.frequency ?? ''),
     duration: String(r.duration ?? ''),
+    placement: r.placement === 'survey' ? 'survey' : 'resource',
     sortOrder: Number(r.sort_order ?? 0) || 0,
     active: Boolean(r.is_active),
     createdAt: String(r.created_at ?? ''),
@@ -77,6 +87,7 @@ function toRow(input: SurveyInput) {
     category: input.category.trim() || null,
     frequency: input.frequency.trim() || null,
     duration: input.duration.trim() || null,
+    placement: input.placement === 'survey' ? 'survey' : 'resource',
     sort_order: Math.max(0, Math.min(10000, Math.round(input.sortOrder || 0))),
     is_active: input.active,
   };
