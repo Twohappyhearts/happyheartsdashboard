@@ -15,6 +15,7 @@ import {
   REDCAP_PREFIX,
   SURVEY_CATEGORIES,
   SURVEY_FREQUENCIES,
+  SURVEY_PLACEMENTS,
   SurveyError,
   completionCounts,
   completionRedirect,
@@ -22,15 +23,18 @@ import {
   deleteSurvey,
   listSurveys,
   setSurveyActive,
+  placementLabel,
   updateSurvey,
   type SurveyInput,
   type SurveyLink,
+  type SurveyPlacement,
 } from '@/lib/surveys';
 import SurveyParticipantLinks from './SurveyParticipantLinks';
 
 export type Survey = SurveyLink;
 
 type Tab = 'links' | 'participants';
+type PlacementFilter = 'all' | SurveyPlacement;
 
 const inputClass =
   'w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -52,6 +56,7 @@ export default function SurveyManagementClient() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [placementFilter, setPlacementFilter] = useState<PlacementFilter>('all');
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +87,7 @@ export default function SurveyManagementClient() {
   const redcapUrlVal = watch('url', '') ?? '';
   const isValidRedcapUrl = redcapUrlVal.startsWith(REDCAP_PREFIX) && redcapUrlVal.length > REDCAP_PREFIX.length;
   const codeVal = (watch('code', '') ?? '').toUpperCase();
+  const placementVal = watch('placement');
 
   const handleOpenNew = () => {
     setEditingSurvey(null);
@@ -93,6 +99,7 @@ export default function SurveyManagementClient() {
       category: '',
       frequency: '',
       duration: '',
+      placement: placementFilter === 'survey' ? 'survey' : 'resource',
       sortOrder: surveys.length + 1,
       active: true,
     });
@@ -109,6 +116,7 @@ export default function SurveyManagementClient() {
       category: survey.category,
       frequency: survey.frequency,
       duration: survey.duration,
+      placement: survey.placement,
       sortOrder: survey.sortOrder,
       active: survey.active,
     });
@@ -124,7 +132,11 @@ export default function SurveyManagementClient() {
         toast.success('Survey updated — app will use the new link immediately');
       } else {
         await createSurvey(supabase, input);
-        toast.success(input.active ? 'Survey added — now visible to active patients' : 'Survey added (hidden from the app)');
+        toast.success(
+          input.active
+            ? `Added to ${placementLabel(input.placement)} — now visible to active patients`
+            : 'Survey added (hidden from the app)',
+        );
       }
       setModalOpen(false);
       await load();
@@ -162,6 +174,7 @@ export default function SurveyManagementClient() {
   };
 
   const activeVal = watch('active');
+  const visibleSurveys = placementFilter === 'all' ? surveys : surveys.filter((s) => s.placement === placementFilter);
 
   const copy = (text: string, msg: string) => {
     navigator.clipboard.writeText(text);
@@ -175,7 +188,7 @@ export default function SurveyManagementClient() {
         <div>
           <h1 className="text-[22px] font-700 text-foreground">Survey Management</h1>
           <p className="text-[13px] text-muted-foreground mt-0.5">
-            Manage REDCap survey links and view per-participant personalized URLs.
+            Manage REDCap links shown in the app’s Resources tab and Survey menu, and view per-participant personalized URLs.
           </p>
         </div>
         {activeTab === 'links' && (
@@ -208,6 +221,31 @@ export default function SurveyManagementClient() {
         ))}
       </div>
 
+      {activeTab === 'links' && !loading && !loadError && surveys.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[12px] text-muted-foreground">Shown in app:</span>
+          {([
+            { key: 'all', label: 'All' },
+            ...SURVEY_PLACEMENTS.map((p) => ({ key: p.value, label: p.label })),
+          ] as { key: PlacementFilter; label: string }[]).map((f) => {
+            const count = f.key === 'all' ? surveys.length : surveys.filter((s) => s.placement === f.key).length;
+            return (
+              <button
+                key={`pf-${f.key}`}
+                onClick={() => setPlacementFilter(f.key)}
+                className={`px-3 py-1 rounded-full text-[12px] font-600 border transition-colors duration-150 ${
+                  placementFilter === f.key
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {f.label} <span className="opacity-70">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {activeTab === 'links' ? (
         <div className="space-y-3">
           {loading ? (
@@ -225,8 +263,17 @@ export default function SurveyManagementClient() {
                 action={{ label: 'Add Survey Link', onClick: handleOpenNew }}
               />
             </div>
+          ) : visibleSurveys.length === 0 ? (
+            <div className="bg-card rounded-xl border border-border shadow-card">
+              <EmptyState
+                icon="ClipboardDocumentListIcon"
+                title={`Nothing in ${placementLabel(placementFilter as SurveyPlacement)} yet`}
+                description="Add a link, or edit an existing one and change “Show in app”."
+                action={{ label: 'Add Survey Link', onClick: handleOpenNew }}
+              />
+            </div>
           ) : (
-            surveys.map((survey) => (
+            visibleSurveys.map((survey) => (
               <div
                 key={survey.id}
                 className="bg-card rounded-xl border border-border shadow-card p-5 hover:shadow-card-hover transition-shadow duration-200"
@@ -240,6 +287,15 @@ export default function SurveyManagementClient() {
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <h3 className="text-[14px] font-600 text-foreground">{survey.title}</h3>
                         <Badge variant={survey.active ? 'active' : 'inactive'} label={survey.active ? 'Active' : 'Inactive'} size="sm" />
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-600 px-1.5 py-0.5 rounded ${
+                            survey.placement === 'survey' ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'
+                          }`}
+                          title={SURVEY_PLACEMENTS.find((p) => p.value === survey.placement)?.hint}
+                        >
+                          <Icon name={survey.placement === 'survey' ? 'ClipboardDocumentListIcon' : 'BookOpenIcon'} size={11} variant="outline" />
+                          {placementLabel(survey.placement)}
+                        </span>
                         <span className="text-[10px] text-foreground font-mono bg-muted px-1.5 py-0.5 rounded">{survey.code}</span>
                         <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
                           Order {survey.sortOrder}
@@ -371,6 +427,28 @@ export default function SurveyManagementClient() {
               />
               {errors.code && <p className="text-[11px] text-danger mt-1">{errors.code.message}</p>}
               {editingSurvey && <p className="text-[10px] text-muted-foreground mt-1">Codes can’t change (REDCap redirect uses it).</p>}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-500 text-foreground mb-1">
+              Show in app <span className="text-danger">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {SURVEY_PLACEMENTS.map((p) => (
+                <label
+                  key={`pl-${p.value}`}
+                  className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors duration-150 ${
+                    placementVal === p.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                  }`}
+                >
+                  <input type="radio" value={p.value} {...register('placement', { required: true })} className="mt-0.5 accent-[var(--primary)]" />
+                  <span>
+                    <span className="block text-[13px] font-600 text-foreground">{p.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{p.hint}</span>
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
 
