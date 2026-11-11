@@ -5,7 +5,6 @@ import type { UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
 import {
   AgentChatError,
-  conversationTitle,
   acceptAgentConsent,
   deleteAgentConversation,
   getAgentConsent,
@@ -15,10 +14,12 @@ import {
   type AgentConversation,
 } from '@/lib/agent-chat';
 import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
+import { PATIENT_TEXT, type PatientText } from '@/lib/i18n/patient';
+import { PatientTextProvider } from '@/lib/i18n/patient-context';
+import { dirOf, matchLanguage, pickLanguage, type Language } from '@/lib/languages';
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
 import AiNoticeDialog from './AiNoticeDialog';
-import { pickLanguage, type Language } from '@/lib/languages';
 
 /** Colors of the Flutter app's AppTheme, mapped onto the dashboard's CSS variables. */
 const APP_THEME = {
@@ -42,30 +43,48 @@ const APP_THEME = {
 
 type Thread = { key: string; conversationId: string | null; messages: UIMessage[]; loading?: boolean };
 type Phase = 'connecting' | 'ready' | 'no-app' | 'error';
+/** Kept as a key, so the message follows a language change. */
+type ListProblem = 'listError' | 'openError' | 'deleteError' | 'signInAgain';
 
 const newThread = (): Thread => ({ key: `new-${Date.now()}`, conversationId: null, messages: [] });
 
 /** How many conversations at the top of the list are loaded ahead, so opening them is instant. */
 const PREFETCH = 5;
 
-export default function MobileAssistant() {
+const problemOf = (e: unknown, fallback: ListProblem): ListProblem => (e instanceof AgentChatError && e.status === 401 ? 'signInAgain' : fallback);
+
+interface Props {
+  /** ?lang= from the app (e.g. "es", "zh-Hant"); otherwise the phone's languages, else English. */
+  langParam?: string | null;
+}
+
+export default function MobileAssistant({ langParam }: Props) {
+  const requested = matchLanguage(langParam);
+  const [lang, setLang] = useState<Language>(requested ?? 'en');
+  const t: PatientText = PATIENT_TEXT[lang];
   const [phase, setPhase] = useState<Phase>('connecting');
   const [view, setView] = useState<'chat' | 'list'>('chat');
   const [conversations, setConversations] = useState<AgentConversation[]>([]);
   const [listLoading, setListLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listProblem, setListProblem] = useState<ListProblem | null>(null);
   const [thread, setThread] = useState<Thread>(newThread);
   const [deleteTarget, setDeleteTarget] = useState<AgentConversation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  /** The patient still has to accept the AI notice (first use, or the notice changed). */
+  /** The patient still has to accept the AI notice (first use, or the notice or Terms of Use changed). */
   const [noticeNeeded, setNoticeNeeded] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [noticeFailed, setNoticeFailed] = useState(false);
-  const [lang, setLang] = useState<Language>('en');
+  /** Language messages to the care team are written in (Settings). */
+  const [careTeamLanguage, setCareTeamLanguage] = useState<Language>('en');
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
   const inflight = useRef(new Map<string, Promise<UIMessage[]>>());
+
+  // No usable ?lang=: the phone's preferred languages.
+  useEffect(() => {
+    if (!requested) setLang(pickLanguage(...(navigator.languages ?? []), navigator.language));
+  }, [requested]);
 
   /** Load a conversation's messages once; concurrent callers share the request. */
   const fetchMessages = useCallback((id: string) => {
@@ -92,45 +111,50 @@ export default function MobileAssistant() {
     [fetchMessages],
   );
 
-  const loadList = useCallback(async (silent = false) => {
-    if (!silent) setListLoading(true);
-    try {
-      const list = await listAgentConversations(bearerAuth);
-      setConversations(list);
-      setListError(null);
-      prefetch(list);
-    } catch (e) {
-      if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
-      setListError(e instanceof AgentChatError ? e.message : 'Could not load your conversations.');
-    } finally {
-      setListLoading(false);
-    }
-  }, [prefetch]);
+  const loadList = useCallback(
+    async (silent = false) => {
+      if (!silent) setListLoading(true);
+      try {
+        const list = await listAgentConversations(bearerAuth);
+        setConversations(list);
+        setListProblem(null);
+        prefetch(list);
+      } catch (e) {
+        if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
+        setListProblem(problemOf(e, 'listError'));
+      } finally {
+        setListLoading(false);
+      }
+    },
+    [prefetch],
+  );
 
-  useEffect(() => {
-    setLang(pickLanguage(...(navigator.languages ?? []), navigator.language));
+  /** Has the patient accepted the current notice and Terms of Use? If the check fails, show the notice: accepting again changes nothing. */
+  const checkNotice = useCallback(async () => {
+    const consent = await getAgentConsent(bearerAuth).catch(() => null);
+    setNoticeNeeded(!consent || (consent.required && !consent.agreed));
+    const careTeam = matchLanguage(consent?.careTeamLanguage);
+    if (careTeam) setCareTeamLanguage(careTeam);
   }, []);
 
   // Wait for the app to hand over the patient's token.
   useEffect(() => {
     installBridge();
-    const off = onTokenChange((t) => t && setPhase('ready'));
+    const off = onTokenChange((tk) => tk && setPhase('ready'));
     waitForToken(inApp() ? 15_000 : 2_000)
       .then(async () => {
         void loadList();
         // Known before the chat shows, so the notice never appears over a half-typed message.
-        // If the check fails, show the notice: accepting again changes nothing.
-        const consent = await getAgentConsent(bearerAuth).catch(() => null);
-        setNoticeNeeded(!consent || (consent.required && !consent.agreed));
+        await checkNotice();
         setPhase('ready');
       })
       .catch(() => setPhase(inApp() ? 'error' : 'no-app'));
     return () => {
       off();
     };
-  }, [loadList]);
+  }, [loadList, checkNotice]);
 
-  // Links in answers open in the phone's browser, not inside the chat.
+  // Links in answers open in the phone's browser / dialer, not inside the chat.
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement | null)?.closest?.('a');
@@ -147,8 +171,10 @@ export default function MobileAssistant() {
     setAccepting(true);
     setNoticeFailed(false);
     try {
-      await acceptAgentConsent(bearerAuth);
+      const consent = await acceptAgentConsent(bearerAuth);
       setNoticeNeeded(false);
+      const careTeam = matchLanguage(consent.careTeamLanguage);
+      if (careTeam) setCareTeamLanguage(careTeam);
     } catch (e) {
       if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
       setNoticeFailed(true);
@@ -165,7 +191,7 @@ export default function MobileAssistant() {
 
   /** Switch right away; show cached messages instantly, otherwise a spinner while they load. */
   const open = async (id: string) => {
-    setListError(null);
+    setListProblem(null);
     if (id === currentId.current) {
       setView('chat');
       return;
@@ -188,7 +214,7 @@ export default function MobileAssistant() {
       currentId.current = null;
       setThread(newThread());
       setView('list');
-      setListError(e instanceof AgentChatError ? e.message : 'Could not open this conversation.');
+      setListProblem(problemOf(e, 'openError'));
     }
   };
 
@@ -215,109 +241,110 @@ export default function MobileAssistant() {
       if (deleteTarget.id === currentId.current) startNew();
       setDeleteTarget(null);
     } catch (e) {
-      setListError(e instanceof AgentChatError ? e.message : 'Could not delete the conversation.');
+      setListProblem(problemOf(e, 'deleteError'));
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
   };
 
-  const title = thread.conversationId
-    ? conversationTitle(conversations.find((c) => c.id === thread.conversationId) ?? { title: null })
-    : 'New conversation';
+  const titleOf = (c: Pick<AgentConversation, 'title'> | undefined) => c?.title?.trim() || t.newConversation;
+  const title = thread.conversationId ? titleOf(conversations.find((c) => c.id === thread.conversationId)) : t.newConversation;
 
   return (
-    <div style={APP_THEME} className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
-      {phase !== 'ready' ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
-          {phase === 'connecting' ? (
-            <Icon name="ArrowPathIcon" size={22} variant="outline" className="animate-spin text-muted-foreground" />
-          ) : (
-            <>
-              <Icon name="LockClosedIcon" size={28} variant="outline" className="text-muted-foreground" />
-              <p className="text-[14px] text-secondary-foreground">
-                {phase === 'no-app' ? 'Open the AI assistant from the HappyHearts app.' : 'Please sign in to the HappyHearts app again.'}
-              </p>
-            </>
-          )}
-        </div>
-      ) : view === 'list' ? (
-        <MobileConversationList
-          conversations={conversations}
-          activeId={thread.conversationId}
-          loading={listLoading}
-          error={listError}
-          onBack={() => setView('chat')}
-          onOpen={(id) => void open(id)}
-          onNew={startNew}
-          onDelete={setDeleteTarget}
-          onRetry={() => void loadList()}
-        />
-      ) : thread.loading ? (
-        <>
-          <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label="Your conversations">
-              <Icon name="Bars3Icon" size={20} variant="outline" />
-            </button>
-            <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+    <PatientTextProvider lang={lang}>
+      <div lang={lang} dir={dirOf(lang)} style={APP_THEME} className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
+        {phase !== 'ready' ? (
+          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
+            {phase === 'connecting' ? (
+              <Icon name="ArrowPathIcon" size={22} variant="outline" className="animate-spin text-muted-foreground" />
+            ) : (
+              <>
+                <Icon name="LockClosedIcon" size={28} variant="outline" className="text-muted-foreground" />
+                <p className="text-[14px] text-secondary-foreground">{phase === 'no-app' ? t.openFromApp : t.signInAgain}</p>
+              </>
+            )}
           </div>
-          <div className="flex-1 flex items-center justify-center">
-            <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
-          </div>
-        </>
-      ) : (
-        <MobileChatThread
-          key={thread.key}
-          conversationId={thread.conversationId}
-          title={title}
-          initialMessages={thread.messages}
-          onShowList={() => {
-            setView('list');
-            void loadList(true);
-          }}
-          onNew={startNew}
-          onConversationCreated={(id) => {
-            currentId.current = id;
-            setThread((t) => ({ ...t, conversationId: id }));
-            void loadList(true);
-          }}
-          onTitle={applyTitle}
-          onTurnFinished={() => void loadList(true)}
-          onMessagesChange={rememberMessages}
-        />
-      )}
-
-      {phase === 'ready' && noticeNeeded && (
-        <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
-      )}
-
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-end">
-          <div className="absolute inset-0 bg-black/30" onClick={() => !deleting && setDeleteTarget(null)} />
-          <div className="relative w-full bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-            <h3 className="text-[16px] font-700">Delete this conversation?</h3>
-            <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">
-              “{conversationTitle(deleteTarget)}” will be removed from your list.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                disabled={deleting}
-                className="flex-1 h-12 rounded-xl border border-border text-[15px] font-600"
-              >
-                Cancel
+        ) : view === 'list' ? (
+          <MobileConversationList
+            conversations={conversations}
+            activeId={thread.conversationId}
+            loading={listLoading}
+            error={listProblem ? t[listProblem] : null}
+            onBack={() => setView('chat')}
+            onOpen={(id) => void open(id)}
+            onNew={startNew}
+            onDelete={setDeleteTarget}
+            onRetry={() => void loadList()}
+          />
+        ) : thread.loading ? (
+          <>
+            <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
+              <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
+                <Icon name="Bars3Icon" size={20} variant="outline" />
               </button>
-              <button
-                onClick={confirmDelete}
-                disabled={deleting}
-                className="flex-1 h-12 rounded-xl bg-danger text-white text-[15px] font-600 disabled:opacity-60"
-              >
-                {deleting ? 'Deleting…' : 'Delete'}
-              </button>
+              <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+              <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
+            </div>
+          </>
+        ) : (
+          <MobileChatThread
+            key={thread.key}
+            conversationId={thread.conversationId}
+            title={title}
+            initialMessages={thread.messages}
+            auth={bearerAuth}
+            careTeamLanguage={careTeamLanguage}
+            onShowList={() => {
+              setView('list');
+              void loadList(true);
+            }}
+            onNew={startNew}
+            onConversationCreated={(id) => {
+              currentId.current = id;
+              setThread((th) => ({ ...th, conversationId: id }));
+              void loadList(true);
+            }}
+            onTitle={applyTitle}
+            onTurnFinished={() => void loadList(true)}
+            // A new notice or Terms of Use came out while the chat was open: ask again.
+            onForbidden={() => void checkNotice()}
+            onMessagesChange={rememberMessages}
+          />
+        )}
+
+        {phase === 'ready' && noticeNeeded && (
+          <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
+        )}
+
+        {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-end">
+            <div className="absolute inset-0 bg-black/30" onClick={() => !deleting && setDeleteTarget(null)} />
+            <div className="relative w-full bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+              <h3 className="text-[16px] font-700">{t.deleteTitle}</h3>
+              <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">{t.deleteBody(titleOf(deleteTarget))}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="flex-1 h-12 rounded-xl border border-border text-[15px] font-600"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  className="flex-1 h-12 rounded-xl bg-danger text-white text-[15px] font-600 disabled:opacity-60"
+                >
+                  {deleting ? t.deleting : t.delete}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </PatientTextProvider>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
+import { openAgentDocument } from '@/lib/agent-bridge';
 import { splitDisclaimer, TERMS_URL } from '@/lib/agent-fixed-replies';
 import { messageText as textOf, useAgentChat } from '@/lib/use-agent-chat';
 import Icon from '@/components/ui/AppIcon';
@@ -125,6 +126,7 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
                         clearError();
                         void answerApproval(id, approved, editedMessage);
                       }}
+                      onOpenDocument={(id) => openAgentDocument(id)}
                     />
                   </div>
                 </div>
