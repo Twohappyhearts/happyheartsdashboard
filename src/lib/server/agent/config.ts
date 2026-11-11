@@ -43,23 +43,33 @@ export interface AgentConfig {
   } | null;
 }
 
-/** Fallback sites when the dashboard list cannot be read (AGENT_WEB_DOMAINS overrides; subdomains included). */
-export const DEFAULT_WEB_DOMAINS = [
-  'acog.org',
-  'marchofdimes.org',
-  'sleepfoundation.org',
-  'preeclampsia.org',
-  'pubmed.ncbi.nlm.nih.gov',
-];
-
-/** Publisher names for the fallback sites. */
+/**
+ * Fallback sites when the dashboard list cannot be read (AGENT_WEB_DOMAINS overrides; subdomains
+ * included): the 17 active on the live Trusted Websites page on 2026-11-11, i.e. the original
+ * five plus the sponsor's Nov 9 list (migration 20261111000100, section 6). ACOG and PubMed stay
+ * (Bo, 2026-11-11).
+ */
 export const DEFAULT_WEB_PUBLISHERS: Record<string, string> = {
   'acog.org': 'American College of Obstetricians and Gynecologists',
   'marchofdimes.org': 'March of Dimes',
   'sleepfoundation.org': 'Sleep Foundation',
   'preeclampsia.org': 'Preeclampsia Foundation',
   'pubmed.ncbi.nlm.nih.gov': 'PubMed (research study)',
+  'cdc.gov': 'CDC',
+  'minorityhealth.hhs.gov': 'Office of Minority Health',
+  'millionhearts.hhs.gov': 'Million Hearts',
+  'cdph.ca.gov': 'California Department of Public Health',
+  'heart.org': 'American Heart Association',
+  'goredforwomen.org': 'Go Red for Women',
+  'diabetes.org': 'American Diabetes Association',
+  'postpartum.net': 'Postpartum Support International',
+  'ssihi.uci.edu': 'UCI Susan Samueli Integrative Health Institute',
+  'academicpeds.org': 'Academic Pediatric Association',
+  'awhonn.org': 'AWHONN',
+  'womenshealth.gov': "Office on Women's Health",
 };
+
+export const DEFAULT_WEB_DOMAINS = Object.keys(DEFAULT_WEB_PUBLISHERS);
 
 const API_KEY_VAR: Record<AgentProvider, string> = {
   openai: 'OPENAI_API_KEY',

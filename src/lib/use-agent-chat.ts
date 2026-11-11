@@ -3,7 +3,7 @@
 import { useMemo, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, isToolUIPart, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
-import type { AgentAuth } from './agent-chat';
+import { AgentChatError, type AgentAuth } from './agent-chat';
 
 export interface UseAgentChatOptions {
   conversationId: string | null;
@@ -18,6 +18,8 @@ export interface UseAgentChatOptions {
   onTitle?: (conversationId: string, title: string) => void;
   /** A request was rejected with 401 (e.g. the token expired). */
   onUnauthorized?: () => void;
+  /** A request was rejected with 403 (e.g. a new AI notice or Terms of Use must be accepted first). */
+  onForbidden?: () => void;
   /** Batch UI updates while streaming (ms); fewer re-renders on slow phones. */
   throttleMs?: number;
 }
@@ -54,8 +56,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
           }
           if (!res.ok) {
             if (res.status === 401) latest.current.onUnauthorized?.();
+            if (res.status === 403) latest.current.onForbidden?.();
             const body = (await res.json().catch(() => null)) as { error?: string } | null;
-            throw new Error(body?.error ?? `Request failed (${res.status}).`);
+            // Carries the status, so the patient chat can show its own wording.
+            throw new AgentChatError(body?.error ?? `Request failed (${res.status}).`, res.status);
           }
           return res;
         },

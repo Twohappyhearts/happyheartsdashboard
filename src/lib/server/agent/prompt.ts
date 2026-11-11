@@ -1,4 +1,11 @@
-import { FIXED_REPLIES, FIXED_REPLIES_ES, NO_INFORMATION_REPLY, NO_INFORMATION_REPLY_ES } from '@/lib/agent-fixed-replies';
+import {
+  DOMESTIC_VIOLENCE_REPLIES,
+  FIXED_REPLIES,
+  FIXED_REPLIES_BY_LANGUAGE,
+  NO_INFORMATION_REPLIES,
+  NO_INFORMATION_REPLY,
+} from '@/lib/agent-fixed-replies';
+import type { Language } from '@/lib/languages';
 import type { Conversation } from './store';
 
 /**
@@ -99,27 +106,52 @@ function decisionRules(canNotifyCareteam: boolean, canSearchWeb: boolean): strin
   ];
 }
 
-/** Rule 1c in Spanish. The hotline has Spanish-speaking advocates. */
-const DOMESTIC_VIOLENCE_REPLY_ES =
-  'Si está en peligro ahora mismo, llame al 911. Puede llamar a la Línea Nacional sobre la Violencia Doméstica al 1-800-799-7233 a cualquier hora; hay personas que hablan español.';
+/** Languages with translated fixed replies, in the order the prompt lists them. */
+const TRANSLATED: Array<{ code: Exclude<keyof typeof FIXED_REPLIES_BY_LANGUAGE, 'en'>; name: string }> = [
+  { code: 'es', name: 'Spanish' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'zh-Hans', name: 'Chinese in Simplified characters' },
+  { code: 'zh-Hant', name: 'Chinese in Traditional characters' },
+  { code: 'fa', name: 'Farsi' },
+  { code: 'ar', name: 'Arabic' },
+];
 
-/** English and Spanish (Dr. Guo, 2026-11-02). The knowledge base is in English. */
+/** The translated fixed replies, listed in the Language section. */
+const FIXED_REPLY_TABLE: string[] = TRANSLATED.flatMap(({ code, name }) => [
+  `  ${name}:`,
+  `  - Rule 1a: "${FIXED_REPLIES_BY_LANGUAGE[code].crisis}"`,
+  `  - Rule 1a, about someone else: "${FIXED_REPLIES_BY_LANGUAGE[code].crisis_other}"`,
+  `  - Rule 1b: "${FIXED_REPLIES_BY_LANGUAGE[code].urgent}"`,
+  `  - Rule 1c: "${DOMESTIC_VIOLENCE_REPLIES[code]}"`,
+  `  - Rule 2: "${FIXED_REPLIES_BY_LANGUAGE[code].personal}"`,
+  `  - Rule 4: "${NO_INFORMATION_REPLIES[code]}"`,
+]);
+
+/**
+ * The translated fixed replies as they appear in the instructions. A constant block (about 7,000
+ * characters) that context.ts leaves out of the compression budget, so adding languages does not
+ * make conversations get trimmed or summarized sooner.
+ */
+export const fixedReplyTableText = () => FIXED_REPLY_TABLE.join('\n');
+
+/**
+ * Any language (Bo, 2026-11-11; before: English and Spanish only). The knowledge base is in
+ * English. Fixed replies are translated into the app's languages; any other language gets the
+ * English fixed reply plus one sentence in the user's language.
+ */
 const language = (canSearchWeb: boolean) => [
   '# Language',
-  'You answer in English or Spanish.',
-  '- Answer in the language of the user\'s latest message. If they ask you to answer in English or Spanish (for example "en español, por favor" or "now in Spanish for my mom"), use that language from then on until they write in or ask for the other one. A message with no clear language ("ok", "988?", a number) keeps the language of your last answer.',
-  '- Every rule above applies the same way in Spanish. Write Spanish for the same reading level: short sentences, everyday words, "usted". Explain medical terms in Spanish the first time, for example "preeclampsia (un problema grave de presión arterial en el embarazo)".',
-  `- The search material is in English. Always write ${canSearchWeb ? 'searchKnowledge and webSearch' : 'searchKnowledge'} queries in English, even when the user writes in Spanish. Translate the facts faithfully: do not add, drop or soften anything, and keep numbers, units and hotline numbers exactly as written.`,
-  '- Keep the final [sources: …] line exactly in that form in Spanish too.',
-  '- In Spanish, use these fixed replies word for word instead of the English ones:',
-  `  - Rule 1a: "${FIXED_REPLIES_ES.crisis}"`,
-  `  - Rule 1a, about someone else: "${FIXED_REPLIES_ES.crisis_other}"`,
-  `  - Rule 1b: "${FIXED_REPLIES_ES.urgent}"`,
-  `  - Rule 1c: "${DOMESTIC_VIOLENCE_REPLY_ES}"`,
-  `  - Rule 2: "${FIXED_REPLIES_ES.personal}"`,
-  `  - Rule 4: "${NO_INFORMATION_REPLY_ES}"`,
-  '- Rule 5 in Spanish: say briefly that you can only help with Happy Hearts health education topics.',
-  '- Any other language: answer in English and add one short sentence: "I can only answer in English or Spanish." Say it once, not again while they keep writing in that language. In an emergency or with thoughts of self-harm, the fixed reply comes first and this sentence after it.',
+  'Answer in the language the user writes in, whatever language it is.',
+  '- Use the language of the user\'s latest message. If they ask you to answer in a certain language (for example "en español, por favor" or "now in Vietnamese for my mom"), use that language from then on until they write in or ask for another one. A message with no clear language ("ok", "988?", a number) keeps the language of your last answer.',
+  '- Chinese: write in the same characters as the user, Simplified or Traditional.',
+  '- Every rule above applies the same way in every language. Keep the same reading level: short sentences and everyday words. Use the polite form of address where the language has one (for example "usted" in Spanish). Explain medical terms in the user\'s language the first time, for example "preeclampsia (un problema grave de presión arterial en el embarazo)".',
+  `- The search material is in English. Always write ${canSearchWeb ? 'searchKnowledge and webSearch' : 'searchKnowledge'} queries in English, whatever language the user writes in. Translate the facts faithfully: do not add, drop or soften anything, and keep numbers, units and hotline numbers exactly as written, in the digits 0-9.`,
+  '- Keep the final [sources: …] line exactly in that form in every language.',
+  '- Rule 5 in any language: say briefly, in the user\'s language, that you can only help with Happy Hearts health education topics.',
+  '- In the languages below, use these fixed replies word for word instead of the English ones:',
+  ...FIXED_REPLY_TABLE,
+  '- Any other language: answer in the user\'s language, but give each fixed reply (rules 1a, 1b, 1c, 2 and 4) in English, word for word. Right after the English fixed reply, add one short sentence in the user\'s language that says what it asks them to do, with the same phone numbers. Add nothing else to it.',
 ];
 
 const style = (canSearchWeb: boolean) => [
@@ -155,20 +187,39 @@ const style = (canSearchWeb: boolean) => [
     : ['5. Use only the search results. Do not use outside knowledge or web search.']),
 ];
 
-const CARETEAM = [
+/** "en" (English), "es" (Spanish), … for notifyCareteam's language field. */
+const LANGUAGE_CODES = [{ code: 'en', name: 'English' }, ...TRANSLATED].map(({ code, name }) => `"${code}" (${name})`).join(', ');
+
+/** How the instructions name a language: "English", "Spanish", "Chinese in Simplified characters", … */
+export const languageName = (code: Language) => (code === 'en' ? 'English' : (TRANSLATED.find((t) => t.code === code)?.name ?? code));
+
+/**
+ * Care-team drafts are written in the language the research team reads (the first of
+ * app_settings.message_languages, settings.ts), whatever language the assistant answers in.
+ */
+const careteam = (draftLanguage: Language) => [
   '# Care-team messages',
   'notifyCareteam shows the user a Send / Cancel prompt with your draft; nothing is sent unless they press Send. You only see a result after they pressed Send, which means it was sent. Never ask the user to confirm in text.',
-  '- Write the draft in the user\'s words: what they feel or asked about, and since when if they said. No diagnosis.',
-  '- Write the draft in the language of your reply, and set language to "es" when that is Spanish, otherwise "en".',
+  '- Write the draft in the user\'s words, as the user (first person): what they feel or asked about, and since when if they said. No diagnosis.',
+  '- Keep every specific detail the user gave: names of medicines, doses, how often they take them, symptoms, numbers, and when it started (for example "iron pills, 65 mg once a day, since Monday"). Never shorten or leave out these details.',
+  `- Write the draft in ${languageName(draftLanguage)}, whatever language you answer in: the care team reads ${languageName(draftLanguage)}. Translate the user's words faithfully.`,
+  `- Set language to the code of your reply's language (not the draft's): ${LANGUAGE_CODES}. Use "en" for any other language.`,
   '- Keep the user\'s framing. A general or hypothetical question stays a question ("I asked whether…"). Something about another person stays about that person ("My sister…"). Do not add "my" or details the user did not say.',
   '- When the user cancels, do not offer again for the same concern. Say it was not sent and that they can ask you any time to contact the care team.',
   '- If notifyCareteam fails, do not call it again. Tell them it was not sent and to use the "I need assistance" button or message the Care Team.',
   '- A care-team message never replaces calling 911 in an emergency.',
 ];
 
+export interface InstructionOptions {
+  canNotifyCareteam: boolean;
+  canSearchWeb?: boolean;
+  /** Language of care-team drafts (settings.ts); English by default. */
+  careteamLanguage?: Language;
+}
+
 export function buildInstructions(
   conversation: Pick<Conversation, 'summary' | 'state'>,
-  opts: { canNotifyCareteam: boolean; canSearchWeb?: boolean },
+  opts: InstructionOptions,
 ): string {
   const web = opts.canSearchWeb === true;
   const lines = [
@@ -178,7 +229,7 @@ export function buildInstructions(
     '',
     ...style(web),
   ];
-  if (opts.canNotifyCareteam) lines.push('', ...CARETEAM);
+  if (opts.canNotifyCareteam) lines.push('', ...careteam(opts.careteamLanguage ?? 'en'));
   lines.push('', `Today is ${new Date().toISOString().slice(0, 10)}.`);
 
   if (conversation.summary?.trim()) {

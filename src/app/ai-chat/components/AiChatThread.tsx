@@ -2,13 +2,17 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import { AI_DISCLAIMER } from '@/lib/agent-fixed-replies';
+import { openAgentDocument } from '@/lib/agent-bridge';
+import { splitDisclaimer, TERMS_URL } from '@/lib/agent-fixed-replies';
 import { messageText as textOf, useAgentChat } from '@/lib/use-agent-chat';
 import Icon from '@/components/ui/AppIcon';
 import EmptyState from '@/components/ui/EmptyState';
 import AiMessageParts from './AiMessageParts';
 
 const MAX_LENGTH = 4000;
+
+/** The research team's disclaimer, word for word, with "Terms of Use" linking to the current Terms. */
+const [DISCLAIMER_BEFORE, DISCLAIMER_LINK, DISCLAIMER_AFTER] = splitDisclaimer();
 
 interface Props {
   conversationId: string | null;
@@ -73,8 +77,18 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
           <p className="text-[14px] font-600 text-foreground truncate">{title}</p>
           <p className="text-[11px] text-muted-foreground truncate">Answers from the knowledge base and web search</p>
         </div>
+        <a
+          href="/m/assistant"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted shrink-0"
+          title="The chat exactly as patients see it in the app (phone layout, their language, AI notice). Add ?lang=es, vi, ko, zh-Hans, zh-Hant, fa or ar to the address for another language."
+        >
+          <Icon name="DevicePhoneMobileIcon" size={15} variant="outline" />
+          Open patient view
+        </a>
         <span
-          className="ml-auto text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
+          className="text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
           title="You are signed in as staff. Care-team messages ask for approval as they do for patients, but no real alert is created."
         >
           Staff preview
@@ -122,6 +136,7 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
                         clearError();
                         void answerApproval(id, approved, editedMessage);
                       }}
+                      onOpenDocument={(id) => openAgentDocument(id)}
                     />
                   </div>
                 </div>
@@ -193,7 +208,13 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
             </span>
           )}
         </div>
-        <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground max-w-3xl mx-auto">{AI_DISCLAIMER}</p>
+        <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground max-w-3xl mx-auto">
+          {DISCLAIMER_BEFORE}
+          <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:opacity-80">
+            {DISCLAIMER_LINK}
+          </a>
+          {DISCLAIMER_AFTER}
+        </p>
       </div>
     </>
   );

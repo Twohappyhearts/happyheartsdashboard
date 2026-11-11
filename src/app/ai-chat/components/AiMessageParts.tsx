@@ -1,19 +1,80 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import MarkdownIt from 'markdown-it';
+import MarkdownIt, { type StateCore, type Token } from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
-import { fixedReply, isAgentLanguage, isCareteamSituation } from '@/lib/agent-fixed-replies';
+import {
+  asciiDigits,
+  fixedReply,
+  fixedReplySituation,
+  isCareteamSituation,
+  isEmergencySituation,
+  type CareteamSituation,
+} from '@/lib/agent-fixed-replies';
 import { displaySource, splitSources } from '@/lib/agent-sources';
+import { usePatientText } from '@/lib/i18n/patient-context';
 
 // html: false → any HTML in model output is escaped, never injected.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
-  tokens[idx].attrSet('target', '_blank');
-  tokens[idx].attrSet('rel', 'noopener noreferrer');
+  // Web links open outside the chat; tel: links go to the phone's dialer.
+  if (/^https?:/i.test(tokens[idx].attrGet('href') ?? '')) {
+    tokens[idx].attrSet('target', '_blank');
+    tokens[idx].attrSet('rel', 'noopener noreferrer');
+  }
   return self.renderToken(tokens, idx, options);
 };
+md.core.ruler.push('tel_links', telLinks);
+
+// Phone numbers in answers become tel: links: 911, 988 and 1-800-style numbers (also in Persian /
+// Arabic-Indic digits). No lookbehind: older iOS WebViews do not support it.
+const DIGIT = '0-9\\u06F0-\\u06F9\\u0660-\\u0669';
+const PHONE = new RegExp(`(^|[^${DIGIT}-])([${DIGIT}]-[${DIGIT}]{3}-[${DIGIT}]{3}-[${DIGIT}]{4}|[${DIGIT}]{3})(?![${DIGIT}-])`, 'g');
+const SHORT_NUMBERS = new Set(['911', '988']);
+
+function textToken(state: StateCore, content: string): Token {
+  const t = new state.Token('text', '', 0);
+  t.content = content;
+  return t;
+}
+
+function telLinks(state: StateCore) {
+  for (const block of state.tokens) {
+    if (block.type !== 'inline' || !block.children) continue;
+    const out: Token[] = [];
+    let insideLink = 0;
+    for (const tok of block.children) {
+      if (tok.type === 'link_open') insideLink++;
+      else if (tok.type === 'link_close') insideLink--;
+      if (tok.type !== 'text' || insideLink > 0) {
+        out.push(tok);
+        continue;
+      }
+      const text = tok.content;
+      let last = 0;
+      PHONE.lastIndex = 0;
+      for (let m = PHONE.exec(text); m; m = PHONE.exec(text)) {
+        const start = m.index + m[1].length;
+        const raw = m[2];
+        const digits = asciiDigits(raw).replace(/-/g, '');
+        if (raw.length === 3 ? !SHORT_NUMBERS.has(digits) : !digits.startsWith('1')) continue;
+        if (start > last) out.push(textToken(state, text.slice(last, start)));
+        const open = new state.Token('link_open', 'a', 1);
+        open.attrs = [
+          ['href', `tel:${digits}`],
+          ['dir', 'ltr'],
+          ['class', 'font-700 underline underline-offset-2 whitespace-nowrap'],
+        ];
+        out.push(open, textToken(state, raw), new state.Token('link_close', 'a', -1));
+        last = start + raw.length;
+      }
+      if (last === 0) out.push(tok);
+      else if (last < text.length) out.push(textToken(state, text.slice(last)));
+    }
+    block.children = out;
+  }
+}
 
 type Part = UIMessage['parts'][number];
 type ToolPart = Extract<Part, { toolCallId: string }>;
@@ -29,57 +90,160 @@ interface Props {
    * card only says it is waiting. Default true (dashboard: buttons in the card).
    */
   inlineApproval?: boolean;
+  /**
+   * "patient" (the app's chat): no search cards or reasoning, only a short "Looking this up…"
+   * while it searches; care-team cards for the phone; text in the patient's language.
+   * Default "staff" (dashboard preview): everything is shown.
+   */
+  audience?: 'staff' | 'patient';
+  /** Patient chat: the patient chose to message the care team after an emergency reply. */
+  onOpenCareteam?: (approvalId: string) => void;
+  /** Open the original file of a knowledge-base source that has no web page. */
+  onOpenDocument?: (documentId: string) => Promise<void>;
 }
 
-export default function AiMessageParts({ message, canRespond, streaming, onApproval, inlineApproval = true }: Props) {
+const SEARCH_TOOLS = new Set(['searchKnowledge', 'webSearch']);
+const isRunning = (p: ToolPart) => p.state === 'input-streaming' || p.state === 'input-available';
+
+/** "911" (or "۹۱۱") appears as a number of its own. */
+const mentions = (text: string, number: string) => new RegExp(`(^|\\D)${number}(\\D|$)`).test(asciiDigits(text));
+
+const EMERGENCY_RANK: Record<CareteamSituation, number> = { personal: 0, urgent: 1, crisis: 2, crisis_other: 2 };
+
+/**
+ * The emergency (rule 1) a reply is about, from its care-team offer or from the fixed reply in
+ * its text, and the language of the reply (for the fixed-reply fallback).
+ */
+function emergencyOf(message: UIMessage): { situation: CareteamSituation; language: string } | null {
+  let situation: CareteamSituation | null = null;
+  let language = 'en';
+  for (const p of message.parts) {
+    if (!isToolUIPart(p) || getToolName(p) !== 'notifyCareteam') continue;
+    const input = (p.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
+    if (isEmergencySituation(input.situation) && (!situation || EMERGENCY_RANK[input.situation] > EMERGENCY_RANK[situation])) {
+      situation = input.situation;
+      if (typeof input.language === 'string') language = input.language;
+    }
+  }
+  const fromText = fixedReplySituation(textOf(message));
+  if (isEmergencySituation(fromText) && (!situation || EMERGENCY_RANK[fromText] > EMERGENCY_RANK[situation])) situation = fromText;
+  return situation ? { situation, language } : null;
+}
+
+const textOf = (message: UIMessage) =>
+  message.parts
+    .filter((p): p is Extract<Part, { type: 'text' }> => p.type === 'text')
+    .map((p) => splitSources(p.text).text)
+    .join('\n\n')
+    .trim();
+
+export default function AiMessageParts({
+  message,
+  canRespond,
+  streaming,
+  onApproval,
+  inlineApproval = true,
+  audience = 'staff',
+  onOpenCareteam,
+  onOpenDocument,
+}: Props) {
+  const { t } = usePatientText();
+  const patient = audience === 'patient';
   const searchResults = useMemo(() => collectSearchResults(message), [message]);
+  const emergency = useMemo(() => emergencyOf(message), [message]);
+  const lapsed = !canRespond && !streaming;
+
+  const careteamCard = (part: ToolPart) =>
+    patient ? (
+      <PatientCareteamCard
+        key={part.toolCallId}
+        part={part}
+        canRespond={canRespond}
+        lapsed={lapsed}
+        emergency={emergency != null}
+        onOpen={onOpenCareteam}
+      />
+    ) : (
+      <CareteamCard key={part.toolCallId} part={part} canRespond={canRespond} lapsed={lapsed} inline={inlineApproval} onApproval={onApproval} />
+    );
+
+  // Staff see how the assistant worked (reasoning, searches); patients do not.
+  const workPart = (part: Part, i: number) => {
+    if (patient) return null;
+    if (part.type === 'reasoning') {
+      return part.text.trim() ? <Reasoning key={`r-${i}`} text={part.text} active={streaming && i === message.parts.length - 1} /> : null;
+    }
+    if (!isToolUIPart(part)) return null;
+    const name = getToolName(part);
+    if (SEARCH_TOOLS.has(name)) return <SearchCard key={part.toolCallId} part={part as ToolPart} web={name === 'webSearch'} />;
+    if (name === 'notifyCareteam') return null;
+    return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
+  };
+
+  const tools = message.parts.filter(isToolUIPart) as ToolPart[];
+  const careteamParts = tools.filter((p) => getToolName(p) === 'notifyCareteam');
+  const searches = tools.filter((p) => SEARCH_TOOLS.has(getToolName(p)));
+
+  // ---- Emergency (rule 1): the reply in a red box with call buttons; the care-team offer below it.
+  if (emergency) {
+    const body = textOf(message);
+    // Once the text is complete (the offer comes after it, or the turn ended), make sure the
+    // 911 / 988 reply is there whatever the model wrote; show the fixed reply if not.
+    const complete = careteamParts.length > 0 || !streaming;
+    const crisis = emergency.situation !== 'urgent';
+    const missing = complete && (!mentions(body, '911') || (crisis && !mentions(body, '988')));
+    const text = missing ? [body, fixedReply(emergency.situation, emergency.language)].filter(Boolean).join('\n\n') : body;
+    return (
+      <div className="space-y-2">
+        {message.parts.map(workPart)}
+        {text && <EmergencyReply text={text} crisis={crisis} />}
+        {careteamParts.map(careteamCard)}
+      </div>
+    );
+  }
+
   let hasText = false;
+  const rendered = message.parts.map((part, i) => {
+    if (part.type === 'text') {
+      if (!part.text.trim()) return null;
+      hasText = true;
+      const { text, refs } = splitSources(part.text);
+      return (
+        <React.Fragment key={`t-${i}`}>
+          {text.trim() && <Markdown text={text} />}
+          {refs.length > 0 && <SourceChips refs={refs} results={searchResults} onOpenDocument={onOpenDocument} />}
+        </React.Fragment>
+      );
+    }
+    if (isToolUIPart(part) && getToolName(part) === 'notifyCareteam') {
+      // The model sometimes offers the care-team message without writing the fixed reply
+      // (the referral) first; show that reply from code so it is never missing.
+      const { situation, language } = (part.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
+      const fallback = !hasText && isCareteamSituation(situation) ? fixedReply(situation, typeof language === 'string' ? language : 'en') : null;
+      if (fallback) hasText = true;
+      return (
+        <React.Fragment key={part.toolCallId}>
+          {fallback && <Markdown text={fallback} />}
+          {careteamCard(part as ToolPart)}
+        </React.Fragment>
+      );
+    }
+    return workPart(part, i);
+  });
+
+  // Patients see one line while the assistant searches or before the answer starts.
+  const searching = searches.some(isRunning);
+  const status = patient && (searching || (streaming && !hasText && careteamParts.length === 0)) ? (searches.length ? t.lookingUp : t.thinking) : null;
+
   return (
     <div className="space-y-2">
-      {message.parts.map((part, i) => {
-        if (part.type === 'text') {
-          if (!part.text.trim()) return null;
-          hasText = true;
-          const { text, refs } = splitSources(part.text);
-          return (
-            <React.Fragment key={`t-${i}`}>
-              {text.trim() && <Markdown text={text} />}
-              {refs.length > 0 && <SourceChips refs={refs} results={searchResults} />}
-            </React.Fragment>
-          );
-        }
-        if (part.type === 'reasoning') {
-          return part.text.trim() ? <Reasoning key={`r-${i}`} text={part.text} active={streaming && i === message.parts.length - 1} /> : null;
-        }
-        if (isToolUIPart(part)) {
-          const name = getToolName(part);
-          if (name === 'searchKnowledge' || name === 'webSearch') {
-            return <SearchCard key={part.toolCallId} part={part as ToolPart} web={name === 'webSearch'} />;
-          }
-          if (name === 'notifyCareteam') {
-            // The model sometimes offers the care-team message without writing the fixed reply
-            // (referral / 911 / 988) first; show that reply from code so it is never missing.
-            const { situation, language } = (part.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
-            const fallback =
-              !hasText && isCareteamSituation(situation) ? fixedReply(situation, isAgentLanguage(language) ? language : 'en') : null;
-            if (fallback) hasText = true;
-            return (
-              <React.Fragment key={part.toolCallId}>
-                {fallback && <Markdown text={fallback} />}
-                <CareteamCard
-                  part={part as ToolPart}
-                  canRespond={canRespond}
-                  lapsed={!canRespond && !streaming}
-                  inline={inlineApproval}
-                  onApproval={onApproval}
-                />
-              </React.Fragment>
-            );
-          }
-          return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
-        }
-        return null;
-      })}
+      {rendered}
+      {status && (
+        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin shrink-0" />
+          {status}
+        </p>
+      )}
     </div>
   );
 }
@@ -91,15 +255,15 @@ interface SearchResult {
   url?: string | null;
   /** "web" for webSearch results. */
   kind?: 'web';
+  /** Knowledge-base document (its original file opens through /api/agent/sources/:id). */
+  documentId?: string;
 }
-
-const RESULT_TOOLS = new Set(['searchKnowledge', 'webSearch']);
 
 /** ref → search result, over every searchKnowledge / webSearch call in this reply (refs are shared). */
 function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
   const byRef = new Map<number, SearchResult>();
   for (const part of message.parts) {
-    if (!isToolUIPart(part) || !RESULT_TOOLS.has(getToolName(part)) || part.state !== 'output-available') continue;
+    if (!isToolUIPart(part) || !SEARCH_TOOLS.has(getToolName(part)) || part.state !== 'output-available') continue;
     for (const r of (part.output as { results?: SearchResult[] } | undefined)?.results ?? []) {
       if (typeof r.ref === 'number') byRef.set(r.ref, r);
     }
@@ -109,11 +273,23 @@ function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
 
 /**
  * The documents the answer cited, folded into one "Sources (n)" line; the reader opens it to
- * see them. One entry per document: organization · title, linking to the original page.
+ * see them. One entry per document: organization · title, linking to the original page, or for
+ * a library document without one, opening its original file.
  * Web results get a globe icon so the reader can tell a website from the Happy Hearts library.
  */
-function SourceChips({ refs, results }: { refs: number[]; results: Map<number, SearchResult> }) {
+function SourceChips({
+  refs,
+  results,
+  onOpenDocument,
+}: {
+  refs: number[];
+  results: Map<number, SearchResult>;
+  onOpenDocument?: (documentId: string) => Promise<void>;
+}) {
+  const { t } = usePatientText();
   const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const docs = new Map<string, SearchResult>();
   for (const ref of refs) {
     const r = results.get(ref);
@@ -121,25 +297,44 @@ function SourceChips({ refs, results }: { refs: number[]; results: Map<number, S
     if (r && !docs.has(key)) docs.set(key, r);
   }
   if (!docs.size) return null;
+
+  const openDocument = async (key: string, documentId: string) => {
+    if (!onOpenDocument || opening) return;
+    setOpening(key);
+    setFailed(null);
+    try {
+      await onOpenDocument(documentId);
+    } catch {
+      setFailed(key);
+    } finally {
+      setOpening(null);
+    }
+  };
+
   return (
-    <div className="text-[11.5px]">
+    <div className="text-[13px]">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-secondary-foreground hover:bg-muted"
+        className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-600 text-primary hover:bg-blue-100"
       >
-        <Icon name="BookOpenIcon" size={11} variant="outline" className="shrink-0" />
-        {docs.size === 1 ? '1 source' : `${docs.size} sources`}
-        <Icon name={open ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={11} variant="outline" className="shrink-0" />
+        <Icon name="BookOpenIcon" size={14} variant="outline" className="shrink-0" />
+        {t.sources(docs.size)}
+        <Icon name={open ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} variant="outline" className="shrink-0" />
       </button>
       {open && (
         <ul className="mt-1.5 space-y-1">
           {Array.from(docs.entries()).map(([key, d]) => {
             const label = [displaySource(d.source), d.title].filter(Boolean).join(' · ');
-            const row = 'flex items-start gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-secondary-foreground';
+            const row = 'w-full flex items-start gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-start text-foreground';
             const icon = (
-              <Icon name={d.kind === 'web' ? 'GlobeAltIcon' : 'DocumentTextIcon'} size={12} variant="outline" className="shrink-0 mt-[2px]" />
+              <Icon
+                name={opening === key ? 'ArrowPathIcon' : d.kind === 'web' ? 'GlobeAltIcon' : 'DocumentTextIcon'}
+                size={14}
+                variant="outline"
+                className={`shrink-0 mt-[2px] text-primary ${opening === key ? 'animate-spin' : ''}`}
+              />
             );
             return (
               <li key={key}>
@@ -148,12 +343,18 @@ function SourceChips({ refs, results }: { refs: number[]; results: Map<number, S
                     {icon}
                     <span className="min-w-0 break-words">{label}</span>
                   </a>
+                ) : d.documentId && onOpenDocument ? (
+                  <button type="button" onClick={() => void openDocument(key, d.documentId!)} className={`${row} hover:bg-muted`}>
+                    {icon}
+                    <span className="min-w-0 break-words">{label}</span>
+                  </button>
                 ) : (
                   <span className={row}>
                     {icon}
                     <span className="min-w-0 break-words">{label}</span>
                   </span>
                 )}
+                {failed === key && <p className="mt-0.5 ps-1 text-[12px] text-danger">{t.openSourceError}</p>}
               </li>
             );
           })}
@@ -167,9 +368,41 @@ function Markdown({ text }: { text: string }) {
   const html = useMemo(() => md.render(text), [text]);
   return (
     <div
+      // The answer's own direction (e.g. a Farsi answer while the app is in English).
+      dir="auto"
       className="prose prose-sm max-w-none text-[13.5px] leading-relaxed text-foreground prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-primary"
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+}
+
+/** Rule 1 replies: hard to miss, with buttons that call 911 (and 988 for thoughts of self-harm). */
+function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
+  const { t } = usePatientText();
+  const call = (number: string, primary: boolean) => (
+    <a
+      href={`tel:${number}`}
+      className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-xl text-[15px] font-700 ${
+        primary ? 'bg-danger text-white' : 'border-2 border-danger text-danger bg-card'
+      }`}
+    >
+      <Icon name="PhoneIcon" size={17} variant="solid" className="shrink-0" />
+      <span>{t.call(number)}</span>
+    </a>
+  );
+  return (
+    <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3.5 py-3">
+      <div className="flex items-start gap-2">
+        <Icon name="ExclamationTriangleIcon" size={20} variant="solid" className="text-danger shrink-0 mt-1" />
+        <div className="min-w-0 flex-1 font-500">
+          <Markdown text={text} />
+        </div>
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {call('911', true)}
+        {crisis && call('988', false)}
+      </div>
+    </div>
   );
 }
 
@@ -196,7 +429,7 @@ function SearchCard({ part, web = false }: { part: ToolPart; web?: boolean }) {
   const [open, setOpen] = useState(false);
   const query = (part.input as { query?: string } | undefined)?.query ?? '';
   const results = part.state === 'output-available' ? ((part.output as SearchOutput)?.results ?? []) : [];
-  const running = part.state === 'input-streaming' || part.state === 'input-available';
+  const running = isRunning(part);
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[12px]">
@@ -251,6 +484,97 @@ function SearchCard({ part, web = false }: { part: ToolPart; web?: boolean }) {
   );
 }
 
+type CareteamOutput = { preview?: boolean; sentMessage?: string; editedByPatient?: boolean };
+
+/**
+ * The care-team offer in the patient's chat. The confirmation itself is the bottom sheet
+ * (MobileChatThread): it opens by itself for a referral (rule 2); after an emergency reply the
+ * patient opens it with "Also notify my care team", so it never covers the 911 / 988 reply.
+ */
+function PatientCareteamCard({
+  part,
+  canRespond,
+  lapsed,
+  emergency,
+  onOpen,
+}: {
+  part: ToolPart;
+  canRespond: boolean;
+  lapsed: boolean;
+  emergency: boolean;
+  onOpen?: (approvalId: string) => void;
+}) {
+  const { t } = usePatientText();
+  const draft = (part.input as { message?: string } | undefined)?.message ?? '';
+  const output = part.state === 'output-available' ? (part.output as CareteamOutput | undefined) : undefined;
+
+  if (part.state === 'approval-requested') {
+    if (lapsed) {
+      return (
+        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <Icon name="BellAlertIcon" size={14} variant="outline" className="shrink-0" />
+          {t.careteamLapsed}
+        </p>
+      );
+    }
+    if (!canRespond) return null;
+    if (emergency) {
+      return (
+        <button
+          type="button"
+          onClick={() => onOpen?.(part.approval.id)}
+          className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-border bg-card text-[14px] font-600 text-foreground active:bg-muted"
+        >
+          <Icon name="BellAlertIcon" size={17} variant="outline" className="shrink-0 text-primary" />
+          {t.alsoNotify}
+        </button>
+      );
+    }
+    return <p className="text-[13px] text-muted-foreground">{t.careteamWaiting}</p>;
+  }
+  // The offer is still being written.
+  if (isRunning(part)) return null;
+
+  let status: React.ReactNode = null;
+  if (part.state === 'approval-responded') {
+    status = part.approval?.approved ? (
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin" /> {t.careteamSending}
+      </span>
+    ) : (
+      <span className="text-muted-foreground">{t.careteamNotSent}</span>
+    );
+  } else if (part.state === 'output-available') {
+    status = (
+      <span className="flex items-center gap-1.5 text-success font-600">
+        <Icon name="CheckCircleIcon" size={15} variant="solid" />
+        {t.careteamSent}
+      </span>
+    );
+  } else if (part.state === 'output-denied') {
+    status = <span className="text-muted-foreground">{t.careteamNotSent}</span>;
+  } else if (part.state === 'output-error') {
+    status = <span className="text-danger">{t.careteamFailed}</span>;
+  }
+  const shown = output?.sentMessage || draft;
+
+  return (
+    <div className="rounded-xl border border-border bg-card px-3.5 py-3 text-[13.5px] shadow-sm">
+      <div className="flex items-center gap-2 font-600 text-foreground">
+        <Icon name="BellAlertIcon" size={16} variant="outline" className="text-primary shrink-0" />
+        {t.careteamMessage}
+      </div>
+      {shown && (
+        <p className="mt-1.5 text-secondary-foreground whitespace-pre-wrap break-words">
+          “{shown}”{output?.editedByPatient && <span className="text-muted-foreground"> · {t.editedBeforeSending}</span>}
+        </p>
+      )}
+      {status && <div className="mt-2">{status}</div>}
+    </div>
+  );
+}
+
+/** The care-team offer in the dashboard's staff preview (buttons inside the card). */
 function CareteamCard({
   part,
   canRespond,
@@ -266,10 +590,7 @@ function CareteamCard({
   onApproval: Props['onApproval'];
 }) {
   const draft = (part.input as { message?: string } | undefined)?.message ?? '';
-  const output =
-    part.state === 'output-available'
-      ? (part.output as { preview?: boolean; sentMessage?: string; editedByPatient?: boolean } | undefined)
-      : undefined;
+  const output = part.state === 'output-available' ? (part.output as CareteamOutput | undefined) : undefined;
   const editing = part.state === 'approval-requested' && canRespond && inline;
   const [text, setText] = useState(draft);
   // The card can mount while the draft is still streaming in; follow it until the user edits.

@@ -8,7 +8,7 @@ export default function AiNoticePage() {
       <div className="space-y-5">
         <div>
           <h1 className="text-[22px] font-700 text-foreground">AI Notice</h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">Who accepted the notice shown before the first AI chat in the app.</p>
+          <p className="text-[13px] text-muted-foreground mt-0.5">Who accepted the notice shown before the AI chat in the app, and which version.</p>
         </div>
         <NoticeAcceptance />
       </div>

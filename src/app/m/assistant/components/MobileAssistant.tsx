@@ -5,16 +5,19 @@ import type { UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
 import {
   AgentChatError,
-  conversationTitle,
   acceptAgentConsent,
   deleteAgentConversation,
   getAgentConsent,
   historyToUIMessages,
   listAgentConversations,
   loadAgentMessages,
+  type AgentAuth,
   type AgentConversation,
 } from '@/lib/agent-chat';
 import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
+import { PATIENT_TEXT, type PatientText } from '@/lib/i18n/patient';
+import { PatientTextProvider } from '@/lib/i18n/patient-context';
+import { dirOf, matchLanguage, pickLanguage, type Language } from '@/lib/languages';
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
 import AiNoticeDialog from './AiNoticeDialog';
@@ -41,35 +44,67 @@ const APP_THEME = {
 
 type Thread = { key: string; conversationId: string | null; messages: UIMessage[]; loading?: boolean };
 type Phase = 'connecting' | 'ready' | 'no-app' | 'error';
+/** Kept as a key, so the message follows a language change. */
+type ListProblem = 'listError' | 'openError' | 'deleteError' | 'signInAgain';
 
 const newThread = (): Thread => ({ key: `new-${Date.now()}`, conversationId: null, messages: [] });
 
 /** How many conversations at the top of the list are loaded ahead, so opening them is instant. */
 const PREFETCH = 5;
 
-export default function MobileAssistant() {
+const problemOf = (e: unknown, fallback: ListProblem): ListProblem => (e instanceof AgentChatError && e.status === 401 ? 'signInAgain' : fallback);
+
+interface Props {
+  /** ?lang= from the app (e.g. "es", "zh-Hant"); otherwise the phone's languages, else English. */
+  langParam?: string | null;
+}
+
+/**
+ * Patients use this page inside the HappyHearts app, which passes their token (agent-bridge.ts).
+ *
+ * Staff preview: opened in a normal browser by a signed-in staff or admin account (the
+ * dashboard's session cookie; "Open patient view" on the AI Chat page), the page shows the
+ * same patient UI. The AI notice appears once per page load and accepting it is not recorded;
+ * care-team messages go through the same steps but create no alert (as on the AI Chat page).
+ */
+export default function MobileAssistant({ langParam }: Props) {
+  const requested = matchLanguage(langParam);
+  const [lang, setLang] = useState<Language>(requested ?? 'en');
+  const t: PatientText = PATIENT_TEXT[lang];
   const [phase, setPhase] = useState<Phase>('connecting');
   const [view, setView] = useState<'chat' | 'list'>('chat');
   const [conversations, setConversations] = useState<AgentConversation[]>([]);
   const [listLoading, setListLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listProblem, setListProblem] = useState<ListProblem | null>(null);
   const [thread, setThread] = useState<Thread>(newThread);
   const [deleteTarget, setDeleteTarget] = useState<AgentConversation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  /** The patient still has to accept the AI notice (first use, or the notice changed). */
+  /** The patient still has to accept the AI notice (first use, or the notice or Terms of Use changed). */
   const [noticeNeeded, setNoticeNeeded] = useState(false);
   const [accepting, setAccepting] = useState(false);
-  const [noticeError, setNoticeError] = useState<string | null>(null);
+  const [noticeFailed, setNoticeFailed] = useState(false);
+  /** Language messages to the care team are written in (Settings). */
+  const [careTeamLanguage, setCareTeamLanguage] = useState<Language>('en');
+  /** Staff preview in a browser (see above): cookie auth instead of the app's token. */
+  const [preview, setPreview] = useState(false);
+  const previewRef = useRef(false);
+  /** The patient's token from the app; undefined = the session cookie (staff preview). */
+  const auth = (): AgentAuth | undefined => (previewRef.current ? undefined : bearerAuth);
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
   const inflight = useRef(new Map<string, Promise<UIMessage[]>>());
 
+  // No usable ?lang=: the phone's preferred languages.
+  useEffect(() => {
+    if (!requested) setLang(pickLanguage(...(navigator.languages ?? []), navigator.language));
+  }, [requested]);
+
   /** Load a conversation's messages once; concurrent callers share the request. */
   const fetchMessages = useCallback((id: string) => {
     const running = inflight.current.get(id);
     if (running) return running;
-    const p = loadAgentMessages(id, bearerAuth)
+    const p = loadAgentMessages(id, auth())
       .then(({ messages }) => {
         const ui = historyToUIMessages(messages);
         cache.current.set(id, ui);
@@ -90,62 +125,102 @@ export default function MobileAssistant() {
     [fetchMessages],
   );
 
-  const loadList = useCallback(async (silent = false) => {
-    if (!silent) setListLoading(true);
-    try {
-      const list = await listAgentConversations(bearerAuth);
-      setConversations(list);
-      setListError(null);
-      prefetch(list);
-    } catch (e) {
-      if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
-      setListError(e instanceof AgentChatError ? e.message : 'Could not load your conversations.');
-    } finally {
-      setListLoading(false);
-    }
-  }, [prefetch]);
+  const loadList = useCallback(
+    async (silent = false) => {
+      if (!silent) setListLoading(true);
+      try {
+        const list = await listAgentConversations(auth());
+        setConversations(list);
+        setListProblem(null);
+        prefetch(list);
+      } catch (e) {
+        if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
+        setListProblem(problemOf(e, 'listError'));
+      } finally {
+        setListLoading(false);
+      }
+    },
+    [prefetch],
+  );
 
-  // Wait for the app to hand over the patient's token.
+  /** Has the patient accepted the current notice and Terms of Use? If the check fails, show the notice: accepting again changes nothing. */
+  const checkNotice = useCallback(async () => {
+    if (previewRef.current) return;
+    const consent = await getAgentConsent(bearerAuth).catch(() => null);
+    setNoticeNeeded(!consent || (consent.required && !consent.agreed));
+    const careTeam = matchLanguage(consent?.careTeamLanguage);
+    if (careTeam) setCareTeamLanguage(careTeam);
+  }, []);
+
+  // Wait for the app to hand over the patient's token (or, in a browser, check for a staff session).
   useEffect(() => {
     installBridge();
-    const off = onTokenChange((t) => t && setPhase('ready'));
-    waitForToken(inApp() ? 15_000 : 2_000)
-      .then(async () => {
-        void loadList();
-        // Known before the chat shows, so the notice never appears over a half-typed message.
-        // If the check fails, show the notice: accepting again changes nothing.
-        const consent = await getAgentConsent(bearerAuth).catch(() => null);
-        setNoticeNeeded(!consent || (consent.required && !consent.agreed));
-        setPhase('ready');
-      })
-      .catch(() => setPhase(inApp() ? 'error' : 'no-app'));
+    const off = onTokenChange((tk) => tk && setPhase('ready'));
+    let cancelled = false;
+    void (async () => {
+      if (!inApp()) {
+        // Signed in on the dashboard as staff or admin (consent not required): the staff preview.
+        const staff = await getAgentConsent().catch(() => null);
+        if (cancelled) return;
+        if (staff && !staff.required) {
+          previewRef.current = true;
+          setPreview(true);
+          const careTeam = matchLanguage(staff.careTeamLanguage);
+          if (careTeam) setCareTeamLanguage(careTeam);
+          // Shown once per page load so staff see it; accepting is kept in this page only.
+          setNoticeNeeded(true);
+          void loadList();
+          setPhase('ready');
+          return;
+        }
+      }
+      try {
+        await waitForToken(inApp() ? 15_000 : 2_000);
+      } catch {
+        if (!cancelled) setPhase(inApp() ? 'error' : 'no-app');
+        return;
+      }
+      if (cancelled) return;
+      void loadList();
+      // Known before the chat shows, so the notice never appears over a half-typed message.
+      await checkNotice();
+      setPhase('ready');
+    })();
     return () => {
+      cancelled = true;
       off();
     };
-  }, [loadList]);
+  }, [loadList, checkNotice]);
 
-  // Links in answers open in the phone's browser, not inside the chat.
+  // Links in answers open in the phone's browser / dialer, not inside the chat.
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement | null)?.closest?.('a');
       const href = a?.getAttribute('href');
       if (!href || !/^(https?:|mailto:|tel:)/i.test(href) || !inApp()) return;
       e.preventDefault();
-      postToApp('open_url', href);
+      postToApp('open_url', { url: href });
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
   }, []);
 
   const acceptNotice = async () => {
-    setAccepting(true);
-    setNoticeError(null);
-    try {
-      await acceptAgentConsent(bearerAuth);
+    if (previewRef.current) {
+      // Staff preview: nothing is written to agent_consents.
       setNoticeNeeded(false);
+      return;
+    }
+    setAccepting(true);
+    setNoticeFailed(false);
+    try {
+      const consent = await acceptAgentConsent(bearerAuth);
+      setNoticeNeeded(false);
+      const careTeam = matchLanguage(consent.careTeamLanguage);
+      if (careTeam) setCareTeamLanguage(careTeam);
     } catch (e) {
       if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
-      setNoticeError('Could not save your answer. Check your connection and try again.');
+      setNoticeFailed(true);
     } finally {
       setAccepting(false);
     }
@@ -159,7 +234,7 @@ export default function MobileAssistant() {
 
   /** Switch right away; show cached messages instantly, otherwise a spinner while they load. */
   const open = async (id: string) => {
-    setListError(null);
+    setListProblem(null);
     if (id === currentId.current) {
       setView('chat');
       return;
@@ -182,7 +257,7 @@ export default function MobileAssistant() {
       currentId.current = null;
       setThread(newThread());
       setView('list');
-      setListError(e instanceof AgentChatError ? e.message : 'Could not open this conversation.');
+      setListProblem(problemOf(e, 'openError'));
     }
   };
 
@@ -203,25 +278,38 @@ export default function MobileAssistant() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteAgentConversation(deleteTarget.id, bearerAuth);
+      await deleteAgentConversation(deleteTarget.id, auth());
       setConversations((list) => list.filter((c) => c.id !== deleteTarget.id));
       cache.current.delete(deleteTarget.id);
       if (deleteTarget.id === currentId.current) startNew();
       setDeleteTarget(null);
     } catch (e) {
-      setListError(e instanceof AgentChatError ? e.message : 'Could not delete the conversation.');
+      setListProblem(problemOf(e, 'deleteError'));
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
   };
 
-  const title = thread.conversationId
-    ? conversationTitle(conversations.find((c) => c.id === thread.conversationId) ?? { title: null })
-    : 'New conversation';
+  const titleOf = (c: Pick<AgentConversation, 'title'> | undefined) => c?.title?.trim() || t.newConversation;
+  const title = thread.conversationId ? titleOf(conversations.find((c) => c.id === thread.conversationId)) : t.newConversation;
 
-  return (
-    <div style={APP_THEME} className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
+  const page = (
+    <div
+      lang={lang}
+      dir={dirOf(lang)}
+      style={APP_THEME}
+      className={`h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden ${
+        // Phone width on a desktop; transform keeps the sheets and dialogs inside this frame.
+        preview ? 'w-full max-w-[430px] shadow-xl [transform:translateZ(0)]' : ''
+      }`}
+    >
+      {preview && (
+        <div dir="ltr" lang="en" className="shrink-0 px-3 py-1.5 border-b border-amber-300 bg-amber-100 text-[12px] leading-snug font-600 text-[#92400E] flex items-start gap-1.5">
+          <Icon name="EyeIcon" size={14} variant="outline" className="shrink-0 mt-px" />
+          <span>Staff preview – patients see this page inside the app. Care-team messages create no real alert, and accepting the notice here is not recorded.</span>
+        </div>
+      )}
       {phase !== 'ready' ? (
         <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
           {phase === 'connecting' ? (
@@ -229,9 +317,7 @@ export default function MobileAssistant() {
           ) : (
             <>
               <Icon name="LockClosedIcon" size={28} variant="outline" className="text-muted-foreground" />
-              <p className="text-[14px] text-secondary-foreground">
-                {phase === 'no-app' ? 'Open the AI assistant from the HappyHearts app.' : 'Please sign in to the HappyHearts app again.'}
-              </p>
+              <p className="text-[14px] text-secondary-foreground">{phase === 'no-app' ? t.openFromApp : t.signInAgain}</p>
             </>
           )}
         </div>
@@ -240,7 +326,7 @@ export default function MobileAssistant() {
           conversations={conversations}
           activeId={thread.conversationId}
           loading={listLoading}
-          error={listError}
+          error={listProblem ? t[listProblem] : null}
           onBack={() => setView('chat')}
           onOpen={(id) => void open(id)}
           onNew={startNew}
@@ -250,7 +336,7 @@ export default function MobileAssistant() {
       ) : thread.loading ? (
         <>
           <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label="Your conversations">
+            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
               <Icon name="Bars3Icon" size={20} variant="outline" />
             </button>
             <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
@@ -265,6 +351,8 @@ export default function MobileAssistant() {
           conversationId={thread.conversationId}
           title={title}
           initialMessages={thread.messages}
+          auth={preview ? undefined : bearerAuth}
+          careTeamLanguage={careTeamLanguage}
           onShowList={() => {
             setView('list');
             void loadList(true);
@@ -272,44 +360,52 @@ export default function MobileAssistant() {
           onNew={startNew}
           onConversationCreated={(id) => {
             currentId.current = id;
-            setThread((t) => ({ ...t, conversationId: id }));
+            setThread((th) => ({ ...th, conversationId: id }));
             void loadList(true);
           }}
           onTitle={applyTitle}
           onTurnFinished={() => void loadList(true)}
+          // A new notice or Terms of Use came out while the chat was open: ask again.
+          onForbidden={() => void checkNotice()}
           onMessagesChange={rememberMessages}
         />
       )}
 
-      {phase === 'ready' && noticeNeeded && <AiNoticeDialog busy={accepting} error={noticeError} onAgree={() => void acceptNotice()} />}
+      {phase === 'ready' && noticeNeeded && (
+        <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-end">
           <div className="absolute inset-0 bg-black/30" onClick={() => !deleting && setDeleteTarget(null)} />
           <div className="relative w-full bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-            <h3 className="text-[16px] font-700">Delete this conversation?</h3>
-            <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">
-              “{conversationTitle(deleteTarget)}” will be removed from your list.
-            </p>
+            <h3 className="text-[16px] font-700">{t.deleteTitle}</h3>
+            <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">{t.deleteBody(titleOf(deleteTarget))}</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleting}
                 className="flex-1 h-12 rounded-xl border border-border text-[15px] font-600"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 onClick={confirmDelete}
                 disabled={deleting}
                 className="flex-1 h-12 rounded-xl bg-danger text-white text-[15px] font-600 disabled:opacity-60"
               >
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? t.deleting : t.delete}
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+
+  return (
+    <PatientTextProvider lang={lang}>
+      {preview ? <div className="min-h-[100dvh] bg-[#E2E8F0] flex justify-center">{page}</div> : page}
+    </PatientTextProvider>
   );
 }
