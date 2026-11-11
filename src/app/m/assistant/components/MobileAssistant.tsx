@@ -305,7 +305,7 @@ export default function MobileAssistant({ langParam }: Props) {
       }`}
     >
       {preview && (
-        <div dir="ltr" lang="en" className="shrink-0 px-3 py-1.5 border-b border-warning/40 bg-warning/15 text-[12px] leading-snug font-600 text-[#92400E] flex items-start gap-1.5">
+        <div dir="ltr" lang="en" className="shrink-0 px-3 py-1.5 border-b border-amber-300 bg-amber-100 text-[12px] leading-snug font-600 text-[#92400E] flex items-start gap-1.5">
           <Icon name="EyeIcon" size={14} variant="outline" className="shrink-0 mt-px" />
           <span>Staff preview – patients see this page inside the app. Care-team messages create no real alert, and accepting the notice here is not recorded.</span>
         </div>

@@ -134,7 +134,7 @@ export default function NoticeAcceptance() {
     return (
       <div lang={lang} dir={dirOf(lang)}>
         <p className="text-[13px] font-600 text-foreground mb-1.5">{n.title}</p>
-        <p className="text-[12.5px] text-foreground mb-1.5 rounded-lg bg-primary/5 border border-primary/20 px-2.5 py-1.5">
+        <p className="text-[12.5px] text-foreground mb-1.5 rounded-lg bg-blue-50 border border-blue-200 px-2.5 py-1.5">
           {before}
           <span className="text-primary underline">{link}</span>
           {after}

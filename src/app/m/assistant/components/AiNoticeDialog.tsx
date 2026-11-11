@@ -83,7 +83,7 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
           {text.title}
         </h2>
 
-        <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-3">
+        <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3">
           <p className="text-[14.5px] leading-relaxed text-foreground">
             {before}
             {link && <TermsLink>{link}</TermsLink>}

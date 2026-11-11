@@ -297,7 +297,7 @@ export default function MobileChatThread({
           <div className="relative w-full max-h-[calc(100dvh-1rem)] overflow-y-auto bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-modal">
             <div className="w-10 h-1 rounded-full bg-border mx-auto mb-4" />
             {emergency && (
-              <div className="mb-4 rounded-xl border-2 border-danger/50 bg-danger/5 px-3.5 py-3">
+              <div className="mb-4 rounded-xl border-2 border-red-300 bg-red-50 px-3.5 py-3">
                 <p className="flex items-start gap-2 text-[15px] font-700 leading-snug text-danger">
                   <Icon name="ExclamationTriangleIcon" size={20} variant="solid" className="shrink-0 mt-0.5" />
                   <span>{t.emergencyBanner}</span>

@@ -317,7 +317,7 @@ function SourceChips({
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-600 text-primary hover:bg-primary/15"
+        className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-600 text-primary hover:bg-blue-100"
       >
         <Icon name="BookOpenIcon" size={14} variant="outline" className="shrink-0" />
         {t.sources(docs.size)}
@@ -391,7 +391,7 @@ function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
     </a>
   );
   return (
-    <div className="rounded-xl border-2 border-danger/50 bg-danger/5 px-3.5 py-3">
+    <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3.5 py-3">
       <div className="flex items-start gap-2">
         <Icon name="ExclamationTriangleIcon" size={20} variant="solid" className="text-danger shrink-0 mt-1" />
         <div className="min-w-0 flex-1 font-500">
