@@ -19,7 +19,7 @@ export const SURVEY_FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'As needed', 'O
 export type SurveyPlacement = 'resource' | 'survey';
 export const SURVEY_PLACEMENTS: { value: SurveyPlacement; label: string; hint: string }[] = [
   { value: 'resource', label: 'Resources', hint: 'Resources tab (bottom navigation)' },
-  { value: 'survey', label: 'Survey', hint: 'Survey, in the side menu' },
+  { value: 'survey', label: 'Holistic Assessments', hint: 'Holistic Assessments, in the side menu' },
 ];
 export const placementLabel = (p: SurveyPlacement) => SURVEY_PLACEMENTS.find((x) => x.value === p)?.label ?? 'Resources';
 

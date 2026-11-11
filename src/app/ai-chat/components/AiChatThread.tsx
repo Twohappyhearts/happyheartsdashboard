@@ -71,7 +71,7 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
         </div>
         <div className="min-w-0">
           <p className="text-[14px] font-600 text-foreground truncate">{title}</p>
-          <p className="text-[11px] text-muted-foreground truncate">HappyHearts assistant · answers from the knowledge base</p>
+          <p className="text-[11px] text-muted-foreground truncate">Answers from the knowledge base and web search</p>
         </div>
         <span
           className="ml-auto text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"

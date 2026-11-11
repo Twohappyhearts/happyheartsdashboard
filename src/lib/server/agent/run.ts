@@ -31,7 +31,9 @@ import {
   type Conversation,
   type MessageStatus,
 } from './store';
-import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL } from './tools';
+import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL, WEB_TOOL } from './tools';
+import { withWebDomains } from './web-domains';
+import { createWebSearch } from './websearch';
 import { generateConversationTitle } from './title';
 
 export type AgentRequest =
@@ -42,6 +44,8 @@ const needsApproval = new Set<string>(TOOLS_NEEDING_APPROVAL);
 
 /** Each search is an embedding + hybrid search + rerank plus another model step; cap them per turn. */
 const MAX_SEARCHES_PER_TURN = 2;
+/** Each web search is a separate OpenAI request with the built-in search; same cap. */
+const MAX_WEB_SEARCHES_PER_TURN = 2;
 const lastUserId = (messages: UIMessage[]) => [...messages].reverse().find((m) => m.role === 'user')?.id ?? null;
 
 const squash = (t: string) => t.replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase();
@@ -83,11 +87,13 @@ export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
  *   5. onEnd: save the assistant message (full parts), then compress in the background if needed
  */
 export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Promise<Response> {
-  const cfg = agentConfig();
+  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites).
+  const cfg = await withWebDomains(agentConfig(), caller.admin);
   // Filled in when the patient edited a care-team message in the confirmation.
   const careteamEdits = new Map<string, string>();
-  const tools = createAgentTools(caller, { careteamEdits });
-  const opts = { canNotifyCareteam: true };
+  const searchWeb = createWebSearch(cfg);
+  const tools = createAgentTools(caller, { careteamEdits, searchWeb, webSites: cfg.webSearch?.domains });
+  const opts = { canNotifyCareteam: true, canSearchWeb: searchWeb != null };
   const { admin } = caller;
 
   let conversation: Conversation;
@@ -157,10 +163,13 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     experimental_toolApprovalSecret: cfg.toolApprovalSecret,
     stopWhen: isStepCount(cfg.maxSteps),
     providerOptions: thinkingOptions(cfg, cfg.thinking),
-    // After MAX_SEARCHES_PER_TURN searches the model must answer with what it has.
+    // After the cap for a search tool the model must answer with what it has.
     prepareStep: ({ steps }) => {
-      const searches = steps.reduce((n, st) => n + st.toolCalls.filter((c) => c.toolName === SEARCH_TOOL).length, 0);
-      return searches >= MAX_SEARCHES_PER_TURN ? { activeTools: toolNames.filter((n) => n !== SEARCH_TOOL) } : {};
+      const count = (name: string) => steps.reduce((n, st) => n + st.toolCalls.filter((c) => c.toolName === name).length, 0);
+      const spent = new Set<string>();
+      if (count(SEARCH_TOOL) >= MAX_SEARCHES_PER_TURN) spent.add(SEARCH_TOOL);
+      if (count(WEB_TOOL) >= MAX_WEB_SEARCHES_PER_TURN) spent.add(WEB_TOOL);
+      return spent.size ? { activeTools: toolNames.filter((n) => !spent.has(n)) } : {};
     },
     onStepEnd: (step) => {
       const now = Date.now();
@@ -285,7 +294,12 @@ function streamError(e: unknown) {
 }
 
 /** After a turn, summarize now so the next request does not pay for it. */
-async function compressAfterTurn(caller: AgentCaller, conversationId: string, cfg: AgentConfig, opts: { canNotifyCareteam: boolean }) {
+async function compressAfterTurn(
+  caller: AgentCaller,
+  conversationId: string,
+  cfg: AgentConfig,
+  opts: { canNotifyCareteam: boolean; canSearchWeb?: boolean },
+) {
   try {
     const state: AgentState = await loadState(caller.admin, caller.userId, conversationId);
     if (buildContext(state, cfg, opts).needsSummary) await summarize(caller.admin, state, cfg);

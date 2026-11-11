@@ -5,7 +5,7 @@ import { measureMessages, measureText } from './measure';
 import { summaryModel, thinkingOptions } from './model';
 import { buildInstructions } from './prompt';
 import { saveSummary, type AgentState, type StoredMessage } from './store';
-import { SEARCH_TOOL, type SearchToolOutput } from './tools';
+import { RESULT_TOOLS, SEARCH_TOOL, type SearchToolOutput } from './tools';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -56,7 +56,7 @@ function trimSearchOutput(output: SearchToolOutput, chars: number): SearchToolOu
       content: r.content.length > chars ? `${r.content.slice(0, chars)}…` : r.content,
     })),
     trimmed: true,
-    note: 'Older search results were shortened. Call searchKnowledge again if the full text is needed.',
+    note: 'Older search results were shortened. Search again if the full text is needed.',
   };
 }
 
@@ -70,7 +70,7 @@ function trimRagResults(messages: UIMessage[], keepTurns: number, chars: number)
       : turn.map(({ message }) => ({
           ...message,
           parts: message.parts.map((p) =>
-            isToolUIPart(p) && getToolName(p) === SEARCH_TOOL && p.state === 'output-available'
+            isToolUIPart(p) && RESULT_TOOLS.has(getToolName(p)) && p.state === 'output-available'
               ? { ...p, output: trimSearchOutput(p.output as SearchToolOutput, chars) }
               : p,
           ),
@@ -81,7 +81,7 @@ function trimRagResults(messages: UIMessage[], keepTurns: number, chars: number)
 export function buildContext(
   state: AgentState,
   cfg: AgentConfig,
-  opts: { canNotifyCareteam: boolean },
+  opts: { canNotifyCareteam: boolean; canSearchWeb?: boolean },
   /** Override messages (e.g. with an approval answer applied). Defaults to state.recent. */
   messages: UIMessage[] = state.recent.map((s) => s.message),
 ): BuiltContext & { needsSummary: boolean } {
@@ -122,6 +122,8 @@ function transcript(items: StoredMessage[]): string {
                 ? `failed: ${p.errorText}`
                 : name === SEARCH_TOOL
                   ? 'searched the knowledge base'
+                  : RESULT_TOOLS.has(name)
+                    ? 'searched trusted websites'
                   : p.state === 'output-available'
                     ? JSON.stringify(p.output)
                     : p.state;

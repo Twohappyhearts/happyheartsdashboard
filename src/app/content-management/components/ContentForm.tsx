@@ -5,8 +5,8 @@ import { Controller, useForm } from 'react-hook-form';
 import RichTextEditor from '@/components/ui/RichTextEditor';
 import Icon from '@/components/ui/AppIcon';
 import Toggle from '@/components/ui/Toggle';
-import type { ContentCategory, ContentInput, ContentItem } from '@/lib/content';
-import { ContentError } from '@/lib/content';
+import type { ContentCategory, ContentInput, ContentItem, ReferenceLink } from '@/lib/content';
+import { ContentError, MAX_REFERENCE_LINKS, lessonOwnReferences } from '@/lib/content';
 import AppImage from '@/components/ui/AppImage';
 
 interface ContentFormProps {
@@ -22,7 +22,9 @@ interface ContentFormProps {
   type: 'sessions' | 'resources';
 }
 
-type FormValues = Omit<ContentInput, 'tags'>;
+type FormValues = Omit<ContentInput, 'tags' | 'references'>;
+
+const HTTPS_LINK = /^https:\/\/\S+$/i;
 
 const HTTPS = { value: /^https:\/\/\S+$/i, message: 'Must be a full link starting with https://' };
 
@@ -108,6 +110,15 @@ export default function ContentForm({
   const quizUrl = watch('quizUrl');
   const activeVal = watch('active');
   const [tagInput, setTagInput] = useState((item?.tags || []).join(', '));
+  const [references, setReferences] = useState<ReferenceLink[]>(item?.references ?? []);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const scriptVal = watch('script');
+  /** What the app lists by itself, so staff see the whole block and do not add a link twice. */
+  const ownReferences = lessonOwnReferences({ videoUrl: videoUrl || '', audioUrl: audioUrl || '', script: scriptVal || '' });
+  const setReference = (i: number, patch: Partial<ReferenceLink>) => {
+    setReferenceError(null);
+    setReferences((list) => list.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  };
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -122,6 +133,15 @@ export default function ContentForm({
   const categoryOptions = categories.filter((c) => c.isActive || c.id === item?.categoryId);
 
   const onSubmit = async (data: FormValues) => {
+    // Rows left completely empty are dropped; a row with text needs a full https link.
+    const cleaned = references
+      .map((r) => ({ title: r.title.trim(), url: r.url.trim() }))
+      .filter((r) => r.title || r.url);
+    if (cleaned.some((r) => !HTTPS_LINK.test(r.url))) {
+      setReferenceError('Every reference needs a full link starting with https://');
+      return;
+    }
+    setReferenceError(null);
     setSaving(true);
     setSaveError(null);
     const tags = tagInput
@@ -129,7 +149,7 @@ export default function ContentForm({
       .map((t) => t.trim())
       .filter(Boolean);
     try {
-      await onSave({ ...data, categoryId: data.categoryId || null, tags });
+      await onSave({ ...data, categoryId: data.categoryId || null, tags, references: cleaned });
     } catch (e) {
       setSaveError(e instanceof ContentError ? e.message : 'Could not save. Check your connection and try again.');
     } finally {
@@ -489,6 +509,90 @@ export default function ContentForm({
         />
         {errors.script && <p className="text-[11px] text-danger mt-1">{errors.script.message}</p>}
       </div>
+
+      {isSession && (
+        <>
+          <hr className="border-border" />
+
+          {/* References */}
+          <div>
+            <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">References</h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Shown at the end of the lesson in the app. The lesson&apos;s video, audio and the links in the script are listed
+              automatically; add any other source here.
+            </p>
+
+            {ownReferences.length > 0 && (
+              <div className="mb-4">
+                <p className="text-[12px] font-500 text-foreground mb-1.5">Listed automatically</p>
+                <ul className="space-y-1">
+                  {ownReferences.map((r) => (
+                    <li key={r.url} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border text-[12px]">
+                      <Icon name="LinkIcon" size={13} variant="outline" className="shrink-0 text-muted-foreground" />
+                      {r.title && <span className="shrink-0 font-500 text-foreground">{r.title}</span>}
+                      <a href={r.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary hover:underline">
+                        {r.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <p className="text-[12px] font-500 text-foreground mb-1.5">Added by you</p>
+            {references.length === 0 && <p className="text-[12px] text-muted-foreground mb-2">No extra references yet.</p>}
+            <div className="space-y-2">
+              {references.map((r, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <input
+                    type="text"
+                    value={r.title}
+                    onChange={(e) => setReference(i, { title: e.target.value })}
+                    maxLength={200}
+                    placeholder="Title, e.g. ACOG: Preeclampsia FAQ"
+                    aria-label={`Reference ${i + 1} title`}
+                    className="w-2/5 px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <input
+                    type="url"
+                    value={r.url}
+                    onChange={(e) => setReference(i, { url: e.target.value })}
+                    maxLength={2000}
+                    placeholder="https://..."
+                    aria-label={`Reference ${i + 1} link`}
+                    className={`flex-1 min-w-0 px-3 py-2 border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${
+                      r.url.trim() && !HTTPS_LINK.test(r.url.trim()) ? 'border-danger' : 'border-border'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReferenceError(null);
+                      setReferences((list) => list.filter((_, j) => j !== i));
+                    }}
+                    className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-danger"
+                    aria-label={`Remove reference ${i + 1}`}
+                    title="Remove"
+                  >
+                    <Icon name="TrashIcon" size={16} variant="outline" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {referenceError && <p className="text-[11px] text-danger mt-1.5">{referenceError}</p>}
+            {references.length < MAX_REFERENCE_LINKS && (
+              <button
+                type="button"
+                onClick={() => setReferences((list) => [...list, { title: '', url: '' }])}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted"
+              >
+                <Icon name="PlusIcon" size={13} variant="outline" />
+                Add reference
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       <hr className="border-border" />
 

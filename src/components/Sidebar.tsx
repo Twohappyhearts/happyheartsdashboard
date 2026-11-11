@@ -34,6 +34,7 @@ const navGroups: NavGroup[] = [
     groupLabel: 'INSIGHTS',
     items: [
       { label: 'Analytics', href: '/analytics', icon: 'ChartBarIcon' },
+      { label: 'AI Notice', href: '/ai-notice', icon: 'ShieldCheckIcon' },
     ],
   },
   {
@@ -41,6 +42,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'AI Chat', href: '/ai-chat', icon: 'SparklesIcon' },
       { label: 'Knowledge Base', href: '/knowledge-base', icon: 'CircleStackIcon' },
+      { label: 'Trusted Websites', href: '/trusted-websites', icon: 'GlobeAltIcon' },
     ],
   },
   {

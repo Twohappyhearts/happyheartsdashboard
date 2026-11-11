@@ -53,7 +53,9 @@ export default function AiMessageParts({ message, canRespond, streaming, onAppro
         }
         if (isToolUIPart(part)) {
           const name = getToolName(part);
-          if (name === 'searchKnowledge') return <SearchCard key={part.toolCallId} part={part as ToolPart} />;
+          if (name === 'searchKnowledge' || name === 'webSearch') {
+            return <SearchCard key={part.toolCallId} part={part as ToolPart} web={name === 'webSearch'} />;
+          }
           if (name === 'notifyCareteam') {
             // The model sometimes offers the care-team message without writing the fixed reply
             // (referral / 911 / 988) first; show that reply from code so it is never missing.
@@ -87,13 +89,17 @@ interface SearchResult {
   title: string;
   source?: string | null;
   url?: string | null;
+  /** "web" for webSearch results. */
+  kind?: 'web';
 }
 
-/** ref → search result, over every searchKnowledge call in this reply. */
+const RESULT_TOOLS = new Set(['searchKnowledge', 'webSearch']);
+
+/** ref → search result, over every searchKnowledge / webSearch call in this reply (refs are shared). */
 function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
   const byRef = new Map<number, SearchResult>();
   for (const part of message.parts) {
-    if (!isToolUIPart(part) || getToolName(part) !== 'searchKnowledge' || part.state !== 'output-available') continue;
+    if (!isToolUIPart(part) || !RESULT_TOOLS.has(getToolName(part)) || part.state !== 'output-available') continue;
     for (const r of (part.output as { results?: SearchResult[] } | undefined)?.results ?? []) {
       if (typeof r.ref === 'number') byRef.set(r.ref, r);
     }
@@ -101,30 +107,58 @@ function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
   return byRef;
 }
 
-/** One chip per document the answer cited: organization · title, linking to the original page. */
+/**
+ * The documents the answer cited, folded into one "Sources (n)" line; the reader opens it to
+ * see them. One entry per document: organization · title, linking to the original page.
+ * Web results get a globe icon so the reader can tell a website from the Happy Hearts library.
+ */
 function SourceChips({ refs, results }: { refs: number[]; results: Map<number, SearchResult> }) {
+  const [open, setOpen] = useState(false);
   const docs = new Map<string, SearchResult>();
   for (const ref of refs) {
     const r = results.get(ref);
-    if (r && !docs.has(r.title)) docs.set(r.title, r);
+    const key = r ? (r.kind === 'web' && r.url ? r.url : r.title) : '';
+    if (r && !docs.has(key)) docs.set(key, r);
   }
   if (!docs.size) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
-      <span className="text-muted-foreground">Source:</span>
-      {Array.from(docs.values()).map((d) => {
-        const label = [displaySource(d.source), d.title].filter(Boolean).join(' · ');
-        const chip = 'inline-flex max-w-full items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-secondary-foreground';
-        return d.url ? (
-          <a key={d.title} href={d.url} target="_blank" rel="noopener noreferrer" className={`${chip} hover:bg-muted truncate`} title={label}>
-            {label}
-          </a>
-        ) : (
-          <span key={d.title} className={`${chip} truncate`} title={label}>
-            {label}
-          </span>
-        );
-      })}
+    <div className="text-[11.5px]">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-secondary-foreground hover:bg-muted"
+      >
+        <Icon name="BookOpenIcon" size={11} variant="outline" className="shrink-0" />
+        {docs.size === 1 ? '1 source' : `${docs.size} sources`}
+        <Icon name={open ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={11} variant="outline" className="shrink-0" />
+      </button>
+      {open && (
+        <ul className="mt-1.5 space-y-1">
+          {Array.from(docs.entries()).map(([key, d]) => {
+            const label = [displaySource(d.source), d.title].filter(Boolean).join(' · ');
+            const row = 'flex items-start gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-secondary-foreground';
+            const icon = (
+              <Icon name={d.kind === 'web' ? 'GlobeAltIcon' : 'DocumentTextIcon'} size={12} variant="outline" className="shrink-0 mt-[2px]" />
+            );
+            return (
+              <li key={key}>
+                {d.url ? (
+                  <a href={d.url} target="_blank" rel="noopener noreferrer" className={`${row} hover:bg-muted`}>
+                    {icon}
+                    <span className="min-w-0 break-words">{label}</span>
+                  </a>
+                ) : (
+                  <span className={row}>
+                    {icon}
+                    <span className="min-w-0 break-words">{label}</span>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -155,27 +189,32 @@ function Reasoning({ text, active }: { text: string; active: boolean }) {
 }
 
 interface SearchOutput {
-  results?: { chunkId: string; title: string; section?: string; content: string }[];
+  results?: { chunkId: string; title: string; section?: string; source?: string | null; url?: string | null; content: string }[];
 }
 
-function SearchCard({ part }: { part: ToolPart }) {
+function SearchCard({ part, web = false }: { part: ToolPart; web?: boolean }) {
   const [open, setOpen] = useState(false);
   const query = (part.input as { query?: string } | undefined)?.query ?? '';
   const results = part.state === 'output-available' ? ((part.output as SearchOutput)?.results ?? []) : [];
-  const titles = Array.from(new Set(results.map((r) => r.title).filter(Boolean)));
   const running = part.state === 'input-streaming' || part.state === 'input-available';
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[12px]">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 text-left text-secondary-foreground" disabled={running}>
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="w-full flex items-center gap-2 text-left text-secondary-foreground" disabled={running || results.length === 0}>
         <Icon
-          name={running ? 'ArrowPathIcon' : 'MagnifyingGlassIcon'}
+          name={running ? 'ArrowPathIcon' : web ? 'GlobeAltIcon' : 'MagnifyingGlassIcon'}
           size={13}
           variant="outline"
           className={`shrink-0 ${running ? 'animate-spin' : ''}`}
         />
         <span className="flex-1 truncate">
-          {running ? 'Searching the knowledge base' : 'Searched the knowledge base'}
+          {web
+            ? running
+              ? 'Searching trusted websites'
+              : 'Searched trusted websites'
+            : running
+              ? 'Searching the knowledge base'
+              : 'Searched the knowledge base'}
           {query && <span className="text-muted-foreground"> · “{query}”</span>}
         </span>
         {part.state === 'output-available' && (
@@ -184,14 +223,22 @@ function SearchCard({ part }: { part: ToolPart }) {
           </span>
         )}
         {part.state === 'output-error' && <span className="text-danger shrink-0">failed</span>}
+        {results.length > 0 && (
+          <Icon name={open ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={12} variant="outline" className="shrink-0 text-muted-foreground" />
+        )}
       </button>
-      {!open && titles.length > 0 && <p className="mt-1 text-muted-foreground truncate pl-5">{titles.join(' · ')}</p>}
       {open && results.length > 0 && (
         <ul className="mt-2 space-y-2 pl-5">
           {results.map((r) => (
             <li key={r.chunkId}>
               <p className="font-600 text-foreground">
-                {r.title}
+                {web && r.url ? (
+                  <a href={r.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {r.title}
+                  </a>
+                ) : (
+                  r.title
+                )}
                 {r.section && <span className="font-400 text-muted-foreground"> · {r.section}</span>}
               </p>
               <p className="text-muted-foreground whitespace-pre-wrap break-words line-clamp-4">{r.content}</p>

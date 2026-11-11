@@ -188,7 +188,7 @@ export default function SurveyManagementClient() {
         <div>
           <h1 className="text-[22px] font-700 text-foreground">Survey Management</h1>
           <p className="text-[13px] text-muted-foreground mt-0.5">
-            Manage REDCap links shown in the app’s Resources tab and Survey menu, and view per-participant personalized URLs.
+            Manage REDCap links shown in the app’s Resources tab and Holistic Assessments menu, and view per-participant personalized URLs.
           </p>
         </div>
         {activeTab === 'links' && (
@@ -500,7 +500,7 @@ export default function SurveyManagementClient() {
               <label className="block text-[13px] font-500 text-foreground mb-1">Section in app</label>
               <div className="relative">
                 <select {...register('category')} className={`${inputClass} appearance-none pr-8`}>
-                  <option value="">Surveys (no section)</option>
+                  <option value="">No section</option>
                   {SURVEY_CATEGORIES.map(c => <option key={`cat-${c}`} value={c}>{c}</option>)}
                 </select>
                 <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />

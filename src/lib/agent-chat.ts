@@ -66,3 +66,17 @@ export const conversationTitle = (c: Pick<AgentConversation, 'title'>) => c.titl
 
 export const historyToUIMessages = (messages: AgentHistoryMessage[]): UIMessage[] =>
   messages.map(({ id, role, parts }) => ({ id, role, parts }) as UIMessage);
+
+export interface AgentConsentStatus {
+  agreed: boolean;
+  agreedAt: string | null;
+  /** false for staff and admin accounts: they are not asked. */
+  required: boolean;
+  version: number;
+}
+
+/** Has the caller accepted the AI assistant notice? */
+export const getAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', {}, auth);
+
+/** The caller pressed "I understand and agree". */
+export const acceptAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', { method: 'POST' }, auth);

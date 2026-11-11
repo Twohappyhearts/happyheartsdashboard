@@ -14,8 +14,35 @@ interface AppLayoutProps {
   fullBleed?: boolean;
 }
 
+/**
+ * Every page renders its own AppLayout, so the sidebar state would reset to "expanded" on
+ * each navigation. It is kept here (for the open tab) and in localStorage (across reloads).
+ */
+const SIDEBAR_KEY = 'hh.sidebar.collapsed';
+let sidebarCollapsed: boolean | null = null;
+
+function readCollapsed(): boolean {
+  if (sidebarCollapsed !== null) return sidebarCollapsed;
+  if (typeof window === 'undefined') return false;
+  try {
+    sidebarCollapsed = window.localStorage.getItem(SIDEBAR_KEY) === '1';
+  } catch {
+    sidebarCollapsed = false;
+  }
+  return sidebarCollapsed;
+}
+
 export default function AppLayout({ children, fullBleed = false }: AppLayoutProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsedState] = useState(readCollapsed);
+  const setCollapsed = (next: boolean) => {
+    sidebarCollapsed = next;
+    setCollapsedState(next);
+    try {
+      window.localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+    } catch {
+      // private mode: the choice still holds until the tab is reloaded
+    }
+  };
   const { user, isStaff, loading, signOut, profile } = useAuth();
   const router = useRouter();
   const pathname = usePathname();

@@ -3,7 +3,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
-import { AI_DISCLAIMER } from '@/lib/agent-fixed-replies';
 import { bearerAuth, postToApp, requestFreshToken } from '@/lib/agent-bridge';
 import { messageText, pendingApproval, useAgentChat } from '@/lib/use-agent-chat';
 import AiMessageParts from '@/app/ai-chat/components/AiMessageParts';
@@ -237,7 +236,6 @@ export default function MobileChatThread({
             </button>
           )}
         </div>
-        <p className="mt-1.5 px-1 text-[11px] leading-snug text-muted-foreground">{AI_DISCLAIMER}</p>
       </div>
 
       {/* Care-team confirmation: the agent proposed a message; nothing is sent until the patient presses Send. */}

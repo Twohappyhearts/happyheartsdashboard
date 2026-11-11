@@ -6,7 +6,9 @@ import Icon from '@/components/ui/AppIcon';
 import {
   AgentChatError,
   conversationTitle,
+  acceptAgentConsent,
   deleteAgentConversation,
+  getAgentConsent,
   historyToUIMessages,
   listAgentConversations,
   loadAgentMessages,
@@ -15,6 +17,7 @@ import {
 import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
+import AiNoticeDialog from './AiNoticeDialog';
 
 /** Colors of the Flutter app's AppTheme, mapped onto the dashboard's CSS variables. */
 const APP_THEME = {
@@ -53,6 +56,10 @@ export default function MobileAssistant() {
   const [thread, setThread] = useState<Thread>(newThread);
   const [deleteTarget, setDeleteTarget] = useState<AgentConversation | null>(null);
   const [deleting, setDeleting] = useState(false);
+  /** The patient still has to accept the AI notice (first use, or the notice changed). */
+  const [noticeNeeded, setNoticeNeeded] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [noticeError, setNoticeError] = useState<string | null>(null);
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
@@ -103,9 +110,13 @@ export default function MobileAssistant() {
     installBridge();
     const off = onTokenChange((t) => t && setPhase('ready'));
     waitForToken(inApp() ? 15_000 : 2_000)
-      .then(() => {
-        setPhase('ready');
+      .then(async () => {
         void loadList();
+        // Known before the chat shows, so the notice never appears over a half-typed message.
+        // If the check fails, show the notice: accepting again changes nothing.
+        const consent = await getAgentConsent(bearerAuth).catch(() => null);
+        setNoticeNeeded(!consent || (consent.required && !consent.agreed));
+        setPhase('ready');
       })
       .catch(() => setPhase(inApp() ? 'error' : 'no-app'));
     return () => {
@@ -125,6 +136,20 @@ export default function MobileAssistant() {
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
   }, []);
+
+  const acceptNotice = async () => {
+    setAccepting(true);
+    setNoticeError(null);
+    try {
+      await acceptAgentConsent(bearerAuth);
+      setNoticeNeeded(false);
+    } catch (e) {
+      if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
+      setNoticeError('Could not save your answer. Check your connection and try again.');
+    } finally {
+      setAccepting(false);
+    }
+  };
 
   const startNew = () => {
     currentId.current = null;
@@ -255,6 +280,8 @@ export default function MobileAssistant() {
           onMessagesChange={rememberMessages}
         />
       )}
+
+      {phase === 'ready' && noticeNeeded && <AiNoticeDialog busy={accepting} error={noticeError} onAgree={() => void acceptNotice()} />}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-end">

@@ -4,9 +4,14 @@ import { z } from 'zod';
 import { AGENT_LANGUAGES, CARETEAM_SITUATIONS } from '@/lib/agent-fixed-replies';
 import { retrieve } from '@/lib/server/retrieval';
 import type { AgentCaller } from './auth';
+import type { WebSearchFn } from './websearch';
 
 /** Name of the RAG tool; context.ts trims its old outputs. */
 export const SEARCH_TOOL = 'searchKnowledge';
+/** Web search on the trusted sites (websearch.ts); results have the same shape and ref numbers. */
+export const WEB_TOOL = 'webSearch';
+/** Tools whose results the model cites with "[sources: …]"; context.ts trims their old outputs. */
+export const RESULT_TOOLS: ReadonlySet<string> = new Set([SEARCH_TOOL, WEB_TOOL]);
 
 const MAX_CHUNK_CHARS = 2000;
 /** Two chunks per document at most, so a second source that disagrees can make the top results. */
@@ -24,6 +29,8 @@ export interface SearchResultItem {
   source: string | null;
   url: string | null;
   content: string;
+  /** "web" for webSearch results; absent for the knowledge base. */
+  kind?: 'web';
 }
 
 export interface SearchToolOutput {
@@ -43,6 +50,10 @@ export class AgentToolError extends Error {}
 export interface AgentToolOptions {
   /** toolCallId → the care-team message as the patient edited it in the confirmation. */
   careteamEdits?: Map<string, string>;
+  /** Web search on the trusted sites; the webSearch tool exists only when this is set. */
+  searchWeb?: WebSearchFn | null;
+  /** The sites web search is limited to, named in the tool description. */
+  webSites?: string[];
 }
 
 /**
@@ -94,12 +105,51 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
     }),
   } satisfies ToolSet;
 
+  const searchWeb = opts.searchWeb;
+  // Named so the model knows what kind of sites it searches; kept short.
+  const webSites = (opts.webSites ?? []).slice(0, 15);
+  const webTools: ToolSet = searchWeb
+    ? {
+        [WEB_TOOL]: tool({
+          description:
+            `Search a few trusted health websites${webSites.length ? ` (${webSites.join(', ')})` : ''}. ` +
+            'Equally important as searchKnowledge: call both in the same step for every general health-education question. ' +
+            'Write the query in English as a general topic; never include names, usernames, numbers or other personal details.',
+          inputSchema: z.object({
+            query: z.string().min(1).max(300).describe('General topic to look for, in English, phrased as a search query.'),
+          }),
+          execute: async ({ query }): Promise<SearchToolOutput> => {
+            try {
+              const hits = await searchWeb(query);
+              return {
+                results: hits.map((h, i) => ({
+                  ref: nextRef++,
+                  chunkId: `web-${i}-${h.url}`,
+                  title: h.title,
+                  section: h.domain,
+                  source: h.source,
+                  url: h.url,
+                  content: h.content,
+                  kind: 'web' as const,
+                })),
+              };
+            } catch (e) {
+              console.warn('[agent] webSearch failed', e instanceof Error ? e.message : e);
+              // Not fatal: the model answers from the knowledge base.
+              return { results: [], note: 'Web search is unavailable right now. Use the knowledge-base results.' };
+            }
+          },
+        }),
+      }
+    : {};
+
   // Patients send a real alert. Staff/admin use the dashboard to try the assistant,
   // so for them the tool goes through the same approval step but sends nothing.
   const preview = caller.role !== 'patient';
 
   return {
     ...tools,
+    ...webTools,
     // Needs the user's approval before it runs (see toolApproval in run.ts).
     notifyCareteam: tool({
       description:

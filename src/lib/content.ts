@@ -17,6 +17,14 @@ export interface ContentCategory {
   usageCount: number;
 }
 
+/** A link in a lesson's References block. */
+export interface ReferenceLink {
+  title: string;
+  url: string;
+}
+
+export const MAX_REFERENCE_LINKS = 30;
+
 export interface ContentItem {
   id: string;
   kind: ContentKind;
@@ -37,6 +45,8 @@ export interface ContentItem {
   groupNumber: number;
   groupName: string;
   tags: string[];
+  /** Links staff added to the References block (the lesson's own links are added by the app). */
+  references: ReferenceLink[];
   active: boolean;
   updatedAt: string;
 }
@@ -58,6 +68,7 @@ export type ContentInput = Pick<
   | 'audioDuration'
   | 'groupName'
   | 'tags'
+  | 'references'
   | 'active'
 >;
 
@@ -70,9 +81,48 @@ export class ContentError extends Error {
 const COLUMNS =
   'id, kind, title, description, category_id, video_url, audio_url, thumbnail_url, thumbnail_alt, ' +
   'infographic_url, quiz_url, script_html, video_duration, audio_duration, group_id, group_number, ' +
-  'group_name, tags, is_active, updated_at, category:content_categories(name)';
+  'group_name, tags, reference_links, is_active, updated_at, category:content_categories(name)';
 
 type Row = Record<string, unknown>;
+
+function toReferences(v: unknown): ReferenceLink[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((r) => ({ title: String((r as Row | null)?.title ?? '').trim(), url: String((r as Row | null)?.url ?? '').trim() }))
+    .filter((r) => r.url);
+}
+
+const HREF = /<a\b[^>]*\bhref\s*=\s*["'](https:\/\/[^"'\s]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+const decode = (t: string) =>
+  t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+
+/**
+ * The lesson's own links, which the app lists in the References block before the ones staff
+ * added: the video, the audio and every link in the lesson notes. Keep in step with
+ * lessonReferences() in the app (lib/services/content_service.dart).
+ */
+export function lessonOwnReferences(item: Pick<ContentItem, 'videoUrl' | 'audioUrl' | 'script'>): ReferenceLink[] {
+  const out: ReferenceLink[] = [];
+  if (item.videoUrl.trim()) out.push({ title: 'Lesson video', url: item.videoUrl.trim() });
+  if (item.audioUrl.trim()) out.push({ title: 'Lesson audio', url: item.audioUrl.trim() });
+  for (const m of item.script.matchAll(HREF)) {
+    const url = decode(m[1]);
+    const text = decode(m[2].replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
+    out.push({ title: text && text !== url ? text : '', url });
+  }
+  return dedupeReferences(out);
+}
+
+/** First mention of each link wins. */
+export function dedupeReferences(links: ReferenceLink[]): ReferenceLink[] {
+  const seen = new Set<string>();
+  return links.filter((l) => {
+    const key = l.url.replace(/\/+$/, '').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 function toItem(r: Row): ContentItem {
   const cat = (Array.isArray(r.category) ? r.category[0] : r.category) as Row | null;
@@ -96,6 +146,7 @@ function toItem(r: Row): ContentItem {
     groupNumber: Number(r.group_number ?? 0),
     groupName: String(r.group_name ?? ''),
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
+    references: toReferences(r.reference_links),
     active: r.is_active === true,
     updatedAt: String(r.updated_at ?? ''),
   };
@@ -119,6 +170,10 @@ function toRow(input: ContentInput): Row {
     audio_duration: blankToNull(input.audioDuration),
     group_name: input.groupName.trim(),
     tags: input.tags,
+    reference_links: input.references
+      .map((r) => ({ title: r.title.trim(), url: r.url.trim() }))
+      .filter((r) => r.url)
+      .slice(0, MAX_REFERENCE_LINKS),
     is_active: input.active,
   };
 }
@@ -128,10 +183,12 @@ function fail(e: { code?: string; message?: string } | null, fallback: string): 
   if (e.code === '42501') return new ContentError('Your account does not have staff permission for this.', e.code);
   if (e.code === '23514') {
     const m = e.message ?? '';
+    if (m.includes('reference_links')) return new ContentError('Every reference needs a link starting with https:// (at most 30 references).', e.code);
     if (m.includes('url')) return new ContentError('Every link must start with https://', e.code);
     if (m.includes('duration')) return new ContentError('Durations must look like 5:47 (MM:SS).', e.code);
     return new ContentError('Some fields are too long or in the wrong format.', e.code);
   }
+  if (e.code === 'PGRST204' || e.code === '42703') return new ContentError('Run the lesson references migration first (missing column).', e.code);
   if (e.code === '23505') return new ContentError('A category with this name already exists.', e.code);
   if (e.code === '23503') {
     return new ContentError('This category is still used by some content. Deactivate it instead.', e.code);

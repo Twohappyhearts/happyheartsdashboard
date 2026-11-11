@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ApiError, jsonError } from '@/lib/server/staff-auth';
 import { requireAgentCaller } from '@/lib/server/agent/auth';
+import { assertConsent } from '@/lib/server/agent/consent';
 import { runAgentTurn } from '@/lib/server/agent/run';
 
 export const runtime = 'nodejs';
@@ -35,12 +36,15 @@ const Body = z.union([
  *   Approve/deny:    { conversationId, approvals: [{ approvalId, approved, reason?, editedMessage? }] }
  *
  * Auth: `Authorization: Bearer <Supabase access token>` (mobile app) or the dashboard session cookie.
+ * 403 for a patient who has not accepted the AI assistant notice yet (POST /api/agent/consent).
  * The response header X-Conversation-Id carries the conversation id.
  * 202 JSON { status: 'awaiting_approval' } when other tool calls in the same message still wait for an answer.
  */
 export async function POST(request: Request) {
   try {
     const caller = await requireAgentCaller(request);
+    // Patients accept the AI notice once before their first message (403 until then).
+    await assertConsent(caller);
     const parsed = Body.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new ApiError(400, 'Invalid request.');
     const body = parsed.data;
