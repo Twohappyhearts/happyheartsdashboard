@@ -73,6 +73,8 @@ export interface AgentConsentStatus {
   /** false for staff and admin accounts: they are not asked. */
   required: boolean;
   version: number;
+  /** Language messages to the care team are written in (e.g. "en"). */
+  careTeamLanguage?: string;
 }
 
 /** Has the caller accepted the AI assistant notice? */

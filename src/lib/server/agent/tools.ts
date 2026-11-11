@@ -54,6 +54,8 @@ export interface AgentToolOptions {
   searchWeb?: WebSearchFn | null;
   /** The sites web search is limited to, named in the tool description. */
   webSites?: string[];
+  /** Name of the language care-team drafts are written in (e.g. "English"); see settings.ts. */
+  careteamLanguageName?: string;
 }
 
 /**
@@ -180,7 +182,9 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
           .string()
           .min(1)
           .max(1000)
-          .describe("1–3 sentences for the care team written as the patient (first person): what they feel, since when, anything they mentioned. No diagnosis."),
+          .describe(
+            `1–4 sentences for the care team, written as the patient (first person) in ${opts.careteamLanguageName ?? 'English'}: what they feel or asked, since when, and every detail they gave (medicine names, doses, how often, symptoms, numbers, times). No diagnosis.`,
+          ),
       }),
       execute: async ({ message }, { toolCallId }) => {
         // The patient may have edited the draft in the confirmation before pressing Send.

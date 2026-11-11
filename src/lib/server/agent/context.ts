@@ -3,7 +3,7 @@ import { generateText, getToolName, isToolUIPart, type UIMessage } from 'ai';
 import type { AgentConfig } from './config';
 import { measureMessages, measureText } from './measure';
 import { summaryModel, thinkingOptions } from './model';
-import { buildInstructions, fixedReplyTableText } from './prompt';
+import { buildInstructions, fixedReplyTableText, type InstructionOptions } from './prompt';
 import { saveSummary, type AgentState, type StoredMessage } from './store';
 import { RESULT_TOOLS, SEARCH_TOOL, type SearchToolOutput } from './tools';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -92,7 +92,7 @@ function exemptSize(unit: AgentConfig['contextUnit']): number {
 export function buildContext(
   state: AgentState,
   cfg: AgentConfig,
-  opts: { canNotifyCareteam: boolean; canSearchWeb?: boolean },
+  opts: InstructionOptions,
   /** Override messages (e.g. with an approval answer applied). Defaults to state.recent. */
   messages: UIMessage[] = state.recent.map((s) => s.message),
 ): BuiltContext & { needsSummary: boolean } {

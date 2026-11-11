@@ -35,6 +35,8 @@ import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL, 
 import { withWebDomains } from './web-domains';
 import { createWebSearch } from './websearch';
 import { generateConversationTitle } from './title';
+import { languageName, type InstructionOptions } from './prompt';
+import { careTeamLanguage } from './settings';
 
 export type AgentRequest =
   | { kind: 'message'; conversationId?: string; text: string }
@@ -78,13 +80,19 @@ export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
  *   5. onEnd: save the assistant message (full parts), then compress in the background if needed
  */
 export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Promise<Response> {
-  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites).
-  const cfg = await withWebDomains(agentConfig(), caller.admin);
+  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites), and
+  // care-team drafts are written in the first language the research team reads (Settings).
+  const [cfg, careteamLanguage] = await Promise.all([withWebDomains(agentConfig(), caller.admin), careTeamLanguage(caller.admin)]);
   // Filled in when the patient edited a care-team message in the confirmation.
   const careteamEdits = new Map<string, string>();
   const searchWeb = createWebSearch(cfg);
-  const tools = createAgentTools(caller, { careteamEdits, searchWeb, webSites: cfg.webSearch?.domains });
-  const opts = { canNotifyCareteam: true, canSearchWeb: searchWeb != null };
+  const tools = createAgentTools(caller, {
+    careteamEdits,
+    searchWeb,
+    webSites: cfg.webSearch?.domains,
+    careteamLanguageName: languageName(careteamLanguage),
+  });
+  const opts: InstructionOptions = { canNotifyCareteam: true, canSearchWeb: searchWeb != null, careteamLanguage };
   const { admin } = caller;
 
   let conversation: Conversation;
@@ -197,7 +205,7 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
         console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer missing after a "${situation}" reply; asking for it`);
         const followUp = streamText({
           model: chatModel(cfg),
-          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}", the language of that reply, and a draft in the user's words. Write no other text.`,
+          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}", the language code of that reply, and a draft in ${languageName(careteamLanguage)} in the user's words that keeps every detail they gave. Write no other text.`,
           messages: [...modelMessages, ...(await result.responseMessages)],
           tools,
           activeTools: ['notifyCareteam'],
@@ -289,7 +297,7 @@ async function compressAfterTurn(
   caller: AgentCaller,
   conversationId: string,
   cfg: AgentConfig,
-  opts: { canNotifyCareteam: boolean; canSearchWeb?: boolean },
+  opts: InstructionOptions,
 ) {
   try {
     const state: AgentState = await loadState(caller.admin, caller.userId, conversationId);
