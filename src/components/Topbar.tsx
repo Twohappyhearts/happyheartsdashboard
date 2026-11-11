@@ -37,13 +37,6 @@ export default function Topbar({ sidebarCollapsed }: TopbarProps) {
 
       {/* Right actions */}
       <div className="flex items-center gap-2">
-        {/* Search */}
-        <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-[13px] hover:bg-secondary transition-colors duration-150">
-          <Icon name="MagnifyingGlassIcon" size={14} variant="outline" />
-          <span>Search...</span>
-          <span className="text-[10px] border border-border rounded px-1 py-0.5 ml-1">⌘K</span>
-        </button>
-
         {/* Alerts bell */}
         <Link
           href="/alerts"

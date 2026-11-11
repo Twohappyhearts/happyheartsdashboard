@@ -51,7 +51,7 @@ function fail(e: { code?: string; message?: string } | null, fallback: string): 
   if (!e) return new WebDomainError(fallback);
   if (e.code === '42501') return new WebDomainError('Your account does not have staff permission for this.', e.code);
   if (e.code === '23505') return new WebDomainError('This website is already on the list.', e.code);
-  if (e.code === '23514') return new WebDomainError('Enter a website address like acog.org, and keep the name under 120 characters.', e.code);
+  if (e.code === '23514') return new WebDomainError('Enter a website address like cdc.gov, and keep the name under 120 characters.', e.code);
   if (e.code === 'PGRST205' || e.code === '42P01') return new WebDomainError('Run the agent_web_domains migration first.', e.code);
   return new WebDomainError(e.message || fallback, e.code);
 }
@@ -74,7 +74,7 @@ export async function listWebDomains(supabase: SupabaseClient): Promise<WebDomai
 
 export async function createWebDomain(supabase: SupabaseClient, input: { domain: string; label: string }): Promise<WebDomain> {
   const domain = cleanDomain(input.domain);
-  if (!domain) throw new WebDomainError('Enter a website address like acog.org.');
+  if (!domain) throw new WebDomainError('Enter a website address like cdc.gov.');
   const { data, error } = await supabase
     .from('agent_web_domains')
     .insert({ domain, label: input.label.trim() })
@@ -92,7 +92,7 @@ export async function updateWebDomain(
   const row: Row = {};
   if (patch.domain !== undefined) {
     const domain = cleanDomain(patch.domain);
-    if (!domain) throw new WebDomainError('Enter a website address like acog.org.');
+    if (!domain) throw new WebDomainError('Enter a website address like cdc.gov.');
     row.domain = domain;
   }
   if (patch.label !== undefined) row.label = patch.label.trim();

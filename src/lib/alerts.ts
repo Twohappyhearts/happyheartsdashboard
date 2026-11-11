@@ -10,10 +10,28 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type AlertStatus = 'NEW' | 'ACK' | 'RESOLVED';
 export type AlertFilter = 'open' | 'new' | 'ack' | 'resolved' | 'all';
 
+/**
+ * Staff-facing words. The stored status stays 'ACK'; staff see it as "Seen"
+ * ("ACK" was unclear to people outside the team).
+ */
+export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
+  NEW: 'NEW',
+  ACK: 'SEEN',
+  RESOLVED: 'RESOLVED',
+};
+
+export const ALERT_TEXT = {
+  markSeen: 'Mark as seen',
+  markSeenHint: 'Mark as seen — stays in the Open view',
+  markedSeen: 'Marked as seen',
+  seenCard: 'Seen',
+  seenAt: 'Seen:',
+};
+
 export const ALERT_FILTER_LABELS: Record<AlertFilter, string> = {
-  open: 'Open (NEW + ACK)',
+  open: 'Open (NEW + SEEN)',
   new: 'NEW Only',
-  ack: 'ACK Only',
+  ack: 'SEEN Only',
   resolved: 'Resolved',
   all: 'All',
 };

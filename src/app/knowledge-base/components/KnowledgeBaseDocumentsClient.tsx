@@ -49,7 +49,7 @@ const STATUS: Record<KnowledgeStatus, { label: string; dot: string }> = {
   parsed: { label: 'Not chunked', dot: 'bg-[#A0AEC0]' },
   parsing: { label: 'Chunking…', dot: 'bg-warning animate-pulse' },
   processing: { label: 'Chunking…', dot: 'bg-warning animate-pulse' },
-  ready: { label: 'Chunked', dot: 'bg-success' },
+  ready: { label: 'Ready', dot: 'bg-success' },
   failed: { label: 'Failed', dot: 'bg-danger' },
 };
 
@@ -58,7 +58,7 @@ const STATUS_FILTERS: { value: StatusFilter; label: string; match: (d: Knowledge
   { value: 'all', label: 'All statuses', match: () => true },
   { value: 'not', label: 'Not chunked', match: (d) => d.status === 'uploaded' || d.status === 'parsed' },
   { value: 'busy', label: 'Chunking', match: (d) => d.status === 'parsing' || d.status === 'processing' },
-  { value: 'ready', label: 'Chunked', match: (d) => d.status === 'ready' },
+  { value: 'ready', label: 'Ready', match: (d) => d.status === 'ready' },
   { value: 'failed', label: 'Failed / last attempt failed', match: (d) => d.status === 'failed' || !!d.error },
 ];
 

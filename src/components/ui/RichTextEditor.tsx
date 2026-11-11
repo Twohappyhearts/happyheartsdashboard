@@ -290,7 +290,8 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
 
       {/* Content */}
       <div className="relative">
-        {state.empty && placeholder && (
+        {/* Read from the editor itself: the selector state can still say "empty" right after the content loads. */}
+        {editor.isEmpty && placeholder && (
           <p className="absolute left-3 top-2.5 text-[13px] text-muted-foreground pointer-events-none">{placeholder}</p>
         )}
         <EditorContent editor={editor} />

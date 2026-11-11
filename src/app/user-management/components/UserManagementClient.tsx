@@ -371,7 +371,7 @@ export default function UserManagementClient() {
                       </div>
                     </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => setEditing(user)}
                           title="Edit user"
