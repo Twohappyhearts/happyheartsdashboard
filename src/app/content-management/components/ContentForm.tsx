@@ -1,13 +1,28 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 import RichTextEditor from '@/components/ui/RichTextEditor';
 import Icon from '@/components/ui/AppIcon';
 import Toggle from '@/components/ui/Toggle';
-import type { ContentCategory, ContentInput, ContentItem, ReferenceLink } from '@/lib/content';
-import { ContentError, MAX_REFERENCE_LINKS, lessonOwnReferences } from '@/lib/content';
+import { useSlideOverClose } from '@/components/ui/SlideOver';
+import type { ContentCategory, ContentInput, ContentItem, LessonAttachment, ReferenceLink } from '@/lib/content';
+import { ContentError, MAX_REFERENCE_LINKS, lessonFileUrls, lessonOwnReferences } from '@/lib/content';
 import AppImage from '@/components/ui/AppImage';
+import { createClient } from '@/lib/supabase/client';
+import { formatBytes } from '@/lib/format-bytes';
+import {
+  MAX_ATTACHMENTS,
+  UploadError,
+  acceptFor,
+  attachmentKindOf,
+  isLessonUploadUrl,
+  releaseLessonFiles,
+  uploadLessonFile,
+  type UploadPurpose,
+} from '@/lib/uploads';
+import { CONTENT_TEXT as T } from './text';
 
 interface ContentFormProps {
   item: ContentItem | null;
@@ -20,9 +35,58 @@ interface ContentFormProps {
   categories: ContentCategory[];
   onManageCategories: () => void;
   type: 'sessions' | 'resources';
+  /** Reports whether the form holds unsaved changes (the panel then asks before closing). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-type FormValues = Omit<ContentInput, 'tags' | 'references'>;
+type FormValues = Omit<ContentInput, 'tags' | 'references' | 'attachments'>;
+type ImageField = 'thumbnailUrl' | 'infographicUrl';
+
+/** Hidden file input behind a button. */
+function UploadButton({
+  purpose,
+  multiple = false,
+  busy,
+  disabled,
+  label,
+  busyLabel,
+  onFiles,
+}: {
+  purpose: UploadPurpose;
+  multiple?: boolean;
+  busy: boolean;
+  disabled?: boolean;
+  label: string;
+  busyLabel: string;
+  onFiles: (files: File[]) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={busy || disabled}
+        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted disabled:opacity-60 whitespace-nowrap"
+      >
+        <Icon name={busy ? 'ArrowPathIcon' : 'ArrowUpTrayIcon'} size={14} variant="outline" className={busy ? 'animate-spin' : ''} />
+        {busy ? busyLabel : label}
+      </button>
+      <input
+        ref={ref}
+        type="file"
+        accept={acceptFor(purpose)}
+        multiple={multiple}
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length) onFiles(files);
+        }}
+      />
+    </>
+  );
+}
 
 const HTTPS_LINK = /^https:\/\/\S+$/i;
 
@@ -58,8 +122,11 @@ export default function ContentForm({
   categories,
   onManageCategories,
   type,
+  onDirtyChange,
 }: ContentFormProps) {
   const isSession = type === 'sessions';
+  const supabase = useMemo(() => createClient(), []);
+  const requestClose = useSlideOverClose();
   const {
     register,
     handleSubmit,
@@ -122,10 +189,85 @@ export default function ContentForm({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // ---- Uploads ----
+  const [attachments, setAttachments] = useState<LessonAttachment[]>(item?.attachments ?? []);
+  const [pendingMaterials, setPendingMaterials] = useState<{ key: string; name: string; size: number }[]>([]);
+  const [materialsError, setMaterialsError] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState<ImageField | null>(null);
+  const [imageError, setImageError] = useState<Partial<Record<ImageField, string>>>({});
+  /** Files uploaded while this form was open; deleted again if the form is closed without saving. */
+  const sessionUploads = useRef<string[]>([]);
+  const saved = useRef(false);
+  const uploadsBusy = uploadingImage !== null || pendingMaterials.length > 0;
+
+  useEffect(
+    () => () => {
+      if (!saved.current) releaseLessonFiles(sessionUploads.current);
+    },
+    []
+  );
+
+  const uploadImage = async (field: ImageField, file: File) => {
+    setUploadingImage(field);
+    setImageError((e) => ({ ...e, [field]: undefined }));
+    try {
+      const up = await uploadLessonFile(supabase, file, { purpose: 'image', contentId: item?.id });
+      sessionUploads.current.push(up.url);
+      setValue(field, up.url, { shouldDirty: true, shouldValidate: true });
+      toast.success(T.uploadedOk);
+    } catch (e) {
+      setImageError((x) => ({ ...x, [field]: e instanceof UploadError ? e.message : 'Could not upload the image.' }));
+    } finally {
+      setUploadingImage(null);
+    }
+  };
+
+  const addMaterials = async (files: File[]) => {
+    setMaterialsError(null);
+    const room = MAX_ATTACHMENTS - attachments.length - pendingMaterials.length;
+    if (room <= 0) {
+      setMaterialsError(T.limitReached);
+      return;
+    }
+    const batch = files.slice(0, room);
+    const errors: string[] = files.length > room ? [T.roomLeft(room)] : [];
+    const queued = batch.map((f, i) => ({ key: `${Date.now()}-${i}-${f.name}`, name: f.name, size: f.size, file: f }));
+    setPendingMaterials((p) => [...p, ...queued.map(({ key, name, size }) => ({ key, name, size }))]);
+    for (const q of queued) {
+      try {
+        const up = await uploadLessonFile(supabase, q.file, { purpose: 'material', contentId: item?.id });
+        sessionUploads.current.push(up.url);
+        setAttachments((list) => [
+          ...list,
+          { name: up.name.trim().slice(0, 200) || 'File', url: up.url, kind: attachmentKindOf(up.mime), sizeBytes: up.size },
+        ]);
+      } catch (e) {
+        errors.push(e instanceof UploadError ? e.message : `Could not upload “${q.name}”.`);
+      } finally {
+        setPendingMaterials((p) => p.filter((x) => x.key !== q.key));
+      }
+    }
+    if (errors.length) setMaterialsError(errors.join(' '));
+  };
+
+  const setAttachmentName = (i: number, name: string) =>
+    setAttachments((list) => list.map((a, j) => (j === i ? { ...a, name } : a)));
+
+  // ---- Unsaved changes ----
+  const values = watch();
+  const snapshot = JSON.stringify({ values, tags: tagInput.trim(), references, attachments });
+  const initialSnapshot = useRef(snapshot);
+  const dirty = snapshot !== initialSnapshot.current || uploadsBusy;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
   const youtubeId = videoUrl ? getYouTubeId(videoUrl) : null;
   const soundcloudValid = audioUrl ? isSoundCloudUrl(audioUrl) : false;
-  const thumbnailValid = thumbnailUrl ? isCloudinaryUrl(thumbnailUrl) : false;
-  const infographicValid = infographicUrl ? isCloudinaryUrl(infographicUrl) : false;
+  // Uploaded here (our storage) or a Cloudinary link.
+  const knownImageHost = (url: string) => isCloudinaryUrl(url) || isLessonUploadUrl(url);
+  const thumbnailValid = thumbnailUrl ? knownImageHost(thumbnailUrl) : false;
+  const infographicValid = infographicUrl ? knownImageHost(infographicUrl) : false;
   const thumbnailLooksLikeLink = /^https:\/\//i.test(thumbnailUrl || '');
   const infographicLooksLikeLink = /^https:\/\//i.test(infographicUrl || '');
 
@@ -133,6 +275,10 @@ export default function ContentForm({
   const categoryOptions = categories.filter((c) => c.isActive || c.id === item?.categoryId);
 
   const onSubmit = async (data: FormValues) => {
+    if (uploadsBusy) {
+      setSaveError(T.waitForUploads);
+      return;
+    }
     // Rows left completely empty are dropped; a row with text needs a full https link.
     const cleaned = references
       .map((r) => ({ title: r.title.trim(), url: r.url.trim() }))
@@ -148,9 +294,15 @@ export default function ContentForm({
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
+    const cleanedAttachments = attachments.map((a) => ({ ...a, name: a.name.trim() || 'File' }));
+    // Set before saving: a successful save closes the panel, and the files must not be released then.
+    saved.current = true;
     try {
-      await onSave({ ...data, categoryId: data.categoryId || null, tags, references: cleaned });
+      await onSave({ ...data, categoryId: data.categoryId || null, tags, references: cleaned, attachments: cleanedAttachments });
+      // Files the lesson no longer uses (replaced or removed); the server keeps any still in use.
+      releaseLessonFiles([...(item ? lessonFileUrls(item) : []), ...sessionUploads.current]);
     } catch (e) {
+      saved.current = false;
       setSaveError(e instanceof ContentError ? e.message : 'Could not save. Check your connection and try again.');
     } finally {
       setSaving(false);
@@ -380,28 +532,40 @@ export default function ContentForm({
           {/* Thumbnail URL */}
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Thumbnail URL {isSession && <span className="text-danger">*</span>}
-              <span className="text-[11px] font-400 text-muted-foreground ml-1">(Cloudinary — card image in app)</span>
+              {T.thumbnailLabel} {isSession && <span className="text-danger">*</span>}
+              <span className="text-[11px] font-400 text-muted-foreground ml-1">({T.thumbnailNote})</span>
             </label>
-            <div className="relative">
-              <input
-                {...register('thumbnailUrl', {
-                  required: isSession ? 'Thumbnail URL is required' : false,
-                  pattern: HTTPS,
-                })}
-                type="url"
-                placeholder="https://res.cloudinary.com/..."
-                className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+            <p className="text-[11px] text-muted-foreground mb-1">{T.imageHint}</p>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <input
+                  {...register('thumbnailUrl', {
+                    required: isSession ? 'Upload an image or paste its link' : false,
+                    pattern: HTTPS,
+                  })}
+                  type="url"
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+                />
+                {thumbnailUrl && (
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 ${thumbnailValid ? 'text-success' : 'text-warning'}`}>
+                    <Icon name={thumbnailValid ? 'CheckCircleIcon' : 'ExclamationCircleIcon'} size={16} variant="solid" />
+                  </span>
+                )}
+              </div>
+              <UploadButton
+                purpose="image"
+                busy={uploadingImage === 'thumbnailUrl'}
+                disabled={uploadingImage !== null}
+                label={T.uploadImage}
+                busyLabel={T.uploadingImage}
+                onFiles={([f]) => void uploadImage('thumbnailUrl', f)}
               />
-              {thumbnailUrl && (
-                <span className={`absolute right-2 top-1/2 -translate-y-1/2 ${thumbnailValid ? 'text-success' : 'text-warning'}`}>
-                  <Icon name={thumbnailValid ? 'CheckCircleIcon' : 'ExclamationCircleIcon'} size={16} variant="solid" />
-                </span>
-              )}
             </div>
+            {imageError.thumbnailUrl && <p className="text-[11px] text-danger mt-1">{imageError.thumbnailUrl}</p>}
             {errors.thumbnailUrl && <p className="text-[11px] text-danger mt-1">{errors.thumbnailUrl.message}</p>}
             {thumbnailUrl && !errors.thumbnailUrl && !thumbnailValid && (
-              <p className="text-[11px] text-warning mt-1">Not a Cloudinary link (res.cloudinary.com) — it will still work if the image is public.</p>
+              <p className="text-[11px] text-warning mt-1">{T.notKnownHost}</p>
             )}
             <div className="mt-2">
               <label className="block text-[12px] font-500 text-foreground mb-1">Image description (for screen readers)</label>
@@ -430,25 +594,36 @@ export default function ContentForm({
           {/* Infographic URL */}
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Infographic URL <span className="text-[11px] font-400 text-muted-foreground">(Cloudinary — optional)</span>
+              {T.infographicLabel} <span className="text-[11px] font-400 text-muted-foreground">({T.infographicNote})</span>
             </label>
-            <p className="text-[11px] text-muted-foreground mb-1">If provided, patients can tap to view full-screen with pinch-to-zoom</p>
-            <div className="relative">
-              <input
-                {...register('infographicUrl', { pattern: HTTPS })}
-                type="url"
-                placeholder="https://res.cloudinary.com/... (optional)"
-                className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+            <p className="text-[11px] text-muted-foreground mb-1">If provided, patients can tap to view full-screen with pinch-to-zoom. {T.imageHint}</p>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <input
+                  {...register('infographicUrl', { pattern: HTTPS })}
+                  type="url"
+                  placeholder="https://... (optional)"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring pr-8"
+                />
+                {infographicUrl && (
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 ${infographicValid ? 'text-success' : 'text-warning'}`}>
+                    <Icon name={infographicValid ? 'CheckCircleIcon' : 'ExclamationCircleIcon'} size={16} variant="solid" />
+                  </span>
+                )}
+              </div>
+              <UploadButton
+                purpose="image"
+                busy={uploadingImage === 'infographicUrl'}
+                disabled={uploadingImage !== null}
+                label={T.uploadImage}
+                busyLabel={T.uploadingImage}
+                onFiles={([f]) => void uploadImage('infographicUrl', f)}
               />
-              {infographicUrl && (
-                <span className={`absolute right-2 top-1/2 -translate-y-1/2 ${infographicValid ? 'text-success' : 'text-warning'}`}>
-                  <Icon name={infographicValid ? 'CheckCircleIcon' : 'ExclamationCircleIcon'} size={16} variant="solid" />
-                </span>
-              )}
             </div>
+            {imageError.infographicUrl && <p className="text-[11px] text-danger mt-1">{imageError.infographicUrl}</p>}
             {errors.infographicUrl && <p className="text-[11px] text-danger mt-1">{errors.infographicUrl.message}</p>}
             {infographicUrl && !errors.infographicUrl && !infographicValid && (
-              <p className="text-[11px] text-warning mt-1">Not a Cloudinary link (res.cloudinary.com) — it will still work if the image is public.</p>
+              <p className="text-[11px] text-warning mt-1">{T.notKnownHost}</p>
             )}
             {infographicUrl && infographicLooksLikeLink && (
               <div className="mt-2 w-32 h-20 rounded-lg overflow-hidden border border-border">
@@ -484,6 +659,91 @@ export default function ContentForm({
           </div>
         </div>
       </div>
+
+      {isSession && (
+        <>
+          <hr className="border-border" />
+
+          {/* Materials (uploaded files) */}
+          <div>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider">{T.materialsTitle}</h3>
+                <p className="text-[11px] text-muted-foreground mt-1">{T.materialsHint}</p>
+              </div>
+              <UploadButton
+                purpose="material"
+                multiple
+                busy={pendingMaterials.length > 0}
+                disabled={attachments.length + pendingMaterials.length >= MAX_ATTACHMENTS}
+                label={T.uploadFiles}
+                busyLabel={T.uploading}
+                onFiles={(files) => void addMaterials(files)}
+              />
+            </div>
+            {attachments.length === 0 && pendingMaterials.length === 0 && (
+              <p className="text-[12px] text-muted-foreground">{T.materialsEmpty}</p>
+            )}
+            <ul className="space-y-2">
+              {attachments.map((a, i) => (
+                <li key={a.url} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-muted/20">
+                  <Icon
+                    name={a.kind === 'pdf' ? 'DocumentTextIcon' : 'PhotoIcon'}
+                    size={18}
+                    variant="outline"
+                    className="shrink-0 text-muted-foreground"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={a.name}
+                      onChange={(e) => setAttachmentName(i, e.target.value)}
+                      maxLength={200}
+                      placeholder={T.materialNamePlaceholder}
+                      aria-label={T.materialName(i)}
+                      className={`w-full px-2 py-1 border rounded-md text-[13px] text-foreground bg-background focus:outline-none focus:ring-2 focus:ring-ring ${
+                        a.name.trim() ? 'border-border' : 'border-danger'
+                      }`}
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {T.kindLabel[a.kind]} · {formatBytes(a.sizeBytes)}
+                    </p>
+                  </div>
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={T.open}
+                    aria-label={`${T.open}: ${a.name}`}
+                    className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Icon name="ArrowTopRightOnSquareIcon" size={16} variant="outline" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}
+                    title={T.remove}
+                    aria-label={`${T.remove}: ${a.name}`}
+                    className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-danger"
+                  >
+                    <Icon name="TrashIcon" size={16} variant="outline" />
+                  </button>
+                </li>
+              ))}
+              {pendingMaterials.map((p) => (
+                <li key={p.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border">
+                  <Icon name="ArrowPathIcon" size={16} variant="outline" className="shrink-0 text-muted-foreground animate-spin" />
+                  <span className="flex-1 min-w-0 truncate text-[13px] text-foreground">{p.name}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {T.uploading} {formatBytes(p.size)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {materialsError && <p className="text-[11px] text-danger mt-1.5">{materialsError}</p>}
+          </div>
+        </>
+      )}
 
       <hr className="border-border" />
 
@@ -619,14 +879,14 @@ export default function ContentForm({
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="button"
-          onClick={onCancel}
+          onClick={() => (requestClose ?? onCancel)()}
           className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
         >
           Cancel
         </button>
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || uploadsBusy}
           className="flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 disabled:opacity-60 min-w-[120px] justify-center"
         >
           {saving ? (

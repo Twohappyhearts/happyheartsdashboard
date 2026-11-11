@@ -22,7 +22,10 @@ const sizeMap = {
 export default function Modal({ open, onClose, title, children, size = 'md', footer }: ModalProps) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // Marks the Esc as handled so a SlideOver underneath does not close as well.
+      e.preventDefault();
+      onClose();
     };
     if (open) document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
@@ -33,6 +36,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4 fade-in"
+      data-overlay="modal"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
