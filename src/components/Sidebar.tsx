@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
     groupLabel: 'ADMIN',
     items: [
       { label: 'Users', href: '/user-management', icon: 'UsersIcon' },
+      { label: 'Settings', href: '/settings', icon: 'Cog6ToothIcon' },
       { label: 'Legal Documents', href: '/legal-documents', icon: 'DocumentTextIcon', adminOnly: true },
     ],
   },
