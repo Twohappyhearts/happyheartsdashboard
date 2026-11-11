@@ -1,6 +1,6 @@
 'use client';
 
-import { AgentChatError, type AgentAuth } from './agent-chat';
+import { AgentChatError, getAgentDocumentUrl, type AgentAuth } from './agent-chat';
 
 /**
  * Bridge between the patient assistant page (/m/assistant) and the HappyHearts
@@ -96,4 +96,21 @@ export function openExternal(url: string) {
   }
   if (/^(tel|mailto):/i.test(href)) window.location.href = href;
   else window.open(href, '_blank', 'noopener,noreferrer');
+}
+
+/**
+ * Open the original file of a knowledge-base source. On the web the tab opens right away (inside
+ * the tap, so pop-up blockers allow it) and gets its address when the link arrives.
+ */
+export async function openAgentDocument(documentId: string, auth?: AgentAuth): Promise<void> {
+  const tab = inApp() ? null : window.open('', '_blank');
+  if (tab) tab.opener = null;
+  try {
+    const { url } = await getAgentDocumentUrl(documentId, auth);
+    if (tab) tab.location.href = url;
+    else openExternal(url);
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
 }

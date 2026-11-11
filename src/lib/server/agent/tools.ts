@@ -31,6 +31,11 @@ export interface SearchResultItem {
   content: string;
   /** "web" for webSearch results; absent for the knowledge base. */
   kind?: 'web';
+  /**
+   * Knowledge-base document, so the app can open its original file (GET /api/agent/sources/:id)
+   * when it has no web page. Not shown to the model (toModelOutput).
+   */
+  documentId?: string;
 }
 
 export interface SearchToolOutput {
@@ -76,6 +81,15 @@ async function documentSources(caller: AgentCaller, documentIds: string[]) {
   return new Map((data ?? []).map((d) => [String(d.id), parseDocumentSource(d.description as string | null)]));
 }
 
+/** A search output without the fields only the app uses. */
+function forModel(output: SearchToolOutput) {
+  return {
+    results: (output.results ?? []).map(({ documentId: _documentId, ...r }) => r),
+    ...(output.trimmed ? { trimmed: true } : {}),
+    ...(output.note ? { note: output.note } : {}),
+  };
+}
+
 export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {}) {
   // Refs keep counting across searches in the same reply, so "[sources: …]" is unambiguous.
   let nextRef = 1;
@@ -101,9 +115,12 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
             source: sources.get(c.documentId)?.source ?? null,
             url: sources.get(c.documentId)?.url ?? null,
             content: c.content.length > MAX_CHUNK_CHARS ? `${c.content.slice(0, MAX_CHUNK_CHARS)}…` : c.content,
+            documentId: c.documentId,
           })),
         };
       },
+      // The model reads the results exactly as before: without the document ids.
+      toModelOutput: ({ output }) => ({ type: 'json', value: forModel(output) }),
     }),
   } satisfies ToolSet;
 

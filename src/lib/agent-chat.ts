@@ -84,3 +84,7 @@ export const getAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>
 
 /** The caller ticked "I understand and agree" and pressed Continue. */
 export const acceptAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', { method: 'POST' }, auth);
+
+/** Short-lived link (about 10 minutes) to the original file of a cited knowledge-base document. */
+export const getAgentDocumentUrl = (documentId: string, auth?: AgentAuth) =>
+  request<{ url: string }>(`/api/agent/sources/${encodeURIComponent(documentId)}`, {}, auth);
