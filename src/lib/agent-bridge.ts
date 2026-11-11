@@ -7,7 +7,9 @@ import { AgentChatError, type AgentAuth } from './agent-chat';
  * Flutter app that hosts it in a WebView.
  *
  *   page → app:  window.AgentBridge.postMessage(JSON.stringify({ event, data }))
- *                events: ready, token_expired, open_url, assistance_sent
+ *                events: ready, token_expired, assistance_sent,
+ *                open_url with data { url }: an absolute https:, tel: or mailto: link the app opens
+ *                with the phone (browser, dialer, mail)
  *   app → page:  window.HappyHeartsAgent.setToken(accessToken)
  *
  * The Supabase access token lives only in memory here (never in the URL or
@@ -78,3 +80,20 @@ export function requestFreshToken() {
 }
 
 export const bearerAuth: AgentAuth = async () => ({ Authorization: `Bearer ${await waitForToken()}` });
+
+/** Absolute form of a link on this site ("/legal/terms" → "https://…/legal/terms"). */
+export const absoluteUrl = (url: string) => new URL(url, window.location.href).href;
+
+/**
+ * Open a link outside the chat: in the app, the phone opens it (browser, dialer, mail);
+ * on the web, a new tab (tel: and mailto: go to the system handler).
+ */
+export function openExternal(url: string) {
+  const href = absoluteUrl(url);
+  if (inApp()) {
+    postToApp('open_url', { url: href });
+    return;
+  }
+  if (/^(tel|mailto):/i.test(href)) window.location.href = href;
+  else window.open(href, '_blank', 'noopener,noreferrer');
+}

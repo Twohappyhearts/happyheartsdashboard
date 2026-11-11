@@ -73,6 +73,8 @@ export interface AgentConsentStatus {
   /** false for staff and admin accounts: they are not asked. */
   required: boolean;
   version: number;
+  /** Current Terms of Use version (0 = none uploaded yet). */
+  termsVersion?: number;
   /** Language messages to the care team are written in (e.g. "en"). */
   careTeamLanguage?: string;
 }
@@ -80,5 +82,5 @@ export interface AgentConsentStatus {
 /** Has the caller accepted the AI assistant notice? */
 export const getAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', {}, auth);
 
-/** The caller pressed "I understand and agree". */
+/** The caller ticked "I understand and agree" and pressed Continue. */
 export const acceptAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', { method: 'POST' }, auth);

@@ -18,6 +18,7 @@ import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFres
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
 import AiNoticeDialog from './AiNoticeDialog';
+import { pickLanguage, type Language } from '@/lib/languages';
 
 /** Colors of the Flutter app's AppTheme, mapped onto the dashboard's CSS variables. */
 const APP_THEME = {
@@ -59,7 +60,8 @@ export default function MobileAssistant() {
   /** The patient still has to accept the AI notice (first use, or the notice changed). */
   const [noticeNeeded, setNoticeNeeded] = useState(false);
   const [accepting, setAccepting] = useState(false);
-  const [noticeError, setNoticeError] = useState<string | null>(null);
+  const [noticeFailed, setNoticeFailed] = useState(false);
+  const [lang, setLang] = useState<Language>('en');
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
@@ -105,6 +107,10 @@ export default function MobileAssistant() {
     }
   }, [prefetch]);
 
+  useEffect(() => {
+    setLang(pickLanguage(...(navigator.languages ?? []), navigator.language));
+  }, []);
+
   // Wait for the app to hand over the patient's token.
   useEffect(() => {
     installBridge();
@@ -131,7 +137,7 @@ export default function MobileAssistant() {
       const href = a?.getAttribute('href');
       if (!href || !/^(https?:|mailto:|tel:)/i.test(href) || !inApp()) return;
       e.preventDefault();
-      postToApp('open_url', href);
+      postToApp('open_url', { url: href });
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
@@ -139,13 +145,13 @@ export default function MobileAssistant() {
 
   const acceptNotice = async () => {
     setAccepting(true);
-    setNoticeError(null);
+    setNoticeFailed(false);
     try {
       await acceptAgentConsent(bearerAuth);
       setNoticeNeeded(false);
     } catch (e) {
       if (e instanceof AgentChatError && e.status === 401) requestFreshToken();
-      setNoticeError('Could not save your answer. Check your connection and try again.');
+      setNoticeFailed(true);
     } finally {
       setAccepting(false);
     }
@@ -281,7 +287,9 @@ export default function MobileAssistant() {
         />
       )}
 
-      {phase === 'ready' && noticeNeeded && <AiNoticeDialog busy={accepting} error={noticeError} onAgree={() => void acceptNotice()} />}
+      {phase === 'ready' && noticeNeeded && (
+        <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-end">

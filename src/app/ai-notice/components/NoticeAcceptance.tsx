@@ -6,42 +6,79 @@ import Badge from '@/components/ui/Badge';
 import EmptyState from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { createClient } from '@/lib/supabase/client';
-import { AI_NOTICE, AI_NOTICE_VERSION, listConsents } from '@/lib/agent-consent';
+import { AI_NOTICE, AI_NOTICE_VERSION, consentIsCurrent, getCurrentTermsVersion, listConsents } from '@/lib/agent-consent';
+import { TERMS_URL } from '@/lib/agent-fixed-replies';
+import { LANGUAGE_NAMES, LANGUAGES, dirOf, type Language } from '@/lib/languages';
 import { downloadCsv, todayStamp } from '@/lib/analytics';
 import { listUsers } from '@/lib/users';
+
+/** current: accepted this notice and Terms of Use; outdated: accepted an older one, asked again; none: never accepted. */
+type Status = 'current' | 'outdated' | 'none';
 
 interface Row {
   id: string;
   username: string;
   fullName: string;
   displayId: string;
+  status: Status;
+  /** The latest acceptance, even an outdated one. */
+  version: number | null;
+  termsVersion: number | null;
   agreedAt: string | null;
 }
 
-type Filter = 'all' | 'agreed' | 'pending';
+type Filter = 'all' | Status;
+
+const STATUS_LABEL: Record<Status, string> = { current: 'Accepted', outdated: 'Must accept again', none: 'Not yet' };
+const STATUS_BADGE: Record<Status, 'active' | 'warning' | 'inactive'> = { current: 'active', outdated: 'warning', none: 'inactive' };
+const STATUS_ORDER: Record<Status, number> = { current: 0, outdated: 1, none: 2 };
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-/** Which active patients accepted the notice shown when they first open the AI assistant. */
+const versionLabel = (r: Pick<Row, 'version' | 'termsVersion'>) =>
+  r.version == null ? '—' : `Notice v${r.version} · Terms ${r.termsVersion ? `v${r.termsVersion}` : 'sample'}`;
+
+/** Which active patients accepted the notice shown before they use the AI assistant, and which version. */
 export default function NoticeAcceptance() {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Row[]>([]);
+  const [termsVersion, setTermsVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [showNotice, setShowNotice] = useState(false);
+  const [previewLang, setPreviewLang] = useState<Language>('es');
 
   const load = useCallback(async () => {
     try {
-      const [users, consents] = await Promise.all([listUsers(supabase), listConsents(supabase)]);
-      // An older version of the notice does not count: the app asks again.
-      const agreed = new Map(consents.filter((c) => c.version >= AI_NOTICE_VERSION).map((c) => [c.userId, c.agreedAt]));
+      const [users, consents, terms] = await Promise.all([listUsers(supabase), listConsents(supabase), getCurrentTermsVersion(supabase)]);
+      const byUser = new Map(consents.map((c) => [c.userId, c]));
+      setTermsVersion(terms);
       setRows(
         users
           .filter((u) => u.role === 'patient' && u.active)
-          .map((u) => ({ id: u.id, username: u.username, fullName: u.fullName, displayId: u.displayId, agreedAt: agreed.get(u.id) ?? null }))
-          .sort((a, b) => (b.agreedAt ?? '').localeCompare(a.agreedAt ?? '') || a.username.localeCompare(b.username)),
+          .map((u): Row => {
+            const c = byUser.get(u.id);
+            // An older notice or Terms of Use does not count: the app asks again.
+            const status: Status = !c ? 'none' : consentIsCurrent(c, terms) ? 'current' : 'outdated';
+            return {
+              id: u.id,
+              username: u.username,
+              fullName: u.fullName,
+              displayId: u.displayId,
+              status,
+              version: c?.version ?? null,
+              termsVersion: c?.termsVersion ?? null,
+              agreedAt: c?.agreedAt ?? null,
+            };
+          })
+          .sort(
+            (a, b) =>
+              STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+              (b.agreedAt ?? '').localeCompare(a.agreedAt ?? '') ||
+              a.username.localeCompare(b.username),
+          ),
       );
       setError(null);
     } catch (e) {
@@ -56,30 +93,75 @@ export default function NoticeAcceptance() {
   }, [load]);
 
   const total = rows.length;
-  const agreedCount = rows.filter((r) => r.agreedAt).length;
-  const pendingCount = total - agreedCount;
-  const percent = total ? Math.round((agreedCount / total) * 100) : 0;
-  const visible = rows.filter((r) => (filter === 'all' ? true : filter === 'agreed' ? !!r.agreedAt : !r.agreedAt));
+  const count = (s: Status) => rows.filter((r) => r.status === s).length;
+  const currentCount = count('current');
+  const outdatedCount = count('outdated');
+  const noneCount = count('none');
+  const percent = total ? Math.round((currentCount / total) * 100) : 0;
+  const visible = rows.filter((r) => filter === 'all' || r.status === filter);
 
   const exportCsv = () =>
     downloadCsv(
       `ai-notice-${todayStamp()}.csv`,
-      ['Username', 'Name', 'Participant ID', 'Accepted', 'Accepted at'],
-      rows.map((r) => [r.username, r.fullName, r.displayId, r.agreedAt ? 'Yes' : 'No', r.agreedAt ?? '']),
+      ['Username', 'Name', 'Participant ID', 'Status', 'Notice version', 'Terms of Use version', 'Accepted at'],
+      rows.map((r) => [
+        r.username,
+        r.fullName,
+        r.displayId,
+        STATUS_LABEL[r.status],
+        r.version == null ? '' : String(r.version),
+        r.termsVersion == null ? '' : String(r.termsVersion),
+        r.agreedAt ?? '',
+      ]),
     );
 
   const stats = [
-    { label: 'Accepted', value: agreedCount, hint: `${percent}% of active patients`, icon: 'CheckCircleIcon', tone: 'text-success bg-success/10' },
-    { label: 'Not yet', value: pendingCount, hint: 'Have not opened the AI assistant yet, or left without accepting', icon: 'ClockIcon', tone: 'text-warning bg-warning/10' },
+    { label: 'Accepted', value: currentCount, hint: `${percent}% of active patients, current versions`, icon: 'CheckCircleIcon', tone: 'text-success bg-success/10' },
+    {
+      label: 'Must accept again',
+      value: outdatedCount,
+      hint: 'Accepted an older notice or Terms of Use; asked again the next time they open the AI assistant',
+      icon: 'ArrowPathIcon',
+      tone: 'text-warning bg-warning/10',
+    },
+    { label: 'Not yet', value: noneCount, hint: 'Have not opened the AI assistant yet, or left without accepting', icon: 'ClockIcon', tone: 'text-muted-foreground bg-muted' },
     { label: 'Active patients', value: total, hint: 'Disabled accounts are not counted', icon: 'UsersIcon', tone: 'text-primary bg-primary/10' },
   ];
+
+  const renderNotice = (lang: Language) => {
+    const n = AI_NOTICE[lang];
+    const [before, link, after] = n.disclaimer;
+    return (
+      <div lang={lang} dir={dirOf(lang)}>
+        <p className="text-[13px] font-600 text-foreground mb-1.5">{n.title}</p>
+        <p className="text-[12.5px] text-foreground mb-1.5 rounded-lg bg-primary/5 border border-primary/20 px-2.5 py-1.5">
+          {before}
+          <span className="text-primary underline">{link}</span>
+          {after}
+          {n.officialNote && <span className="block mt-1 text-muted-foreground">{n.officialNote}</span>}
+        </p>
+        <ul className="list-disc ps-4 space-y-1 text-[12.5px] text-secondary-foreground">
+          {n.points.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+        <p className="mt-1.5 text-[12px] text-secondary-foreground">
+          ☐ {n.agree} → [{n.continue}]
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-[13px] text-secondary-foreground max-w-2xl">
-          The first time a patient opens the AI assistant in the app, a notice explains that its answers are for reference only.
-          The patient cannot chat until they press “{AI_NOTICE.en.agree}”.
+          Before a patient first uses the AI assistant in the app, a notice explains that its answers are for reference only and links to the{' '}
+          <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+            Terms of Use
+          </a>
+          . The patient cannot chat until they tick “{AI_NOTICE.en.agree}” and press “{AI_NOTICE.en.continue}”. When the notice changes or an
+          admin uploads a new Terms of Use, every patient is asked again.
         </p>
         <button
           onClick={exportCsv}
@@ -98,22 +180,36 @@ export default function NoticeAcceptance() {
           className="w-full flex items-center gap-2 px-5 py-3 text-left text-[13px] font-600 text-foreground"
         >
           <Icon name="DocumentTextIcon" size={16} variant="outline" className="text-muted-foreground" />
-          <span className="flex-1">The notice patients see (version {AI_NOTICE_VERSION})</span>
+          <span className="flex-1">
+            The notice patients see (notice version {AI_NOTICE_VERSION} · Terms of Use {termsVersion ? `version ${termsVersion}` : 'sample, none uploaded yet'})
+          </span>
           <Icon name={showNotice ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={14} variant="outline" className="text-muted-foreground" />
         </button>
         {showNotice && (
           <div className="grid md:grid-cols-2 gap-5 px-5 pb-5 border-t border-border pt-4">
-            {(['en', 'es'] as const).map((lang) => (
-              <div key={lang}>
-                <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground mb-1.5">{lang === 'en' ? 'English' : 'Spanish'}</p>
-                <p className="text-[13px] font-600 text-foreground mb-1.5">{AI_NOTICE[lang].title}</p>
-                <ul className="list-disc pl-4 space-y-1 text-[12.5px] text-secondary-foreground">
-                  {AI_NOTICE[lang].points.map((p) => (
-                    <li key={p}>{p}</li>
+            <div>
+              <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground mb-1.5">English (official)</p>
+              {renderNotice('en')}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground">Translation</p>
+                <select
+                  value={previewLang}
+                  onChange={(e) => setPreviewLang(e.target.value as Language)}
+                  aria-label="Language"
+                  className="h-7 pl-2 pr-7 rounded-md border border-border bg-card text-[12px] text-foreground"
+                >
+                  {LANGUAGES.filter((l) => l !== 'en').map((l) => (
+                    <option key={l} value={l}>
+                      {LANGUAGE_NAMES[l].english}
+                    </option>
                   ))}
-                </ul>
+                </select>
+                <span className="text-[11px] text-muted-foreground">Machine translation, pending research-team review</span>
               </div>
-            ))}
+              {renderNotice(previewLang)}
+            </div>
           </div>
         )}
       </div>
@@ -137,7 +233,7 @@ export default function NoticeAcceptance() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {stats.map((s) => (
               <div key={s.label} className="bg-card rounded-xl border border-border shadow-card p-4">
                 <div className="flex items-center justify-between">
@@ -154,9 +250,9 @@ export default function NoticeAcceptance() {
 
           <div className="bg-card rounded-xl border border-border shadow-card p-4">
             <div className="flex items-center justify-between text-[12px] mb-1.5">
-              <span className="font-600 text-foreground">Accepted the notice</span>
+              <span className="font-600 text-foreground">Accepted the current notice and Terms of Use</span>
               <span className="text-muted-foreground tabular-nums">
-                {agreedCount} of {total} ({percent}%)
+                {currentCount} of {total} ({percent}%)
               </span>
             </div>
             <div
@@ -165,7 +261,7 @@ export default function NoticeAcceptance() {
               aria-valuenow={percent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label="Patients who accepted the AI notice"
+              aria-label="Patients who accepted the current AI notice"
             >
               <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
             </div>
@@ -175,8 +271,9 @@ export default function NoticeAcceptance() {
             {(
               [
                 { key: 'all', label: 'All', count: total },
-                { key: 'agreed', label: 'Accepted', count: agreedCount },
-                { key: 'pending', label: 'Not yet', count: pendingCount },
+                { key: 'current', label: STATUS_LABEL.current, count: currentCount },
+                { key: 'outdated', label: STATUS_LABEL.outdated, count: outdatedCount },
+                { key: 'none', label: STATUS_LABEL.none, count: noneCount },
               ] as { key: Filter; label: string; count: number }[]
             ).map((f) => (
               <button
@@ -206,6 +303,7 @@ export default function NoticeAcceptance() {
                       <th className="px-5 py-3">Patient</th>
                       <th className="px-5 py-3">Participant ID</th>
                       <th className="px-5 py-3">AI notice</th>
+                      <th className="px-5 py-3">Accepted version</th>
                       <th className="px-5 py-3">Accepted on</th>
                     </tr>
                   </thead>
@@ -218,8 +316,9 @@ export default function NoticeAcceptance() {
                         </td>
                         <td className="px-5 py-3 font-mono text-[12px] text-secondary-foreground">{r.displayId || '—'}</td>
                         <td className="px-5 py-3">
-                          <Badge variant={r.agreedAt ? 'active' : 'inactive'} label={r.agreedAt ? 'Accepted' : 'Not yet'} size="sm" />
+                          <Badge variant={STATUS_BADGE[r.status]} label={STATUS_LABEL[r.status]} size="sm" />
                         </td>
+                        <td className="px-5 py-3 text-secondary-foreground tabular-nums whitespace-nowrap">{versionLabel(r)}</td>
                         <td className="px-5 py-3 text-secondary-foreground tabular-nums">{r.agreedAt ? formatDate(r.agreedAt) : '—'}</td>
                       </tr>
                     ))}
