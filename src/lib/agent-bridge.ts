@@ -8,8 +8,9 @@ import { AgentChatError, getAgentDocumentUrl, type AgentAuth } from './agent-cha
  *
  *   page → app:  window.AgentBridge.postMessage(JSON.stringify({ event, data }))
  *                events: ready, token_expired, assistance_sent,
- *                open_url with data { url }: an absolute https:, tel: or mailto: link the app opens
- *                with the phone (browser, dialer, mail)
+ *                open_url with data = the link as a plain string (an absolute https:, tel: or mailto:
+ *                link the app opens with the phone: browser, dialer, mail). Kept a string so app
+ *                builds from before Nov 11 (which read data as a string) still open links.
  *   app → page:  window.HappyHeartsAgent.setToken(accessToken)
  *
  * The Supabase access token lives only in memory here (never in the URL or
@@ -91,7 +92,7 @@ export const absoluteUrl = (url: string) => new URL(url, window.location.href).h
 export function openExternal(url: string) {
   const href = absoluteUrl(url);
   if (inApp()) {
-    postToApp('open_url', { url: href });
+    postToApp('open_url', href);
     return;
   }
   if (/^(tel|mailto):/i.test(href)) window.location.href = href;

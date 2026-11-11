@@ -14,7 +14,7 @@ import {
   type AgentAuth,
   type AgentConversation,
 } from '@/lib/agent-chat';
-import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
+import { absoluteUrl, bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
 import { PATIENT_TEXT, type PatientText } from '@/lib/i18n/patient';
 import { PatientTextProvider } from '@/lib/i18n/patient-context';
 import { dirOf, matchLanguage, pickLanguage, type Language } from '@/lib/languages';
@@ -199,7 +199,7 @@ export default function MobileAssistant({ langParam }: Props) {
       const href = a?.getAttribute('href');
       if (!href || !/^(https?:|mailto:|tel:)/i.test(href) || !inApp()) return;
       e.preventDefault();
-      postToApp('open_url', { url: href });
+      postToApp('open_url', absoluteUrl(href));
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);
