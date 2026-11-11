@@ -11,7 +11,7 @@ import {
   streamText,
   type UIMessage,
 } from 'ai';
-import { FIXED_REPLIES, FIXED_REPLIES_ES, type CareteamSituation } from '@/lib/agent-fixed-replies';
+import { fixedReplySituation } from '@/lib/agent-fixed-replies';
 import { ApiError } from '@/lib/server/staff-auth';
 import { applyApprovals, type ApprovalAnswer } from './approval';
 import type { AgentCaller } from './auth';
@@ -48,17 +48,8 @@ const MAX_SEARCHES_PER_TURN = 2;
 const MAX_WEB_SEARCHES_PER_TURN = 2;
 const lastUserId = (messages: UIMessage[]) => [...messages].reverse().find((m) => m.role === 'user')?.id ?? null;
 
-const squash = (t: string) => t.replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase();
-
-/** Which fixed reply (rule 1a / 1b / 2), in English or Spanish, the text contains, if any. Longer replies first. */
-export function fixedReplySituation(text: string): CareteamSituation | null {
-  const t = squash(text);
-  const order: CareteamSituation[] = ['crisis_other', 'crisis', 'urgent', 'personal'];
-  for (const situation of order) {
-    if (t.includes(squash(FIXED_REPLIES[situation])) || t.includes(squash(FIXED_REPLIES_ES[situation]))) return situation;
-  }
-  return null;
-}
+// Recognizes the fixed replies in every language the app supports (agent-fixed-replies.ts).
+export { fixedReplySituation };
 
 /**
  * Situations whose care-team offer the user turned down (pressed Cancel) earlier in the

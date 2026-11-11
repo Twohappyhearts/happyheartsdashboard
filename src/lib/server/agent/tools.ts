@@ -167,10 +167,15 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
           .describe(
             'Which fixed reply goes with this offer: "personal" (rule 2 referral), "urgent" (1b), "crisis" (1a about the user), "crisis_other" (1a about someone else). The app shows that reply above the offer if you wrote no text.',
           ),
+        // A plain string, not an enum: an unexpected code must never make the offer fail. The app
+        // falls back to English for a code it does not know.
         language: z
-          .enum(AGENT_LANGUAGES)
+          .string()
+          .max(20)
           .optional()
-          .describe('Language of your reply: "es" for Spanish, otherwise "en". The app shows the fixed reply in this language if you wrote no text.'),
+          .describe(
+            `Code of your reply's language: ${AGENT_LANGUAGES.map((l) => `"${l}"`).join(', ')}; "en" for any other language. The app shows the fixed reply in this language if you wrote no text.`,
+          ),
         message: z
           .string()
           .min(1)
