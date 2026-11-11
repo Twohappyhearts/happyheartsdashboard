@@ -7,6 +7,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import { toast } from 'sonner';
 import { AuthError, useAuth } from '@/contexts/AuthContext';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface LoginFormData {
   email: string;
@@ -25,6 +26,8 @@ export default function LoginClient() {
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get('next'));
   const { signIn, isStaff, loading: authLoading } = useAuth();
+  const { t } = useStaffT();
+  const L = t.login;
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -46,11 +49,11 @@ export default function LoginClient() {
     setLoading(true);
     try {
       await signIn(data.email.trim(), data.password);
-      toast.success('Signed in');
+      toast.success(L.signedIn);
       router.replace(next);
     } catch (e) {
       const message =
-        e instanceof AuthError ? e.message : 'Could not reach the server. Check your connection and try again.';
+        e instanceof AuthError ? e.message : L.unreachable;
       setError('password', { message });
       setLoading(false);
     }
@@ -85,23 +88,23 @@ export default function LoginClient() {
             </div>
             <span className="text-white font-700 text-[20px] tracking-tight">HappyHearts</span>
           </div>
-          <p className="text-white/70 text-[13px]">Patient Engagement Platform</p>
+          <p className="text-white/70 text-[13px]">{L.platform}</p>
         </div>
 
         <div className="relative">
           <h1 className="text-white font-700 text-[32px] leading-tight mb-4">
-            Supporting patients<br />between clinic visits.
+            {L.headline1}<br />{L.headline2}
           </h1>
           <p className="text-white/80 text-[14px] leading-relaxed max-w-sm">
-            Manage educational content, track patient engagement, respond to help requests, and monitor survey participation — all from one dashboard.
+            {L.intro}
           </p>
 
           {/* Stats */}
           <div className="mt-8 grid grid-cols-3 gap-4">
             {[
-              { value: '47', label: 'Active Patients' },
-              { value: '7', label: 'Content Sessions' },
-              { value: '61%', label: 'Completion Rate' },
+              { value: '47', label: L.statPatients },
+              { value: '7', label: L.statSessions },
+              { value: '61%', label: L.statCompletion },
             ].map(stat => (
               <div key={`stat-${stat.label}`} className="bg-white/15 rounded-xl p-3 text-center">
                 <p className="text-white font-700 text-[22px] tabular-nums">{stat.value}</p>
@@ -113,7 +116,7 @@ export default function LoginClient() {
 
         <div className="relative">
           <p className="text-white/50 text-[11px]">
-            © 2026 HappyHearts · UCI Health Equity Nursing · Secure Staff Portal
+            {L.footer}
           </p>
         </div>
       </div>
@@ -128,9 +131,9 @@ export default function LoginClient() {
           </div>
 
           <div className="mb-8">
-            <h2 className="text-[26px] font-700 text-foreground">Staff sign in</h2>
+            <h2 className="text-[26px] font-700 text-foreground">{L.title}</h2>
             <p className="text-[13px] text-muted-foreground mt-1">
-              Access the HappyHearts clinical dashboard
+              {L.subtitle}
             </p>
           </div>
 
@@ -138,12 +141,12 @@ export default function LoginClient() {
             {/* Email */}
             <div>
               <label className="block text-[13px] font-500 text-foreground mb-1">
-                Email address
+                {L.email}
               </label>
               <input
                 {...register('email', {
-                  required: 'Email is required',
-                  pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Enter a valid email address' },
+                  required: L.emailRequired,
+                  pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: L.emailInvalid },
                 })}
                 type="email"
                 autoComplete="email"
@@ -160,11 +163,11 @@ export default function LoginClient() {
             {/* Password */}
             <div>
               <label className="block text-[13px] font-500 text-foreground mb-1">
-                Password
+                {L.password}
               </label>
               <div className="relative">
                 <input
-                  {...register('password', { required: 'Password is required' })}
+                  {...register('password', { required: L.passwordRequired })}
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   placeholder="••••••••••"
@@ -178,7 +181,7 @@ export default function LoginClient() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors duration-100"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? L.hidePassword : L.showPassword}
                 >
                   <Icon name={showPassword ? 'EyeSlashIcon' : 'EyeIcon'} size={16} variant="outline" />
                 </button>
@@ -195,14 +198,14 @@ export default function LoginClient() {
               {loading ? (
                 <>
                   <Icon name="ArrowPathIcon" size={16} variant="outline" className="animate-spin" />
-                  Signing in...
+                  {L.signingIn}
                 </>
-              ) : 'Sign In to Dashboard'}
+              ) : L.submit}
             </button>
           </form>
 
           <p className="text-center text-[11px] text-muted-foreground mt-6">
-            Staff-only access · Accounts are provisioned by an admin in Supabase
+            {L.staffOnly}
           </p>
         </div>
       </div>

@@ -46,7 +46,8 @@
     "lint:fix": "next lint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",
     "serve": "next start",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check:i18n": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-staff-i18n.mjs"
   },
   "engines": {
     "node": ">=22"

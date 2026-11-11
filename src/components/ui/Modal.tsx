@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface ModalProps {
   open: boolean;
@@ -20,6 +21,7 @@ const sizeMap = {
 };
 
 export default function Modal({ open, onClose, title, children, size = 'md', footer }: ModalProps) {
+  const { t } = useStaffT();
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -52,7 +54,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-muted transition-colors duration-150 text-muted-foreground"
-            aria-label="Close modal"
+            aria-label={t.dialog.closeModal}
           >
             <Icon name="XMarkIcon" size={18} variant="outline" />
           </button>

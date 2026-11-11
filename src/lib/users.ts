@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Users section (dashboard Prompt 6).
@@ -165,10 +166,11 @@ export function formatPhone(stored: string): string {
 }
 
 export function passwordProblem(pw: string): string | null {
-  if (pw.length < 8) return 'At least 8 characters.';
-  if (pw.length > 72) return 'At most 72 characters.';
+  const T = staffText().password;
+  if (pw.length < 8) return T.tooShort;
+  if (pw.length > 72) return T.tooLong;
   if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/[0-9]/.test(pw)) {
-    return 'Needs an uppercase letter, a lowercase letter, and a number.';
+    return T.needsMix;
   }
   return null;
 }
@@ -182,7 +184,7 @@ export function passwordStrength(pw: string): { score: number; label: string } {
   if (/[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
   const s = Math.min(4, pw ? Math.max(1, score - 1) : 0);
-  return { score: s, label: ['', 'Weak', 'Fair', 'Good', 'Strong'][s] };
+  return { score: s, label: staffText().password.strength[s] ?? '' };
 }
 
 /** Random temporary password that satisfies the rules (for "Generate"). */

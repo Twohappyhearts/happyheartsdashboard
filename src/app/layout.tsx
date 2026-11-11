@@ -5,6 +5,8 @@ import '../styles/tailwind.css';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { OpenAlertsProvider } from '@/contexts/OpenAlertsContext';
+import { StaffLangProvider } from '@/lib/i18n/staff/context';
+import { getStaffLang, getStaffText } from '@/lib/i18n/staff/server';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -18,25 +20,33 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export const metadata: Metadata = {
-  title: 'HappyHearts — Patient Engagement Dashboard',
-  description: 'Clinical staff dashboard for managing patient education content, surveys, help request alerts, and engagement analytics for the HappyHearts mobile app.',
-  icons: {
-    icon: [{ url: '/favicon.ico', type: 'image/x-icon' }],
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getStaffText();
+  return {
+    title: t.meta.title,
+    description: t.meta.description,
+    icons: {
+      icon: [{ url: '/favicon.ico', type: 'image/x-icon' }],
+    },
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Staff dashboard language (English / Spanish), from the hh_staff_lang cookie.
+  // The patient chat (/m/assistant) sets its own lang and dir on its page.
+  const lang = await getStaffLang();
   return (
-    <html lang="en" className={plusJakartaSans.variable}>
+    <html lang={lang} className={plusJakartaSans.variable}>
       <body className={plusJakartaSans.className}>
-        <AuthProvider>
-          <OpenAlertsProvider>{children}</OpenAlertsProvider>
-        </AuthProvider>
+        <StaffLangProvider initialLang={lang}>
+          <AuthProvider>
+            <OpenAlertsProvider>{children}</OpenAlertsProvider>
+          </AuthProvider>
+        </StaffLangProvider>
         <Toaster
           position="bottom-right"
           toastOptions={{

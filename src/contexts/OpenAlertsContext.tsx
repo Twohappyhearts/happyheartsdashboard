@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { getAlertCounts, type AlertCounts } from '@/lib/alerts';
 import { useAuth } from '@/contexts/AuthContext';
+import { staffText } from '@/lib/i18n/staff';
 
 interface OpenAlertsValue {
   counts: AlertCounts | null;
@@ -64,9 +65,10 @@ export function OpenAlertsProvider({ children }: { children: React.ReactNode }) 
         scheduleRefresh();
         if (payload.eventType === 'INSERT') {
           const msg = String((payload.new as Record<string, unknown>)?.message ?? '');
-          toast('New assistance request', {
+          const t = staffText().alertToast;
+          toast(t.title, {
             description: msg.slice(0, 140),
-            action: { label: 'View', onClick: () => router.push('/alerts') },
+            action: { label: t.view, onClick: () => router.push('/alerts') },
           });
         }
       })

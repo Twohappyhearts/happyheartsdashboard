@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import Modal from '@/components/ui/Modal';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface SlideOverProps {
   open: boolean;
@@ -19,15 +20,6 @@ interface SlideOverProps {
   dirty?: boolean;
 }
 
-/** Text of the "Discard changes?" prompt (kept together for the dashboard translation). */
-export const DISCARD_TEXT = {
-  title: 'Discard changes?',
-  body: 'You have changes that are not saved. If you close this panel, they will be lost.',
-  keep: 'Keep editing',
-  discard: 'Discard changes',
-  closePanel: 'Close panel',
-};
-
 const widthMap = { md: 'w-[480px]', lg: 'w-[600px]', xl: 'w-[720px]' };
 
 const SlideOverCloseContext = createContext<(() => void) | null>(null);
@@ -40,6 +32,7 @@ export const useSlideOverClose = () => useContext(SlideOverCloseContext);
 
 export default function SlideOver({ open, onClose, title, subtitle, children, footer, width = 'lg', dirty = false }: SlideOverProps) {
   const [asking, setAsking] = useState(false);
+  const DISCARD_TEXT = useStaffT().t.discard;
 
   const requestClose = useCallback(() => {
     if (dirty) setAsking(true);
