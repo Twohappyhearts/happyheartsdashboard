@@ -13,6 +13,8 @@ import { initials } from '@/contexts/AuthContext';
 import { openConversationForPatient, fetchProfiles, ChatError } from '@/lib/chat';
 import {
   ALERT_FILTER_LABELS,
+  ALERT_STATUS_LABELS,
+  ALERT_TEXT,
   AlertError,
   getAlert,
   listAlerts,
@@ -202,7 +204,7 @@ export default function AlertsClient() {
       a.id,
       () => setAlertStatus(supabase, a.id, status),
       status === 'ACK'
-        ? 'Alert acknowledged'
+        ? ALERT_TEXT.markedSeen
         : status === 'RESOLVED'
           ? 'Alert resolved'
           : 'Alert reopened'
@@ -277,7 +279,7 @@ export default function AlertsClient() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'NEW', value: counts?.new, color: 'text-danger', bg: 'bg-danger/5 border-danger/20' },
-          { label: 'Acknowledged', value: counts?.ack, color: 'text-warning', bg: 'bg-warning/5 border-warning/20' },
+          { label: ALERT_TEXT.seenCard, value: counts?.ack, color: 'text-warning', bg: 'bg-warning/5 border-warning/20' },
           { label: 'Resolved today', value: counts?.resolvedToday, color: 'text-success', bg: 'bg-success/5 border-success/20' },
           {
             label: 'Total open',
@@ -499,7 +501,7 @@ export default function AlertsClient() {
                       {/* Status */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         {a.status === 'NEW' && <Badge variant="new" label="NEW" />}
-                        {a.status === 'ACK' && <Badge variant="ack" label="ACK" />}
+                        {a.status === 'ACK' && <Badge variant="ack" label={ALERT_STATUS_LABELS.ACK} />}
                         {a.status === 'RESOLVED' && <Badge variant="resolved" label="RESOLVED" />}
                         {a.status === 'ACK' && a.acknowledgedAt && (
                           <p className="text-[11px] text-muted-foreground mt-1">
@@ -576,10 +578,10 @@ export default function AlertsClient() {
                             <button
                               onClick={() => void changeStatus(a, 'ACK')}
                               disabled={isBusy}
-                              title="Mark as seen — stays in the Open view"
-                              className="px-2 py-1 bg-warning/10 text-warning rounded-md text-[11px] font-600 hover:bg-warning/20 disabled:opacity-50"
+                              title={ALERT_TEXT.markSeenHint}
+                              className="px-2 py-1 bg-warning/10 text-warning rounded-md text-[11px] font-600 hover:bg-warning/20 disabled:opacity-50 whitespace-nowrap"
                             >
-                              ACK
+                              {ALERT_TEXT.markSeen}
                             </button>
                           )}
                           {a.status !== 'RESOLVED' && (
@@ -645,6 +647,7 @@ export default function AlertsClient() {
       <SlideOver
         open={!!selected}
         onClose={() => setSelected(null)}
+        dirty={!!selected && panelDraft.trim() !== selected.notes.trim()}
         title="Alert Detail"
         subtitle={selected ? `${selected.patientName} · ${formatOccurred(selected.createdAt)}` : ''}
         width="md"
@@ -666,7 +669,7 @@ export default function AlertsClient() {
                     disabled={!!busy[selected.id]}
                     className="px-4 py-2 bg-warning/10 text-warning border border-warning/20 rounded-lg text-[13px] font-600 hover:bg-warning/20 transition-colors duration-150 disabled:opacity-60"
                   >
-                    Acknowledge
+                    {ALERT_TEXT.markSeen}
                   </button>
                 )}
                 <button
@@ -686,7 +689,7 @@ export default function AlertsClient() {
             {/* Status */}
             <div className="flex items-center gap-2">
               {selected.status === 'NEW' && <Badge variant="new" label="NEW" />}
-              {selected.status === 'ACK' && <Badge variant="ack" label="ACKNOWLEDGED" />}
+              {selected.status === 'ACK' && <Badge variant="ack" label={ALERT_STATUS_LABELS.ACK} />}
               {selected.status === 'RESOLVED' && <Badge variant="resolved" label="RESOLVED" />}
             </div>
 
@@ -726,7 +729,7 @@ export default function AlertsClient() {
                 </li>
                 {selected.acknowledgedAt && (
                   <li>
-                    <span className="text-muted-foreground">Acknowledged:</span> {formatOccurred(selected.acknowledgedAt)}{' '}
+                    <span className="text-muted-foreground">{ALERT_TEXT.seenAt}</span> {formatOccurred(selected.acknowledgedAt)}{' '}
                     by {staffName(selected.acknowledgedBy)}
                   </li>
                 )}

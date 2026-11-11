@@ -64,7 +64,7 @@ export default function TrustedWebsites() {
   const save = async () => {
     if (!draft) return;
     if (!cleaned) {
-      setFormError('Enter a website address like acog.org.');
+      setFormError('Enter a website address like cdc.gov.');
       return;
     }
     if (sites.some((s) => s.domain === cleaned && s.id !== draft.id)) {
@@ -287,7 +287,7 @@ export default function TrustedWebsites() {
                   setFormError(null);
                   setDraft({ ...draft, domain: e.target.value });
                 }}
-                placeholder="acog.org"
+                placeholder="cdc.gov"
                 className={`${inputClass} font-mono`}
               />
               <p className="text-[11px] text-muted-foreground mt-1">
@@ -305,7 +305,7 @@ export default function TrustedWebsites() {
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
                 maxLength={120}
-                placeholder="American College of Obstetricians and Gynecologists"
+                placeholder="Centers for Disease Control and Prevention"
                 className={inputClass}
               />
               <p className="text-[11px] text-muted-foreground mt-1">

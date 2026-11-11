@@ -5,6 +5,7 @@ import Icon from '@/components/ui/AppIcon';
 
 import Toggle from '@/components/ui/Toggle';
 import SlideOver from '@/components/ui/SlideOver';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { toast } from 'sonner';
 import ContentForm from './ContentForm';
@@ -15,6 +16,7 @@ import {
   ContentError,
   createContent,
   deleteContent,
+  lessonFileUrls,
   listCategories,
   listContent,
   previewNextGroupId,
@@ -25,6 +27,8 @@ import {
   type ContentItem,
   type ContentKind,
 } from '@/lib/content';
+import { releaseLessonFiles } from '@/lib/uploads';
+import { CONTENT_TEXT as T } from './text';
 
 type Tab = 'sessions' | 'resources';
 const kindOf = (tab: Tab): ContentKind => (tab === 'sessions' ? 'session' : 'resource');
@@ -49,6 +53,15 @@ export default function ContentManagementClient() {
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  /** The edit panel holds unsaved changes (closing it asks first). */
+  const [formDirty, setFormDirty] = useState(false);
+  /** Turning Active off hides the lesson from every patient at once, so it is confirmed first. */
+  const [hideTarget, setHideTarget] = useState<ContentItem | null>(null);
+
+  const closePanel = useCallback(() => {
+    setSlideOverOpen(false);
+    setFormDirty(false);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +99,11 @@ export default function ContentManagementClient() {
       filterActive === 'all' ? true : filterActive === 'active' ? item.active : !item.active;
     return matchSearch && matchActive;
   });
+
+  const requestToggleActive = (item: ContentItem) => {
+    if (item.active) setHideTarget(item);
+    else void handleToggleActive(item);
+  };
 
   const handleToggleActive = async (item: ContentItem) => {
     const next = !item.active;
@@ -127,7 +145,7 @@ export default function ContentManagementClient() {
       setItems((prev) => [...(prev ?? []), saved]);
       toast.success(`Created ${saved.groupName || saved.groupId}`);
     }
-    setSlideOverOpen(false);
+    closePanel();
     void listCategories(supabase).then(setCategories).catch(() => {});
   };
 
@@ -135,6 +153,8 @@ export default function ContentManagementClient() {
     setDeleting(true);
     try {
       await deleteContent(supabase, id);
+      const removed = items.find((item) => item.id === id);
+      if (removed) releaseLessonFiles(lessonFileUrls(removed));
       setItems((prev) => prev && prev.filter((item) => item.id !== id));
       setDeleteConfirmId(null);
       toast.success('Content deleted');
@@ -394,14 +414,14 @@ export default function ContentManagementClient() {
                       <Toggle
                         checked={item.active}
                         disabled={!!toggling[item.id]}
-                        onChange={() => void handleToggleActive(item)}
+                        onChange={() => requestToggleActive(item)}
                       />
                     </td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums whitespace-nowrap">
                       {formatEdited(item.updatedAt)}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(item)}
                           title="Edit content"
@@ -467,9 +487,10 @@ export default function ContentManagementClient() {
       {/* Slide-over form */}
       <SlideOver
         open={slideOverOpen}
-        onClose={() => setSlideOverOpen(false)}
+        onClose={closePanel}
+        dirty={formDirty}
         title={editingItem ? 'Edit Content' : `New ${isSessions ? 'Session' : 'Resource'}`}
-        subtitle={editingItem ? `Editing: ${editingItem.title}` : 'Fill in all required fields and paste media URLs.'}
+        subtitle={editingItem ? `Editing: ${editingItem.title}` : 'Fill in all required fields. Upload images and files, or paste links.'}
         width="xl"
         footer={undefined}
       >
@@ -478,7 +499,8 @@ export default function ContentManagementClient() {
             key={editingItem?.id ?? `new-${activeTab}`}
             item={editingItem}
             onSave={handleSave}
-            onCancel={() => setSlideOverOpen(false)}
+            onCancel={closePanel}
+            onDirtyChange={setFormDirty}
             nextGroupId={nextGroup.groupId}
             nextGroupName={nextGroup.groupName}
             categories={categories}
@@ -487,6 +509,40 @@ export default function ContentManagementClient() {
           />
         )}
       </SlideOver>
+
+      <Modal
+        open={!!hideTarget}
+        onClose={() => setHideTarget(null)}
+        title={T.hideTitle}
+        size="sm"
+        footer={
+          <>
+            <button
+              onClick={() => setHideTarget(null)}
+              className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
+            >
+              {T.cancel}
+            </button>
+            <button
+              onClick={() => {
+                const target = hideTarget;
+                setHideTarget(null);
+                if (target) void handleToggleActive(target);
+              }}
+              className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90"
+            >
+              {T.hideConfirm}
+            </button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+            <Icon name="EyeSlashIcon" size={18} variant="outline" className="text-warning" />
+          </div>
+          <p className="text-[13px] text-foreground">{hideTarget ? T.hideBody(hideTarget.title) : ''}</p>
+        </div>
+      </Modal>
 
       <CategoryManager
         open={categoriesOpen}

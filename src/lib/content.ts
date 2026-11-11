@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { MAX_ATTACHMENTS } from '@/lib/uploads';
 
 /**
  * Staff side of education content (public.content_items) and its categories
@@ -25,6 +26,18 @@ export interface ReferenceLink {
 
 export const MAX_REFERENCE_LINKS = 30;
 
+/**
+ * A file staff uploaded to the lesson's Materials list (bucket "lesson-materials").
+ * Stored in content_items.attachments as {name, url, kind, size_bytes}; at most 20.
+ */
+export interface LessonAttachment {
+  /** Shown to patients; the original file name unless staff renamed it. */
+  name: string;
+  url: string;
+  kind: 'image' | 'pdf';
+  sizeBytes: number | null;
+}
+
 export interface ContentItem {
   id: string;
   kind: ContentKind;
@@ -47,6 +60,8 @@ export interface ContentItem {
   tags: string[];
   /** Links staff added to the References block (the lesson's own links are added by the app). */
   references: ReferenceLink[];
+  /** Images and PDFs uploaded for the lesson (Materials). */
+  attachments: LessonAttachment[];
   active: boolean;
   updatedAt: string;
 }
@@ -69,6 +84,7 @@ export type ContentInput = Pick<
   | 'groupName'
   | 'tags'
   | 'references'
+  | 'attachments'
   | 'active'
 >;
 
@@ -81,7 +97,7 @@ export class ContentError extends Error {
 const COLUMNS =
   'id, kind, title, description, category_id, video_url, audio_url, thumbnail_url, thumbnail_alt, ' +
   'infographic_url, quiz_url, script_html, video_duration, audio_duration, group_id, group_number, ' +
-  'group_name, tags, reference_links, is_active, updated_at, category:content_categories(name)';
+  'group_name, tags, reference_links, attachments, is_active, updated_at, category:content_categories(name)';
 
 type Row = Record<string, unknown>;
 
@@ -90,6 +106,22 @@ function toReferences(v: unknown): ReferenceLink[] {
   return v
     .map((r) => ({ title: String((r as Row | null)?.title ?? '').trim(), url: String((r as Row | null)?.url ?? '').trim() }))
     .filter((r) => r.url);
+}
+
+function toAttachments(v: unknown): LessonAttachment[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((a) => {
+      const r = (a ?? {}) as Row;
+      const size = Number(r.size_bytes);
+      return {
+        name: String(r.name ?? '').trim(),
+        url: String(r.url ?? '').trim(),
+        kind: r.kind === 'pdf' ? ('pdf' as const) : ('image' as const),
+        sizeBytes: r.size_bytes == null || !Number.isFinite(size) ? null : size,
+      };
+    })
+    .filter((a) => a.url);
 }
 
 const HREF = /<a\b[^>]*\bhref\s*=\s*["'](https:\/\/[^"'\s]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -111,6 +143,11 @@ export function lessonOwnReferences(item: Pick<ContentItem, 'videoUrl' | 'audioU
     out.push({ title: text && text !== url ? text : '', url });
   }
   return dedupeReferences(out);
+}
+
+/** Every link to an uploaded file the lesson uses (thumbnail, infographic, materials). */
+export function lessonFileUrls(item: Pick<ContentItem, 'thumbnailUrl' | 'infographicUrl' | 'attachments'>): string[] {
+  return [item.thumbnailUrl, item.infographicUrl, ...item.attachments.map((a) => a.url)].filter(Boolean);
 }
 
 /** First mention of each link wins. */
@@ -147,6 +184,7 @@ function toItem(r: Row): ContentItem {
     groupName: String(r.group_name ?? ''),
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
     references: toReferences(r.reference_links),
+    attachments: toAttachments(r.attachments),
     active: r.is_active === true,
     updatedAt: String(r.updated_at ?? ''),
   };
@@ -174,6 +212,15 @@ function toRow(input: ContentInput): Row {
       .map((r) => ({ title: r.title.trim(), url: r.url.trim() }))
       .filter((r) => r.url)
       .slice(0, MAX_REFERENCE_LINKS),
+    attachments: input.attachments
+      .filter((a) => a.url.trim())
+      .slice(0, MAX_ATTACHMENTS)
+      .map((a) => ({
+        name: (a.name.trim() || 'File').slice(0, 200),
+        url: a.url.trim(),
+        kind: a.kind,
+        ...(a.sizeBytes != null ? { size_bytes: a.sizeBytes } : {}),
+      })),
     is_active: input.active,
   };
 }
@@ -184,11 +231,12 @@ function fail(e: { code?: string; message?: string } | null, fallback: string): 
   if (e.code === '23514') {
     const m = e.message ?? '';
     if (m.includes('reference_links')) return new ContentError('Every reference needs a link starting with https:// (at most 30 references).', e.code);
+    if (m.includes('attachments')) return new ContentError('Every material needs a name and an https:// link (at most 20 files).', e.code);
     if (m.includes('url')) return new ContentError('Every link must start with https://', e.code);
     if (m.includes('duration')) return new ContentError('Durations must look like 5:47 (MM:SS).', e.code);
     return new ContentError('Some fields are too long or in the wrong format.', e.code);
   }
-  if (e.code === 'PGRST204' || e.code === '42703') return new ContentError('Run the lesson references migration first (missing column).', e.code);
+  if (e.code === 'PGRST204' || e.code === '42703') return new ContentError('The database is missing a column. Run the latest migration first.', e.code);
   if (e.code === '23505') return new ContentError('A category with this name already exists.', e.code);
   if (e.code === '23503') {
     return new ContentError('This category is still used by some content. Deactivate it instead.', e.code);

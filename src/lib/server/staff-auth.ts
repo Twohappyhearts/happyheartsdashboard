@@ -26,8 +26,11 @@ export function jsonError(e: unknown) {
 /**
  * The signed-in dashboard user, verified on the server (JWT checked by
  * Supabase, role read with the admin client). Throws 401/403 otherwise.
+ * `forbidden` is the 403 message (the default suits the user-management routes).
  */
-export async function requireStaffCaller(): Promise<StaffCaller> {
+export async function requireStaffCaller(
+  forbidden = 'Only active Careteam or Admin accounts can manage users.'
+): Promise<StaffCaller> {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw new ApiError(401, 'Please sign in again.');
@@ -40,9 +43,16 @@ export async function requireStaffCaller(): Promise<StaffCaller> {
     .maybeSingle();
   if (roleErr) throw roleErr;
   if (!row || !row.is_active || (row.role !== 'staff' && row.role !== 'admin')) {
-    throw new ApiError(403, 'Only active Careteam or Admin accounts can manage users.');
+    throw new ApiError(403, forbidden);
   }
   return { userId: data.user.id, role: row.role };
+}
+
+/** Like requireStaffCaller, but only an active Admin passes (same rule as is_active_admin() in the database). */
+export async function requireAdminCaller(forbidden = 'Only an active Admin account can do this.'): Promise<StaffCaller> {
+  const caller = await requireStaffCaller(forbidden);
+  if (caller.role !== 'admin') throw new ApiError(403, forbidden);
+  return caller;
 }
 
 export const USERNAME_RE = /^[A-Za-z0-9]{3,20}$/;

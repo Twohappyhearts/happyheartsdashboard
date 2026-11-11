@@ -13,6 +13,8 @@ interface NavItem {
   href: string;
   icon: string;
   badge?: number;
+  /** Shown only to Admin accounts. */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -49,6 +51,8 @@ const navGroups: NavGroup[] = [
     groupLabel: 'ADMIN',
     items: [
       { label: 'Users', href: '/user-management', icon: 'UsersIcon' },
+      { label: 'Settings', href: '/settings', icon: 'Cog6ToothIcon' },
+      { label: 'Legal Documents', href: '/legal-documents', icon: 'DocumentTextIcon', adminOnly: true },
     ],
   },
 ];
@@ -61,7 +65,11 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+  const groups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.adminOnly || isAdmin) }))
+    .filter((g) => g.items.length > 0);
   const { openCount } = useOpenAlerts();
   const badgeFor = (item: NavItem) => (item.href === '/alerts' ? openCount : item.badge);
 
@@ -95,7 +103,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={`group-${group.groupLabel}`} className="mb-4">
             {!collapsed && (
               <p className="text-[10px] font-600 tracking-widest text-muted-foreground uppercase px-2 mb-1.5">
