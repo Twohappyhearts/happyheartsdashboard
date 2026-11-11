@@ -77,8 +77,18 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
           <p className="text-[14px] font-600 text-foreground truncate">{title}</p>
           <p className="text-[11px] text-muted-foreground truncate">Answers from the knowledge base and web search</p>
         </div>
+        <a
+          href="/m/assistant"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted shrink-0"
+          title="The chat exactly as patients see it in the app (phone layout, their language, AI notice). Add ?lang=es, vi, ko, zh-Hans, zh-Hant, fa or ar to the address for another language."
+        >
+          <Icon name="DevicePhoneMobileIcon" size={15} variant="outline" />
+          Open patient view
+        </a>
         <span
-          className="ml-auto text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
+          className="text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
           title="You are signed in as staff. Care-team messages ask for approval as they do for patients, but no real alert is created."
         >
           Staff preview

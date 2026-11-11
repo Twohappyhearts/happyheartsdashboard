@@ -11,6 +11,7 @@ import {
   historyToUIMessages,
   listAgentConversations,
   loadAgentMessages,
+  type AgentAuth,
   type AgentConversation,
 } from '@/lib/agent-chat';
 import { bearerAuth, inApp, installBridge, onTokenChange, postToApp, requestFreshToken, waitForToken } from '@/lib/agent-bridge';
@@ -58,6 +59,14 @@ interface Props {
   langParam?: string | null;
 }
 
+/**
+ * Patients use this page inside the HappyHearts app, which passes their token (agent-bridge.ts).
+ *
+ * Staff preview: opened in a normal browser by a signed-in staff or admin account (the
+ * dashboard's session cookie; "Open patient view" on the AI Chat page), the page shows the
+ * same patient UI. The AI notice appears once per page load and accepting it is not recorded;
+ * care-team messages go through the same steps but create no alert (as on the AI Chat page).
+ */
 export default function MobileAssistant({ langParam }: Props) {
   const requested = matchLanguage(langParam);
   const [lang, setLang] = useState<Language>(requested ?? 'en');
@@ -76,6 +85,11 @@ export default function MobileAssistant({ langParam }: Props) {
   const [noticeFailed, setNoticeFailed] = useState(false);
   /** Language messages to the care team are written in (Settings). */
   const [careTeamLanguage, setCareTeamLanguage] = useState<Language>('en');
+  /** Staff preview in a browser (see above): cookie auth instead of the app's token. */
+  const [preview, setPreview] = useState(false);
+  const previewRef = useRef(false);
+  /** The patient's token from the app; undefined = the session cookie (staff preview). */
+  const auth = (): AgentAuth | undefined => (previewRef.current ? undefined : bearerAuth);
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
@@ -90,7 +104,7 @@ export default function MobileAssistant({ langParam }: Props) {
   const fetchMessages = useCallback((id: string) => {
     const running = inflight.current.get(id);
     if (running) return running;
-    const p = loadAgentMessages(id, bearerAuth)
+    const p = loadAgentMessages(id, auth())
       .then(({ messages }) => {
         const ui = historyToUIMessages(messages);
         cache.current.set(id, ui);
@@ -115,7 +129,7 @@ export default function MobileAssistant({ langParam }: Props) {
     async (silent = false) => {
       if (!silent) setListLoading(true);
       try {
-        const list = await listAgentConversations(bearerAuth);
+        const list = await listAgentConversations(auth());
         setConversations(list);
         setListProblem(null);
         prefetch(list);
@@ -131,25 +145,49 @@ export default function MobileAssistant({ langParam }: Props) {
 
   /** Has the patient accepted the current notice and Terms of Use? If the check fails, show the notice: accepting again changes nothing. */
   const checkNotice = useCallback(async () => {
+    if (previewRef.current) return;
     const consent = await getAgentConsent(bearerAuth).catch(() => null);
     setNoticeNeeded(!consent || (consent.required && !consent.agreed));
     const careTeam = matchLanguage(consent?.careTeamLanguage);
     if (careTeam) setCareTeamLanguage(careTeam);
   }, []);
 
-  // Wait for the app to hand over the patient's token.
+  // Wait for the app to hand over the patient's token (or, in a browser, check for a staff session).
   useEffect(() => {
     installBridge();
     const off = onTokenChange((tk) => tk && setPhase('ready'));
-    waitForToken(inApp() ? 15_000 : 2_000)
-      .then(async () => {
-        void loadList();
-        // Known before the chat shows, so the notice never appears over a half-typed message.
-        await checkNotice();
-        setPhase('ready');
-      })
-      .catch(() => setPhase(inApp() ? 'error' : 'no-app'));
+    let cancelled = false;
+    void (async () => {
+      if (!inApp()) {
+        // Signed in on the dashboard as staff or admin (consent not required): the staff preview.
+        const staff = await getAgentConsent().catch(() => null);
+        if (cancelled) return;
+        if (staff && !staff.required) {
+          previewRef.current = true;
+          setPreview(true);
+          const careTeam = matchLanguage(staff.careTeamLanguage);
+          if (careTeam) setCareTeamLanguage(careTeam);
+          // Shown once per page load so staff see it; accepting is kept in this page only.
+          setNoticeNeeded(true);
+          void loadList();
+          setPhase('ready');
+          return;
+        }
+      }
+      try {
+        await waitForToken(inApp() ? 15_000 : 2_000);
+      } catch {
+        if (!cancelled) setPhase(inApp() ? 'error' : 'no-app');
+        return;
+      }
+      if (cancelled) return;
+      void loadList();
+      // Known before the chat shows, so the notice never appears over a half-typed message.
+      await checkNotice();
+      setPhase('ready');
+    })();
     return () => {
+      cancelled = true;
       off();
     };
   }, [loadList, checkNotice]);
@@ -168,6 +206,11 @@ export default function MobileAssistant({ langParam }: Props) {
   }, []);
 
   const acceptNotice = async () => {
+    if (previewRef.current) {
+      // Staff preview: nothing is written to agent_consents.
+      setNoticeNeeded(false);
+      return;
+    }
     setAccepting(true);
     setNoticeFailed(false);
     try {
@@ -235,7 +278,7 @@ export default function MobileAssistant({ langParam }: Props) {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteAgentConversation(deleteTarget.id, bearerAuth);
+      await deleteAgentConversation(deleteTarget.id, auth());
       setConversations((list) => list.filter((c) => c.id !== deleteTarget.id));
       cache.current.delete(deleteTarget.id);
       if (deleteTarget.id === currentId.current) startNew();
@@ -251,100 +294,118 @@ export default function MobileAssistant({ langParam }: Props) {
   const titleOf = (c: Pick<AgentConversation, 'title'> | undefined) => c?.title?.trim() || t.newConversation;
   const title = thread.conversationId ? titleOf(conversations.find((c) => c.id === thread.conversationId)) : t.newConversation;
 
+  const page = (
+    <div
+      lang={lang}
+      dir={dirOf(lang)}
+      style={APP_THEME}
+      className={`h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden ${
+        // Phone width on a desktop; transform keeps the sheets and dialogs inside this frame.
+        preview ? 'w-full max-w-[430px] shadow-xl [transform:translateZ(0)]' : ''
+      }`}
+    >
+      {preview && (
+        <div dir="ltr" lang="en" className="shrink-0 px-3 py-1.5 border-b border-warning/40 bg-warning/15 text-[12px] leading-snug font-600 text-[#92400E] flex items-start gap-1.5">
+          <Icon name="EyeIcon" size={14} variant="outline" className="shrink-0 mt-px" />
+          <span>Staff preview – patients see this page inside the app. Care-team messages create no real alert, and accepting the notice here is not recorded.</span>
+        </div>
+      )}
+      {phase !== 'ready' ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
+          {phase === 'connecting' ? (
+            <Icon name="ArrowPathIcon" size={22} variant="outline" className="animate-spin text-muted-foreground" />
+          ) : (
+            <>
+              <Icon name="LockClosedIcon" size={28} variant="outline" className="text-muted-foreground" />
+              <p className="text-[14px] text-secondary-foreground">{phase === 'no-app' ? t.openFromApp : t.signInAgain}</p>
+            </>
+          )}
+        </div>
+      ) : view === 'list' ? (
+        <MobileConversationList
+          conversations={conversations}
+          activeId={thread.conversationId}
+          loading={listLoading}
+          error={listProblem ? t[listProblem] : null}
+          onBack={() => setView('chat')}
+          onOpen={(id) => void open(id)}
+          onNew={startNew}
+          onDelete={setDeleteTarget}
+          onRetry={() => void loadList()}
+        />
+      ) : thread.loading ? (
+        <>
+          <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
+            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
+              <Icon name="Bars3Icon" size={20} variant="outline" />
+            </button>
+            <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
+          </div>
+        </>
+      ) : (
+        <MobileChatThread
+          key={thread.key}
+          conversationId={thread.conversationId}
+          title={title}
+          initialMessages={thread.messages}
+          auth={preview ? undefined : bearerAuth}
+          careTeamLanguage={careTeamLanguage}
+          onShowList={() => {
+            setView('list');
+            void loadList(true);
+          }}
+          onNew={startNew}
+          onConversationCreated={(id) => {
+            currentId.current = id;
+            setThread((th) => ({ ...th, conversationId: id }));
+            void loadList(true);
+          }}
+          onTitle={applyTitle}
+          onTurnFinished={() => void loadList(true)}
+          // A new notice or Terms of Use came out while the chat was open: ask again.
+          onForbidden={() => void checkNotice()}
+          onMessagesChange={rememberMessages}
+        />
+      )}
+
+      {phase === 'ready' && noticeNeeded && (
+        <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => !deleting && setDeleteTarget(null)} />
+          <div className="relative w-full bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+            <h3 className="text-[16px] font-700">{t.deleteTitle}</h3>
+            <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">{t.deleteBody(titleOf(deleteTarget))}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="flex-1 h-12 rounded-xl border border-border text-[15px] font-600"
+              >
+                {t.cancel}
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 h-12 rounded-xl bg-danger text-white text-[15px] font-600 disabled:opacity-60"
+              >
+                {deleting ? t.deleting : t.delete}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <PatientTextProvider lang={lang}>
-      <div lang={lang} dir={dirOf(lang)} style={APP_THEME} className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
-        {phase !== 'ready' ? (
-          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
-            {phase === 'connecting' ? (
-              <Icon name="ArrowPathIcon" size={22} variant="outline" className="animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <Icon name="LockClosedIcon" size={28} variant="outline" className="text-muted-foreground" />
-                <p className="text-[14px] text-secondary-foreground">{phase === 'no-app' ? t.openFromApp : t.signInAgain}</p>
-              </>
-            )}
-          </div>
-        ) : view === 'list' ? (
-          <MobileConversationList
-            conversations={conversations}
-            activeId={thread.conversationId}
-            loading={listLoading}
-            error={listProblem ? t[listProblem] : null}
-            onBack={() => setView('chat')}
-            onOpen={(id) => void open(id)}
-            onNew={startNew}
-            onDelete={setDeleteTarget}
-            onRetry={() => void loadList()}
-          />
-        ) : thread.loading ? (
-          <>
-            <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-              <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
-                <Icon name="Bars3Icon" size={20} variant="outline" />
-              </button>
-              <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
-            </div>
-            <div className="flex-1 flex items-center justify-center">
-              <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
-            </div>
-          </>
-        ) : (
-          <MobileChatThread
-            key={thread.key}
-            conversationId={thread.conversationId}
-            title={title}
-            initialMessages={thread.messages}
-            auth={bearerAuth}
-            careTeamLanguage={careTeamLanguage}
-            onShowList={() => {
-              setView('list');
-              void loadList(true);
-            }}
-            onNew={startNew}
-            onConversationCreated={(id) => {
-              currentId.current = id;
-              setThread((th) => ({ ...th, conversationId: id }));
-              void loadList(true);
-            }}
-            onTitle={applyTitle}
-            onTurnFinished={() => void loadList(true)}
-            // A new notice or Terms of Use came out while the chat was open: ask again.
-            onForbidden={() => void checkNotice()}
-            onMessagesChange={rememberMessages}
-          />
-        )}
-
-        {phase === 'ready' && noticeNeeded && (
-          <AiNoticeDialog lang={lang} onLanguageChange={setLang} busy={accepting} failed={noticeFailed} onAgree={() => void acceptNotice()} />
-        )}
-
-        {deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-end">
-            <div className="absolute inset-0 bg-black/30" onClick={() => !deleting && setDeleteTarget(null)} />
-            <div className="relative w-full bg-card rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-              <h3 className="text-[16px] font-700">{t.deleteTitle}</h3>
-              <p className="text-[14px] text-secondary-foreground mt-1.5 mb-5">{t.deleteBody(titleOf(deleteTarget))}</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  disabled={deleting}
-                  className="flex-1 h-12 rounded-xl border border-border text-[15px] font-600"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={deleting}
-                  className="flex-1 h-12 rounded-xl bg-danger text-white text-[15px] font-600 disabled:opacity-60"
-                >
-                  {deleting ? t.deleting : t.delete}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {preview ? <div className="min-h-[100dvh] bg-[#E2E8F0] flex justify-center">{page}</div> : page}
     </PatientTextProvider>
   );
 }
