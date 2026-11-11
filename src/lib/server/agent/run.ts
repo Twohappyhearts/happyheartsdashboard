@@ -10,6 +10,7 @@ import {
   isToolUIPart,
   streamText,
   type UIMessage,
+  type UIMessageChunk,
 } from 'ai';
 import { fixedReplySituation } from '@/lib/agent-fixed-replies';
 import { ApiError } from '@/lib/server/staff-auth';
@@ -268,8 +269,24 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
   void drain(toServer);
 
   return createUIMessageStreamResponse({
-    stream: toClient,
+    // Patients never receive the model's reasoning; staff see it in the dashboard preview.
+    stream: caller.role === 'patient' ? toClient.pipeThrough(withoutReasoning()) : toClient,
     headers: { 'X-Conversation-Id': conversationId, 'X-Context-Level': built.level },
+  });
+}
+
+const REASONING_CHUNKS = new Set<string>(['reasoning-start', 'reasoning-delta', 'reasoning-end', 'reasoning-file']);
+
+/**
+ * Drops reasoning from the copy sent to a patient. The stream itself keeps sendReasoning on, so
+ * the saved message keeps its reasoning parts and an approval answer continues the turn with
+ * the same context as before; the history route strips them for patients as well.
+ */
+function withoutReasoning() {
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, controller) {
+      if (!REASONING_CHUNKS.has(chunk.type)) controller.enqueue(chunk);
+    },
   });
 }
 
