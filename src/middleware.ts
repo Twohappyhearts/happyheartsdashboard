@@ -6,5 +6,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  // Skipped: static assets, and /legal/* (Terms of Use and Privacy Policy, public without sign-in).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|legal/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
 };
