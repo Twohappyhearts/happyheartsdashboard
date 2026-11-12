@@ -626,6 +626,115 @@ export const en = {
       remove: 'Could not remove the website.',
     },
   },
+
+  /** Names of the app's eight languages, in the dashboard language (Settings, AI Notice). */
+  languageNames: {
+    en: 'English',
+    es: 'Spanish',
+    vi: 'Vietnamese',
+    ko: 'Korean',
+    'zh-Hans': 'Chinese (Simplified)',
+    'zh-Hant': 'Chinese (Traditional)',
+    fa: 'Farsi',
+    ar: 'Arabic',
+  },
+
+  /** AI Notice page (who accepted the notice shown before the AI chat). The notice itself is not translated here. */
+  aiNotice: {
+    title: 'AI Notice',
+    subtitle: 'Who accepted the notice shown before the AI chat in the app, and which version.',
+    status: { current: 'Accepted', outdated: 'Must accept again', none: 'Not yet' },
+    versionLabel: (notice: number, terms: number | null) => `Notice v${notice} · Terms ${terms ? `v${terms}` : 'sample'}`,
+    loadFailed: 'Could not load the AI notice records.',
+    introBefore: 'Before a patient first uses the AI assistant in the app, a notice explains that its answers are for reference only and links to the ',
+    termsOfUse: 'Terms of Use',
+    introAfter: (agree: string, cont: string) =>
+      `. The patient cannot chat until they tick “${agree}” and press “${cont}”. When the notice changes or an admin uploads a new Terms of Use, every patient is asked again.`,
+    exportCsv: 'Export CSV',
+    noticeHeading: (notice: number, terms: number) =>
+      `The notice patients see (notice version ${notice} · Terms of Use ${terms ? `version ${terms}` : 'sample, none uploaded yet'})`,
+    englishOfficial: 'English (official)',
+    translation: 'Translation',
+    language: 'Language',
+    machineTranslation: 'Machine translation, pending research-team review',
+    loadFailedTitle: 'Could not load the records',
+    retry: 'Retry',
+    stats: {
+      accepted: 'Accepted',
+      acceptedHint: (percent: number) => `${percent}% of active patients, current versions`,
+      again: 'Must accept again',
+      againHint: 'Accepted an older notice or Terms of Use; asked again the next time they open the AI assistant',
+      notYet: 'Not yet',
+      notYetHint: 'Have not opened the AI assistant yet, or left without accepting',
+      patients: 'Active patients',
+      patientsHint: 'Disabled accounts are not counted',
+    },
+    progressTitle: 'Accepted the current notice and Terms of Use',
+    progressCount: (n: number, total: number, percent: number) => `${n} of ${total} (${percent}%)`,
+    progressLabel: 'Patients who accepted the current AI notice',
+    all: 'All',
+    emptyNoneTitle: 'No active patients yet',
+    emptyNoneBody: 'Patients appear here once their accounts are created.',
+    emptyFilterTitle: 'No patients here',
+    emptyFilterBody: 'No patient matches this filter.',
+    columns: {
+      patient: 'Patient',
+      participantId: 'Participant ID',
+      notice: 'AI notice',
+      version: 'Accepted version',
+      acceptedOn: 'Accepted on',
+    },
+  },
+
+  /** Relative dates in conversation lists (Messages, AI Chat). */
+  dates: {
+    today: 'Today',
+    yesterday: 'Yesterday',
+  },
+
+  /**
+   * AI Chat page: the staff preview of the patient assistant. Only the staff-facing frame is
+   * translated; the messages, the AI's answers and their cards come from the assistant.
+   */
+  aiChat: {
+    title: 'AI Chat',
+    newHint: 'Start a new conversation with the assistant',
+    new: 'New',
+    intro: 'Try the patient assistant. Your test chats are private to you.',
+    tryAgain: 'Try again',
+    noConversations: 'No conversations yet.',
+    deleteConversation: 'Delete conversation',
+    deleteNamed: (title: string) => `Delete ${title}`,
+    newConversation: 'New conversation',
+    conversation: 'Conversation',
+    loadListFailed: 'Could not load conversations.',
+    loadFailed: 'Could not load this conversation.',
+    startNew: 'Start a new conversation',
+    deleted: 'Conversation deleted',
+    deleteFailed: 'Could not delete the conversation.',
+    deleteTitle: 'Delete conversation?',
+    deleteBody: (title: string) => `“${title}” will be removed from your list and the assistant will no longer use it.`,
+    cancel: 'Cancel',
+    deleting: 'Deleting…',
+    delete: 'Delete',
+    sources: 'Answers from the knowledge base and web search',
+    patientView: 'Open patient view',
+    patientViewHint:
+      'The chat exactly as patients see it in the app (phone layout, their language, AI notice). Add ?lang=es, vi, ko, zh-Hans, zh-Hant, fa or ar to the address for another language.',
+    staffPreview: 'Staff preview',
+    staffPreviewHint:
+      'You are signed in as staff. Care-team messages ask for approval as they do for patients, but no real alert is created.',
+    emptyTitle: 'Ask the assistant',
+    emptyBody: 'Ask what a patient might ask — e.g. about diet, medication questions, or contacting the care team.',
+    thinking: 'Thinking…',
+    error: 'Something went wrong. Please try again.',
+    placeholder: 'Ask the assistant',
+    stopHint: 'Stop showing the reply',
+    stop: 'Stop',
+    sendHint: 'Send (Enter)',
+    send: 'Send',
+    keys: 'Enter to send · Shift+Enter for a new line',
+  },
 };
 
 /** Text values widened to `string` (a function returning `cond ? 'a' : 'b'` would otherwise only accept 'a' | 'b'). */

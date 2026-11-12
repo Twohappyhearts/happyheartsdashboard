@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import {
   AgentChatError,
-  conversationTitle,
   deleteAgentConversation,
   historyToUIMessages,
   listAgentConversations,
@@ -16,6 +15,7 @@ import {
 } from '@/lib/agent-chat';
 import AiConversationList from './AiConversationList';
 import AiChatThread from './AiChatThread';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 type Loaded = { key: string; conversationId: string | null; messages: UIMessage[] };
 
@@ -23,6 +23,8 @@ export default function AiChatClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlId = searchParams.get('c');
+  const T = useStaffT().t.aiChat;
+  const conversationTitle = (c: Pick<AgentConversation, 'title'>) => c.title?.trim() || T.newConversation;
 
   const [conversations, setConversations] = useState<AgentConversation[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -45,7 +47,7 @@ export default function AiChatClient() {
       setListError(null);
       return list;
     } catch (e) {
-      setListError(e instanceof AgentChatError ? e.message : 'Could not load conversations.');
+      setListError(e instanceof AgentChatError ? e.message : T.loadListFailed);
       return null;
     } finally {
       setListLoading(false);
@@ -84,7 +86,7 @@ export default function AiChatClient() {
         });
       })
       .catch((e) => {
-        if (!cancelled) setThreadError(e instanceof AgentChatError ? e.message : 'Could not load this conversation.');
+        if (!cancelled) setThreadError(e instanceof AgentChatError ? e.message : T.loadFailed);
       });
     return () => {
       cancelled = true;
@@ -115,10 +117,10 @@ export default function AiChatClient() {
       await deleteAgentConversation(deleteTarget.id);
       setConversations((list) => list.filter((c) => c.id !== deleteTarget.id));
       if (deleteTarget.id === (thread?.conversationId ?? urlId)) newChat();
-      toast.success('Conversation deleted');
+      toast.success(T.deleted);
       setDeleteTarget(null);
     } catch (e) {
-      toast.error(e instanceof AgentChatError ? e.message : 'Could not delete the conversation.');
+      toast.error(e instanceof AgentChatError ? e.message : T.deleteFailed);
     } finally {
       setDeleting(false);
     }
@@ -143,7 +145,7 @@ export default function AiChatClient() {
           <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-background">
             <p className="text-[13px] text-danger">{threadError}</p>
             <button onClick={newChat} className="text-[13px] font-600 text-primary hover:underline">
-              Start a new conversation
+              {T.startNew}
             </button>
           </div>
         ) : !thread ? (
@@ -154,7 +156,7 @@ export default function AiChatClient() {
           <AiChatThread
             key={thread.key}
             conversationId={thread.conversationId}
-            title={active ? conversationTitle(active) : thread.conversationId ? 'Conversation' : 'New conversation'}
+            title={active ? conversationTitle(active) : thread.conversationId ? T.conversation : T.newConversation}
             initialMessages={thread.messages}
             onConversationCreated={onCreated}
             onTurnFinished={() => void loadList(true)}
@@ -171,25 +173,23 @@ export default function AiChatClient() {
               <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center">
                 <Icon name="ExclamationTriangleIcon" size={20} variant="outline" className="text-danger" />
               </div>
-              <h3 className="text-[15px] font-600 text-foreground">Delete conversation?</h3>
+              <h3 className="text-[15px] font-600 text-foreground">{T.deleteTitle}</h3>
             </div>
-            <p className="text-[13px] text-muted-foreground mb-5">
-              “{conversationTitle(deleteTarget)}” will be removed from your list and the assistant will no longer use it.
-            </p>
+            <p className="text-[13px] text-muted-foreground mb-5">{T.deleteBody(conversationTitle(deleteTarget))}</p>
             <div className="flex items-center justify-end gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleting}
                 className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
               >
-                Cancel
+                {T.cancel}
               </button>
               <button
                 onClick={confirmDelete}
                 disabled={deleting}
                 className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90 transition-opacity duration-150 active:scale-95 disabled:opacity-60"
               >
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? T.deleting : T.delete}
               </button>
             </div>
           </div>

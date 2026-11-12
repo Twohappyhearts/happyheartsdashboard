@@ -2,8 +2,9 @@
 
 import React from 'react';
 import Icon from '@/components/ui/AppIcon';
-import { conversationTitle, type AgentConversation } from '@/lib/agent-chat';
+import type { AgentConversation } from '@/lib/agent-chat';
 import { formatListTime } from '@/app/messages/components/format';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   conversations: AgentConversation[];
@@ -17,21 +18,23 @@ interface Props {
 }
 
 export default function AiConversationList({ conversations, activeId, loading, error, onSelect, onRetry, onNewChat, onDelete }: Props) {
+  const T = useStaffT().t.aiChat;
+  const conversationTitle = (c: AgentConversation) => c.title?.trim() || T.newConversation;
   return (
     <aside className="w-[300px] xl:w-[320px] shrink-0 flex flex-col bg-card">
       <div className="px-4 pt-4 pb-3 border-b border-border">
         <div className="flex items-center justify-between">
-          <h1 className="text-[17px] font-700 text-foreground">AI Chat</h1>
+          <h1 className="text-[17px] font-700 text-foreground">{T.title}</h1>
           <button
             onClick={onNewChat}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary text-primary-foreground rounded-lg text-[12px] font-600 hover:opacity-90 transition-opacity"
-            title="Start a new conversation with the assistant"
+            title={T.newHint}
           >
             <Icon name="PencilSquareIcon" size={14} variant="outline" />
-            New
+            {T.new}
           </button>
         </div>
-        <p className="text-[11.5px] text-muted-foreground mt-1.5">Try the patient assistant. Your test chats are private to you.</p>
+        <p className="text-[11.5px] text-muted-foreground mt-1.5">{T.intro}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -43,11 +46,11 @@ export default function AiConversationList({ conversations, activeId, loading, e
           <div className="px-4 py-8 text-center">
             <p className="text-[12.5px] text-danger mb-2">{error}</p>
             <button onClick={onRetry} className="text-[12.5px] font-600 text-primary hover:underline">
-              Try again
+              {T.tryAgain}
             </button>
           </div>
         ) : conversations.length === 0 ? (
-          <p className="px-4 py-10 text-center text-[12.5px] text-muted-foreground">No conversations yet.</p>
+          <p className="px-4 py-10 text-center text-[12.5px] text-muted-foreground">{T.noConversations}</p>
         ) : (
           <ul className="py-1">
             {conversations.map((c) => (
@@ -69,8 +72,8 @@ export default function AiConversationList({ conversations, activeId, loading, e
                 <button
                   onClick={() => onDelete(c)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-danger hover:bg-danger/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                  title="Delete conversation"
-                  aria-label={`Delete ${conversationTitle(c)}`}
+                  title={T.deleteConversation}
+                  aria-label={T.deleteNamed(conversationTitle(c))}
                 >
                   <Icon name="TrashIcon" size={14} variant="outline" />
                 </button>
