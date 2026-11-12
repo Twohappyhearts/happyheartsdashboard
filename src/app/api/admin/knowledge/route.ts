@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { KNOWLEDGE_BUCKET, MAX_FILE_BYTES, detectKind, safeFileName } from '@/lib/server/knowledge';
 
 export const runtime = 'nodejs';
@@ -75,6 +75,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ id, status: 'uploaded' }, { status: 201 });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

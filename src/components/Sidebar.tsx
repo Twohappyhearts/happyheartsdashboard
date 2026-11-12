@@ -7,46 +7,56 @@ import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import type { StaffText } from '@/lib/i18n/staff';
+
+type NavLabel = Exclude<keyof StaffText['nav'], 'groups' | 'expandSidebar' | 'collapseSidebar' | 'collapse' | 'signOut'>;
 
 interface NavItem {
-  label: string;
+  label: NavLabel;
   href: string;
   icon: string;
   badge?: number;
+  /** Shown only to Admin accounts. */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
-  groupLabel: string;
+  groupLabel: keyof StaffText['nav']['groups'];
   items: NavItem[];
 }
 
 const navGroups: NavGroup[] = [
   {
-    groupLabel: 'PATIENT CARE',
+    groupLabel: 'patientCare',
     items: [
-      { label: 'Messages', href: '/messages', icon: 'ChatBubbleLeftRightIcon' },
-      { label: 'Content', href: '/content-management', icon: 'BookOpenIcon' },
-      { label: 'Surveys', href: '/survey-management', icon: 'ClipboardDocumentListIcon' },
-      { label: 'Alerts', href: '/alerts', icon: 'BellAlertIcon' },
+      { label: 'messages', href: '/messages', icon: 'ChatBubbleLeftRightIcon' },
+      { label: 'content', href: '/content-management', icon: 'BookOpenIcon' },
+      { label: 'surveys', href: '/survey-management', icon: 'ClipboardDocumentListIcon' },
+      { label: 'alerts', href: '/alerts', icon: 'BellAlertIcon' },
     ],
   },
   {
-    groupLabel: 'INSIGHTS',
+    groupLabel: 'insights',
     items: [
-      { label: 'Analytics', href: '/analytics', icon: 'ChartBarIcon' },
+      { label: 'analytics', href: '/analytics', icon: 'ChartBarIcon' },
+      { label: 'aiNotice', href: '/ai-notice', icon: 'ShieldCheckIcon' },
     ],
   },
   {
-    groupLabel: 'AI ASSISTANT',
+    groupLabel: 'aiAssistant',
     items: [
-      { label: 'AI Chat', href: '/ai-chat', icon: 'SparklesIcon' },
-      { label: 'Knowledge Base', href: '/knowledge-base', icon: 'CircleStackIcon' },
+      { label: 'aiChat', href: '/ai-chat', icon: 'SparklesIcon' },
+      { label: 'knowledgeBase', href: '/knowledge-base', icon: 'CircleStackIcon' },
+      { label: 'trustedWebsites', href: '/trusted-websites', icon: 'GlobeAltIcon' },
     ],
   },
   {
-    groupLabel: 'ADMIN',
+    groupLabel: 'admin',
     items: [
-      { label: 'Users', href: '/user-management', icon: 'UsersIcon' },
+      { label: 'users', href: '/user-management', icon: 'UsersIcon' },
+      { label: 'settings', href: '/settings', icon: 'Cog6ToothIcon' },
+      { label: 'legalDocuments', href: '/legal-documents', icon: 'DocumentTextIcon', adminOnly: true },
     ],
   },
 ];
@@ -59,7 +69,12 @@ interface SidebarProps {
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, profile } = useAuth();
+  const { t } = useStaffT();
+  const isAdmin = profile?.role === 'admin';
+  const groups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.adminOnly || isAdmin) }))
+    .filter((g) => g.items.length > 0);
   const { openCount } = useOpenAlerts();
   const badgeFor = (item: NavItem) => (item.href === '/alerts' ? openCount : item.badge);
 
@@ -93,18 +108,18 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={`group-${group.groupLabel}`} className="mb-4">
             {!collapsed && (
               <p className="text-[10px] font-600 tracking-widest text-muted-foreground uppercase px-2 mb-1.5">
-                {group.groupLabel}
+                {t.nav.groups[group.groupLabel]}
               </p>
             )}
             {group.items.map((item) => (
               <Link
                 key={`nav-${item.href}`}
                 href={item.href}
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? t.nav[item.label] : undefined}
                 className={`
                   flex items-center gap-3 rounded-lg px-2.5 py-2 mb-0.5 text-sm font-medium
                   transition-all duration-150 group relative
@@ -121,7 +136,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   className="shrink-0"
                 />
                 {!collapsed && (
-                  <span className="flex-1 text-[13.5px]">{item.label}</span>
+                  <span className="flex-1 text-[13.5px]">{t.nav[item.label]}</span>
                 )}
                 {!collapsed && (badgeFor(item) ?? 0) > 0 ? (
                   <span className="bg-primary text-primary-foreground text-[10px] font-700 rounded-full min-w-[18px] h-[18px] flex items-center justify-center leading-none px-1">
@@ -148,14 +163,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150
             ${collapsed ? 'justify-center' : ''}
           `}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
         >
           <Icon
             name={collapsed ? 'ChevronRightIcon' : 'ChevronLeftIcon'}
             size={16}
             variant="outline"
           />
-          {!collapsed && <span className="text-[13px]">Collapse</span>}
+          {!collapsed && <span className="text-[13px]">{t.nav.collapse}</span>}
         </button>
         <button
           onClick={handleSignOut}
@@ -164,10 +179,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150
             ${collapsed ? 'justify-center' : ''}
           `}
-          title={collapsed ? 'Sign Out' : undefined}
+          title={collapsed ? t.nav.signOut : undefined}
         >
           <Icon name="ArrowRightOnRectangleIcon" size={16} variant="outline" />
-          {!collapsed && <span className="text-[13px]">Sign Out</span>}
+          {!collapsed && <span className="text-[13px]">{t.nav.signOut}</span>}
         </button>
       </div>
     </aside>

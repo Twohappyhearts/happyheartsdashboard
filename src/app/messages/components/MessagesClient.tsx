@@ -23,6 +23,7 @@ import {
 import ConversationList from './ConversationList';
 import ChatThread from './ChatThread';
 import NewChatModal from './NewChatModal';
+import { staffText } from '@/lib/i18n/staff';
 
 export interface ThreadState {
   byId: Record<string, ChatMessage>;
@@ -135,7 +136,7 @@ export default function MessagesClient() {
         });
         setListError(null);
       } catch (e) {
-        setListError(e instanceof ChatError ? e.message : 'Could not load conversations.');
+        setListError(e instanceof ChatError ? e.message : staffText().messages.loadListFailed);
       } finally {
         setListLoading(false);
       }
@@ -181,7 +182,7 @@ export default function MessagesClient() {
         updateThread(id, (s) => ({
           ...s,
           loading: false,
-          error: e instanceof ChatError ? e.message : 'Could not load messages.',
+          error: e instanceof ChatError ? e.message : staffText().messages.loadFailed,
         }));
       }
     },
@@ -245,8 +246,8 @@ export default function MessagesClient() {
       void ensureNames([m]);
       if (m.senderRole === 'user' && m.conversationId !== activeRef.current) {
         const c = conversationsRef.current[m.conversationId];
-        const who = c ? c.patient.fullName || `@${c.patient.username}` : 'A patient';
-        toast(`New message from ${who}`, { description: m.content.slice(0, 120) });
+        const who = c ? c.patient.fullName || `@${c.patient.username}` : staffText().messages.aPatient;
+        toast(staffText().messages.newMessageFrom(who), { description: m.content.slice(0, 120) });
       }
     },
     [updateThread, bumpSummary, addConversation, ensureNames]
@@ -311,7 +312,7 @@ export default function MessagesClient() {
         });
       } catch (e) {
         const reason =
-          e instanceof ChatError ? e.message : 'Could not reach the server. Your message was kept — retry.';
+          e instanceof ChatError ? e.message : staffText().messages.unreachable;
         updateThread(m.conversationId, (s) => ({
           ...s,
           byId: mergeInto(s.byId, [{ ...m, state: 'failed' }]),

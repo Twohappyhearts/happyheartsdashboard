@@ -7,6 +7,7 @@ import Topbar from '@/components/Topbar';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
 import ChangePasswordGate from '@/components/ChangePasswordGate';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -14,9 +15,37 @@ interface AppLayoutProps {
   fullBleed?: boolean;
 }
 
+/**
+ * Every page renders its own AppLayout, so the sidebar state would reset to "expanded" on
+ * each navigation. It is kept here (for the open tab) and in localStorage (across reloads).
+ */
+const SIDEBAR_KEY = 'hh.sidebar.collapsed';
+let sidebarCollapsed: boolean | null = null;
+
+function readCollapsed(): boolean {
+  if (sidebarCollapsed !== null) return sidebarCollapsed;
+  if (typeof window === 'undefined') return false;
+  try {
+    sidebarCollapsed = window.localStorage.getItem(SIDEBAR_KEY) === '1';
+  } catch {
+    sidebarCollapsed = false;
+  }
+  return sidebarCollapsed;
+}
+
 export default function AppLayout({ children, fullBleed = false }: AppLayoutProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsedState] = useState(readCollapsed);
+  const setCollapsed = (next: boolean) => {
+    sidebarCollapsed = next;
+    setCollapsedState(next);
+    try {
+      window.localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+    } catch {
+      // private mode: the choice still holds until the tab is reloaded
+    }
+  };
   const { user, isStaff, loading, signOut, profile } = useAuth();
+  const { t } = useStaffT();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -41,10 +70,8 @@ export default function AppLayout({ children, fullBleed = false }: AppLayoutProp
           <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
             <Icon name="LockClosedIcon" size={24} variant="outline" className="text-muted-foreground" />
           </div>
-          <h1 className="text-[16px] font-600 text-foreground mb-1">Staff access only</h1>
-          <p className="text-[13px] text-muted-foreground mb-5">
-            {user.email} is not an active staff account. Ask an admin to grant the staff role.
-          </p>
+          <h1 className="text-[16px] font-600 text-foreground mb-1">{t.layout.staffOnlyTitle}</h1>
+          <p className="text-[13px] text-muted-foreground mb-5">{t.layout.staffOnlyBody(user.email ?? '')}</p>
           <button
             onClick={async () => {
               await signOut();
@@ -52,7 +79,7 @@ export default function AppLayout({ children, fullBleed = false }: AppLayoutProp
             }}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90"
           >
-            Sign out
+            {t.layout.signOut}
           </button>
         </div>
       </div>

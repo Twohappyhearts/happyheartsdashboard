@@ -5,6 +5,8 @@ import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/r
 import StarterKit from '@tiptap/starter-kit';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import Icon from '@/components/ui/AppIcon';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import type { StaffText } from '@/lib/i18n/staff';
 
 /**
  * Rich text editor for session scripts (Prompt 3): bold, italic, underline,
@@ -20,15 +22,15 @@ interface RichTextEditorProps {
   invalid?: boolean;
 }
 
-const COLORS: { label: string; value: string | null }[] = [
-  { label: 'Default', value: null },
-  { label: 'Brand pink', value: '#E05C6B' },
-  { label: 'Red', value: '#DC2626' },
-  { label: 'Orange', value: '#EA580C' },
-  { label: 'Green', value: '#16A34A' },
-  { label: 'Blue', value: '#2563EB' },
-  { label: 'Purple', value: '#7C3AED' },
-  { label: 'Gray', value: '#6B7280' },
+const COLORS: { label: keyof StaffText['editor']['colors']; value: string | null }[] = [
+  { label: 'default', value: null },
+  { label: 'pink', value: '#E05C6B' },
+  { label: 'red', value: '#DC2626' },
+  { label: 'orange', value: '#EA580C' },
+  { label: 'green', value: '#16A34A' },
+  { label: 'blue', value: '#2563EB' },
+  { label: 'purple', value: '#7C3AED' },
+  { label: 'gray', value: '#6B7280' },
 ];
 
 const SAFE_LINK = /^(https?:\/\/|mailto:|tel:)/i;
@@ -39,6 +41,7 @@ function normalize(html: string) {
 }
 
 export default function RichTextEditor({ value, onChange, placeholder, invalid }: RichTextEditorProps) {
+  const T = useStaffT().t.editor;
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -125,7 +128,7 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
     }
     const href = /^[a-z]+:/i.test(url) ? url : `https://${url}`;
     if (!SAFE_LINK.test(href)) {
-      setLinkError('Links must start with https://, http://, mailto: or tel:');
+      setLinkError(T.linkInvalid);
       return;
     }
     const chain = editor.chain().focus().extendMarkRange('link');
@@ -175,10 +178,10 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
     >
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b border-border bg-muted/40 rounded-t-lg">
-        <Btn title="Bold (⌘B)" icon="BoldIcon" active={state.bold} onClick={() => editor.chain().focus().toggleBold().run()} />
-        <Btn title="Italic (⌘I)" icon="ItalicIcon" active={state.italic} onClick={() => editor.chain().focus().toggleItalic().run()} />
-        <Btn title="Underline (⌘U)" icon="UnderlineIcon" active={state.underline} onClick={() => editor.chain().focus().toggleUnderline().run()} />
-        <Btn title="Strikethrough" icon="StrikethroughIcon" active={state.strike} onClick={() => editor.chain().focus().toggleStrike().run()} />
+        <Btn title={T.bold} icon="BoldIcon" active={state.bold} onClick={() => editor.chain().focus().toggleBold().run()} />
+        <Btn title={T.italic} icon="ItalicIcon" active={state.italic} onClick={() => editor.chain().focus().toggleItalic().run()} />
+        <Btn title={T.underline} icon="UnderlineIcon" active={state.underline} onClick={() => editor.chain().focus().toggleUnderline().run()} />
+        <Btn title={T.strike} icon="StrikethroughIcon" active={state.strike} onClick={() => editor.chain().focus().toggleStrike().run()} />
 
         {/* Text color */}
         <div className="relative" ref={colorRef}>
@@ -189,8 +192,8 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
               setColorOpen((o) => !o);
               setLinkOpen(false);
             }}
-            title="Text color"
-            aria-label="Text color"
+            title={T.textColor}
+            aria-label={T.textColor}
             className="flex items-center gap-0.5 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <span className="text-[13px] font-700 leading-none" style={{ color: state.color ?? undefined }}>
@@ -205,8 +208,8 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
                 <button
                   key={c.label}
                   type="button"
-                  title={c.label}
-                  aria-label={c.label}
+                  title={T.colors[c.label]}
+                  aria-label={T.colors[c.label]}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (c.value) editor.chain().focus().setColor(c.value).run();
@@ -226,13 +229,13 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
         </div>
 
         <span className="w-px h-5 bg-border mx-1" />
-        <Btn title="Bulleted list" icon="ListBulletIcon" active={state.bullet} onClick={() => editor.chain().focus().toggleBulletList().run()} />
-        <Btn title="Numbered list" icon="NumberedListIcon" active={state.ordered} onClick={() => editor.chain().focus().toggleOrderedList().run()} />
+        <Btn title={T.bulleted} icon="ListBulletIcon" active={state.bullet} onClick={() => editor.chain().focus().toggleBulletList().run()} />
+        <Btn title={T.numbered} icon="NumberedListIcon" active={state.ordered} onClick={() => editor.chain().focus().toggleOrderedList().run()} />
         <span className="w-px h-5 bg-border mx-1" />
-        <Btn title="Link" icon="LinkIcon" active={state.link || linkOpen} onClick={openLink} />
+        <Btn title={T.link} icon="LinkIcon" active={state.link || linkOpen} onClick={openLink} />
         <span className="w-px h-5 bg-border mx-1" />
-        <Btn title="Undo (⌘Z)" icon="ArrowUturnLeftIcon" disabled={!state.canUndo} onClick={() => editor.chain().focus().undo().run()} />
-        <Btn title="Redo (⇧⌘Z)" icon="ArrowUturnRightIcon" disabled={!state.canRedo} onClick={() => editor.chain().focus().redo().run()} />
+        <Btn title={T.undo} icon="ArrowUturnLeftIcon" disabled={!state.canUndo} onClick={() => editor.chain().focus().undo().run()} />
+        <Btn title={T.redo} icon="ArrowUturnRightIcon" disabled={!state.canRedo} onClick={() => editor.chain().focus().redo().run()} />
       </div>
 
       {/* Link input */}
@@ -262,7 +265,7 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
               onClick={applyLink}
               className="px-2.5 py-1 bg-primary text-primary-foreground rounded-md text-[12px] font-600 hover:opacity-90"
             >
-              Apply
+              {T.apply}
             </button>
             {state.link && (
               <button
@@ -273,7 +276,7 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
                 }}
                 className="px-2.5 py-1 border border-border rounded-md text-[12px] font-500 text-danger hover:bg-danger/5"
               >
-                Remove
+                {T.remove}
               </button>
             )}
             <button
@@ -281,7 +284,7 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
               onClick={() => setLinkOpen(false)}
               className="px-2.5 py-1 border border-border rounded-md text-[12px] font-500 hover:bg-muted"
             >
-              Cancel
+              {T.cancel}
             </button>
           </div>
           {linkError && <p className="text-[11px] text-danger mt-1 ml-6">{linkError}</p>}
@@ -290,7 +293,8 @@ export default function RichTextEditor({ value, onChange, placeholder, invalid }
 
       {/* Content */}
       <div className="relative">
-        {state.empty && placeholder && (
+        {/* Read from the editor itself: the selector state can still say "empty" right after the content loads. */}
+        {editor.isEmpty && placeholder && (
           <p className="absolute left-3 top-2.5 text-[13px] text-muted-foreground pointer-events-none">{placeholder}</p>
         )}
         <EditorContent editor={editor} />

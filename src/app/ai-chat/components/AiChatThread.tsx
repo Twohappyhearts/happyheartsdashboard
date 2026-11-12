@@ -2,13 +2,18 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
-import { AI_DISCLAIMER } from '@/lib/agent-fixed-replies';
+import { openAgentDocument } from '@/lib/agent-bridge';
+import { splitDisclaimer, TERMS_URL } from '@/lib/agent-fixed-replies';
 import { messageText as textOf, useAgentChat } from '@/lib/use-agent-chat';
 import Icon from '@/components/ui/AppIcon';
 import EmptyState from '@/components/ui/EmptyState';
 import AiMessageParts from './AiMessageParts';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 const MAX_LENGTH = 4000;
+
+/** The research team's disclaimer, word for word, with "Terms of Use" linking to the current Terms. */
+const [DISCLAIMER_BEFORE, DISCLAIMER_LINK, DISCLAIMER_AFTER] = splitDisclaimer();
 
 interface Props {
   conversationId: string | null;
@@ -31,6 +36,7 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
     onTitle,
   });
 
+  const T = useStaffT().t.aiChat;
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -71,13 +77,23 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
         </div>
         <div className="min-w-0">
           <p className="text-[14px] font-600 text-foreground truncate">{title}</p>
-          <p className="text-[11px] text-muted-foreground truncate">HappyHearts assistant · answers from the knowledge base</p>
+          <p className="text-[11px] text-muted-foreground truncate">{T.sources}</p>
         </div>
-        <span
-          className="ml-auto text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
-          title="You are signed in as staff. Care-team messages ask for approval as they do for patients, but no real alert is created."
+        <a
+          href="/m/assistant"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted shrink-0"
+          title={T.patientViewHint}
         >
-          Staff preview
+          <Icon name="DevicePhoneMobileIcon" size={15} variant="outline" />
+          {T.patientView}
+        </a>
+        <span
+          className="text-[11px] font-600 px-2 py-1 rounded-md bg-warning/10 text-warning shrink-0"
+          title={T.staffPreviewHint}
+        >
+          {T.staffPreview}
         </span>
       </div>
 
@@ -94,8 +110,8 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
           <div className="h-full flex items-center justify-center">
             <EmptyState
               icon="SparklesIcon"
-              title="Ask the assistant"
-              description="Ask what a patient might ask — e.g. about diet, medication questions, or contacting the care team."
+              title={T.emptyTitle}
+              description={T.emptyBody}
             />
           </div>
         ) : (
@@ -122,6 +138,7 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
                         clearError();
                         void answerApproval(id, approved, editedMessage);
                       }}
+                      onOpenDocument={(id) => openAgentDocument(id)}
                     />
                   </div>
                 </div>
@@ -133,13 +150,13 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
                   <Icon name="SparklesIcon" size={14} variant="outline" />
                 </div>
                 <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin" />
-                Thinking…
+                {T.thinking}
               </div>
             )}
             {error && (
               <p className="text-[12.5px] text-danger flex items-center gap-1.5">
                 <Icon name="ExclamationCircleIcon" size={14} variant="outline" />
-                {error.message || 'Something went wrong. Please try again.'}
+                {error.message || T.error}
               </p>
             )}
           </div>
@@ -161,39 +178,45 @@ export default function AiChatThread({ conversationId, title, initialMessages, o
             }}
             rows={1}
             autoFocus
-            placeholder="Ask the assistant"
+            placeholder={T.placeholder}
             className="flex-1 resize-none px-3.5 py-2.5 border border-border rounded-xl text-[13.5px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {busy ? (
             <button
               onClick={() => void stop()}
               className="h-[42px] px-4 border border-border text-foreground rounded-xl text-[13px] font-600 hover:bg-muted flex items-center gap-1.5"
-              title="Stop showing the reply"
+              title={T.stopHint}
             >
               <Icon name="StopIcon" size={15} variant="solid" />
-              Stop
+              {T.stop}
             </button>
           ) : (
             <button
               onClick={submit}
               disabled={!canSend}
               className="h-[42px] px-4 bg-primary text-primary-foreground rounded-xl text-[13px] font-600 hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
-              title="Send (Enter)"
+              title={T.sendHint}
             >
               <Icon name="PaperAirplaneIcon" size={15} variant="solid" />
-              Send
+              {T.send}
             </button>
           )}
         </div>
         <div className="flex justify-between mt-1.5 px-1 text-[11px] text-muted-foreground max-w-3xl mx-auto">
-          <span>Enter to send · Shift+Enter for a new line</span>
+          <span>{T.keys}</span>
           {draft.length > MAX_LENGTH - 400 && (
             <span className={tooLong ? 'text-danger font-600' : ''}>
               {draft.trim().length}/{MAX_LENGTH}
             </span>
           )}
         </div>
-        <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground max-w-3xl mx-auto">{AI_DISCLAIMER}</p>
+        <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground max-w-3xl mx-auto">
+          {DISCLAIMER_BEFORE}
+          <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:opacity-80">
+            {DISCLAIMER_LINK}
+          </a>
+          {DISCLAIMER_AFTER}
+        </p>
       </div>
     </>
   );

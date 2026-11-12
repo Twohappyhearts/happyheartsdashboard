@@ -11,11 +11,14 @@ import {
   type ChunkSettings,
   type KnowledgeDocument,
 } from '@/lib/knowledge';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import type { StaffText } from '@/lib/i18n/staff';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
-const PRESETS: { label: string; hint: string; settings: ChunkSettings }[] = [
-  { label: 'Fine', hint: '512 · ×2', settings: { targetChars: 512, overlapChars: 64, toleranceFactor: 2 } },
-  { label: 'Default', hint: '1024 · ×3', settings: DEFAULT_CHUNK_SETTINGS },
-  { label: 'Coarse', hint: '2048 · ×3', settings: { targetChars: 2048, overlapChars: 256, toleranceFactor: 3 } },
+const PRESETS: { label: keyof StaffText['kb']['chunkModal']['presets']; hint: string; settings: ChunkSettings }[] = [
+  { label: 'fine', hint: '512 · ×2', settings: { targetChars: 512, overlapChars: 64, toleranceFactor: 2 } },
+  { label: 'default', hint: '1024 · ×3', settings: DEFAULT_CHUNK_SETTINGS },
+  { label: 'coarse', hint: '2048 · ×3', settings: { targetChars: 2048, overlapChars: 256, toleranceFactor: 3 } },
 ];
 
 type RowState = { state: 'waiting' | 'running' | 'done' | 'background' | 'failed' | 'skipped'; message?: string };
@@ -32,6 +35,8 @@ interface Props {
 }
 
 export default function ChunkModal({ open, docs, onClose, onProgress, defaults }: Props) {
+  const { t, lang } = useStaffT();
+  const T = t.kb.chunkModal;
   const [draft, setDraft] = useState<ChunkSettingsDraft>(toDraft(DEFAULT_CHUNK_SETTINGS));
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
@@ -67,7 +72,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
     // server's time limit and the list shows progress as it goes.
     for (const doc of docs) {
       if (stopRef.current) {
-        setRows((r) => ({ ...r, [doc.id]: { state: 'skipped', message: 'Stopped' } }));
+        setRows((r) => ({ ...r, [doc.id]: { state: 'skipped', message: T.stopped } }));
         continue;
       }
       setRows((r) => ({ ...r, [doc.id]: { state: 'running' } }));
@@ -78,14 +83,14 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
           [doc.id]: !res.ok
             ? {
                 state: 'failed',
-                message: `${res.error ?? 'Failed'}${doc.chunkGeneration ? ' — previous chunks kept' : ''}`,
+                message: `${res.error ? translateServerMessage(res.error, lang) : T.failed}${doc.chunkGeneration ? T.keptPrevious : ''}`,
               }
             : res.status === 'parsing'
-              ? { state: 'background', message: 'MinerU is reading the file — chunks and embeds automatically when done' }
-              : { state: 'done', message: `${res.chunkCount} chunks embedded` },
+              ? { state: 'background', message: T.background }
+              : { state: 'done', message: T.done(res.chunkCount ?? 0) },
         }));
       } catch (e) {
-        setRows((r) => ({ ...r, [doc.id]: { state: 'failed', message: e instanceof KnowledgeError ? e.message : 'Request failed' } }));
+        setRows((r) => ({ ...r, [doc.id]: { state: 'failed', message: e instanceof KnowledgeError ? e.message : T.requestFailed } }));
       }
       onProgress();
     }
@@ -100,8 +105,11 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
   const footer = (
     <div className="flex items-center justify-between gap-3 w-full">
       <p className="text-[12px] text-muted-foreground">
-        {running ? `Chunking ${Math.min(done + 1, docs.length)} of ${docs.length}…` : finished
-            ? `Finished — ${done - failed - background} chunked${background ? `, ${background} still being read by MinerU` : ''}${failed ? `, ${failed} failed` : ''}` : `${docs.length} document${docs.length === 1 ? '' : 's'}`}
+        {running
+          ? T.progress(Math.min(done + 1, docs.length), docs.length)
+          : finished
+            ? T.finished(done - failed - background, background, failed)
+            : T.docCount(docs.length)}
       </p>
       <div className="flex items-center gap-3">
         {running ? (
@@ -109,11 +117,11 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
             onClick={() => (stopRef.current = true)}
             className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
           >
-            Stop after this one
+            {T.stopAfter}
           </button>
         ) : (
           <button onClick={() => onClose(finished)} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-            {finished ? 'Close' : 'Cancel'}
+            {finished ? T.close : T.cancel}
           </button>
         )}
         {!finished && (
@@ -122,7 +130,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
             disabled={running || !!problem || docs.length === 0}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 disabled:opacity-60 whitespace-nowrap"
           >
-            {running ? 'Chunking…' : `Chunk ${docs.length} document${docs.length === 1 ? '' : 's'}`}
+            {running ? T.chunking : T.run(docs.length)}
           </button>
         )}
       </div>
@@ -130,10 +138,10 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
   );
 
   return (
-    <Modal open={open} onClose={running ? () => undefined : () => onClose(finished)} title="Chunk documents" size="md" footer={footer}>
+    <Modal open={open} onClose={running ? () => undefined : () => onClose(finished)} title={T.title} size="md" footer={footer}>
       <div className="space-y-4">
         <div>
-          <p className="text-[12px] font-600 text-foreground mb-2">Chunk settings</p>
+          <p className="text-[12px] font-600 text-foreground mb-2">{T.settings}</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {PRESETS.map((p) => {
               const active =
@@ -151,7 +159,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
                     active ? 'border-primary text-primary font-600' : 'border-border text-foreground hover:bg-muted'
                   }`}
                 >
-                  {p.label} <span className="text-muted-foreground font-400">· {p.hint}</span>
+                  {T.presets[p.label]} <span className="text-muted-foreground font-400">· {p.hint}</span>
                 </button>
               );
             })}
@@ -168,18 +176,13 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
                 className="mt-0.5 accent-[var(--primary)]"
               />
               <span>
-                Re-read the original file
-                <span className="block text-[11px] text-muted-foreground">
-                  Off: reuse the text already extracted (fast, no MinerU quota). On: read the file again first (uses MinerU quota for PDF / PowerPoint).
-                </span>
+                {T.reparse}
+                <span className="block text-[11px] text-muted-foreground">{T.reparseHint}</span>
               </span>
             </label>
           )}
           {!finished && (
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Each document is read (if needed), chunked and embedded as one step. If anything fails, nothing is saved
-              {rechunking > 0 ? ' and the current chunks stay as they are' : ''}.
-            </p>
+            <p className="text-[11px] text-muted-foreground mt-2">{T.oneStep(rechunking > 0)}</p>
           )}
         </div>
 
@@ -203,7 +206,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
                 )}
                 <span className="font-500 text-foreground truncate flex-1" title={d.fileName}>{d.title}</span>
                 <span className={`truncate max-w-[55%] ${r?.state === 'failed' ? 'text-danger' : 'text-muted-foreground'}`} title={r?.message}>
-                  {r?.state === 'running' ? 'Chunking and embedding…' : r?.message ?? ''}
+                  {r?.state === 'running' ? T.running : r?.message ?? ''}
                 </span>
               </div>
             );

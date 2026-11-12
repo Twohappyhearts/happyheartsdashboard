@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Dashboard Analytics, read through staff-only Postgres functions
@@ -15,9 +16,10 @@ export class AnalyticsError extends Error {
 
 function fail(e: { code?: string; message?: string } | null, fallback: string): AnalyticsError {
   if (!e) return new AnalyticsError(fallback);
-  if (e.code === '42501') return new AnalyticsError('Your account does not have staff permission to view analytics.', e.code);
+  const E = staffText().analytics.errors;
+  if (e.code === '42501') return new AnalyticsError(E.noPermission, e.code);
   if (e.code === 'PGRST202' || e.code === '42883') {
-    return new AnalyticsError('Analytics functions are missing — run the tracking_analytics migration.', e.code);
+    return new AnalyticsError(E.missing, e.code);
   }
   return new AnalyticsError(e.message || fallback, e.code);
 }
@@ -65,7 +67,7 @@ export async function getOverview(supabase: SupabaseClient, from?: Date, to?: Da
     p_from: from ? from.toISOString() : null,
     p_to: to ? to.toISOString() : null,
   });
-  if (error) throw fail(error, 'Could not load analytics.');
+  if (error) throw fail(error, staffText().analytics.errors.load);
   return toOverview((data as Row[] | null)?.[0]);
 }
 
@@ -83,7 +85,7 @@ export async function getWeekly(supabase: SupabaseClient, weeks = 8): Promise<We
     /* keep UTC */
   }
   const { data, error } = await supabase.rpc('analytics_weekly', { p_weeks: weeks, p_tz: tz });
-  if (error) throw fail(error, 'Could not load weekly activity.');
+  if (error) throw fail(error, staffText().analytics.errors.weekly);
   return ((data as Row[] | null) ?? []).map((r) => ({
     weekStart: String(r.week_start),
     opens: num(r.opens),
@@ -118,7 +120,7 @@ export interface ContentPerformance {
 
 export async function getContentPerformance(supabase: SupabaseClient): Promise<ContentPerformance[]> {
   const { data, error } = await supabase.rpc('analytics_content_performance', { p_from: null, p_to: null });
-  if (error) throw fail(error, 'Could not load content performance.');
+  if (error) throw fail(error, staffText().analytics.errors.content);
   return ((data as Row[] | null) ?? []).map((r) => ({
     id: String(r.content_id),
     title: String(r.title ?? ''),
@@ -163,7 +165,7 @@ export interface PatientSummary {
 
 export async function listPatients(supabase: SupabaseClient): Promise<PatientSummary[]> {
   const { data, error } = await supabase.rpc('analytics_patients');
-  if (error) throw fail(error, 'Could not load patients.');
+  if (error) throw fail(error, staffText().analytics.errors.patients);
   return ((data as Row[] | null) ?? []).map((r) => ({
     id: String(r.user_id),
     fullName: String(r.full_name ?? ''),
@@ -205,7 +207,7 @@ export interface PatientLesson {
 
 export async function getPatientLessons(supabase: SupabaseClient, userId: string): Promise<PatientLesson[]> {
   const { data, error } = await supabase.rpc('analytics_patient_lessons', { p_user_id: userId });
-  if (error) throw fail(error, 'Could not load this patient’s lessons.');
+  if (error) throw fail(error, staffText().analytics.errors.lessons);
   return ((data as Row[] | null) ?? []).map((r) => ({
     contentId: String(r.content_id),
     title: String(r.title ?? ''),
@@ -253,11 +255,11 @@ export interface PatientVisit {
 
 export async function getPatientVisits(supabase: SupabaseClient, userId: string, limit = 30): Promise<PatientVisit[]> {
   const { data, error } = await supabase.rpc('analytics_patient_visits', { p_user_id: userId, p_limit: limit });
-  if (error) throw fail(error, 'Could not load recent visits.');
+  if (error) throw fail(error, staffText().analytics.errors.visits);
   return ((data as Row[] | null) ?? []).map((r) => ({
     visitId: String(r.visit_id),
     contentId: (r.content_id as string | null) ?? null,
-    title: String(r.title ?? 'Deleted lesson'),
+    title: String(r.title ?? staffText().analytics.errors.deletedLesson),
     startedAt: String(r.started_at),
     lastEventAt: String(r.last_event_at),
     timeOnPageSec: num(r.time_on_page_s),
@@ -281,7 +283,7 @@ export async function countActiveSessions(supabase: SupabaseClient): Promise<num
     .select('id', { count: 'exact', head: true })
     .eq('kind', 'session')
     .eq('is_active', true);
-  if (error) throw fail(error, 'Could not count lessons.');
+  if (error) throw fail(error, staffText().analytics.errors.count);
   return count ?? 0;
 }
 

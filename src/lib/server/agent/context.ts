@@ -3,9 +3,9 @@ import { generateText, getToolName, isToolUIPart, type UIMessage } from 'ai';
 import type { AgentConfig } from './config';
 import { measureMessages, measureText } from './measure';
 import { summaryModel, thinkingOptions } from './model';
-import { buildInstructions } from './prompt';
+import { buildInstructions, fixedReplyTableText, type InstructionOptions } from './prompt';
 import { saveSummary, type AgentState, type StoredMessage } from './store';
-import { SEARCH_TOOL, type SearchToolOutput } from './tools';
+import { RESULT_TOOLS, SEARCH_TOOL, type SearchToolOutput } from './tools';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -17,6 +17,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  *
  * Trimming only changes the request; the database keeps the full parts.
  * A summary is persisted (agent_conversations.summary / summarized_until_seq).
+ *
+ * The table of translated fixed replies in the instructions does not count toward the budget:
+ * it is the same in every request, and counting it would shrink the room left for the conversation.
  */
 
 export type CompressionLevel = 'none' | 'trimmed' | 'summarized';
@@ -56,7 +59,7 @@ function trimSearchOutput(output: SearchToolOutput, chars: number): SearchToolOu
       content: r.content.length > chars ? `${r.content.slice(0, chars)}…` : r.content,
     })),
     trimmed: true,
-    note: 'Older search results were shortened. Call searchKnowledge again if the full text is needed.',
+    note: 'Older search results were shortened. Search again if the full text is needed.',
   };
 }
 
@@ -70,7 +73,7 @@ function trimRagResults(messages: UIMessage[], keepTurns: number, chars: number)
       : turn.map(({ message }) => ({
           ...message,
           parts: message.parts.map((p) =>
-            isToolUIPart(p) && getToolName(p) === SEARCH_TOOL && p.state === 'output-available'
+            isToolUIPart(p) && RESULT_TOOLS.has(getToolName(p)) && p.state === 'output-available'
               ? { ...p, output: trimSearchOutput(p.output as SearchToolOutput, chars) }
               : p,
           ),
@@ -78,16 +81,25 @@ function trimRagResults(messages: UIMessage[], keepTurns: number, chars: number)
   );
 }
 
+const exempt = new Map<string, number>();
+/** Size of the fixed-reply table (constant, so measured once per unit). */
+function exemptSize(unit: AgentConfig['contextUnit']): number {
+  let n = exempt.get(unit);
+  if (n == null) exempt.set(unit, (n = measureText(fixedReplyTableText(), unit)));
+  return n;
+}
+
 export function buildContext(
   state: AgentState,
   cfg: AgentConfig,
-  opts: { canNotifyCareteam: boolean },
+  opts: InstructionOptions,
   /** Override messages (e.g. with an approval answer applied). Defaults to state.recent. */
   messages: UIMessage[] = state.recent.map((s) => s.message),
 ): BuiltContext & { needsSummary: boolean } {
   const instructions = buildInstructions(state.conversation, opts);
   const budget = cfg.contextBudget;
-  const sizeOf = (msgs: UIMessage[]) => measureText(instructions, cfg.contextUnit) + measureMessages(msgs, cfg.contextUnit);
+  const instructionSize = Math.max(0, measureText(instructions, cfg.contextUnit) - exemptSize(cfg.contextUnit));
+  const sizeOf = (msgs: UIMessage[]) => instructionSize + measureMessages(msgs, cfg.contextUnit);
 
   let msgs = dropOldReasoning(messages);
   let size = sizeOf(msgs);
@@ -122,6 +134,8 @@ function transcript(items: StoredMessage[]): string {
                 ? `failed: ${p.errorText}`
                 : name === SEARCH_TOOL
                   ? 'searched the knowledge base'
+                  : RESULT_TOOLS.has(name)
+                    ? 'searched trusted websites'
                   : p.state === 'output-available'
                     ? JSON.stringify(p.output)
                     : p.state;

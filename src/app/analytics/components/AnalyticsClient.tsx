@@ -5,6 +5,7 @@ import Icon from '@/components/ui/AppIcon';
 
 import OverallAnalytics from './OverallAnalytics';
 import IndividualAnalytics from './IndividualAnalytics';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 type Tab = 'overall' | 'individual';
 
@@ -12,6 +13,8 @@ type Tab = 'overall' | 'individual';
 export type ExportFn = (() => void) | null;
 
 export default function AnalyticsClient() {
+  const { t, locale } = useStaffT();
+  const T = t.analytics;
   const [activeTab, setActiveTab] = useState<Tab>('overall');
   const [refreshKey, setRefreshKey] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -36,30 +39,30 @@ export default function AnalyticsClient() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[22px] font-700 text-foreground">Analytics</h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            Patient engagement with educational content — tracked from the mobile app.
-          </p>
+          <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-muted-foreground">
             {lastUpdated
-              ? `Last updated: ${lastUpdated.toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}`
-              : 'Loading…'}
+              ? T.lastUpdated(
+                  lastUpdated.toLocaleString(locale, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  }),
+                )
+              : T.loading}
           </span>
           <button
             onClick={() => setRefreshKey((k) => k + 1)}
-            title="Refresh"
+            title={T.refresh}
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
           >
             <Icon name="ArrowPathIcon" size={13} variant="outline" />
-            Refresh
+            {T.refresh}
           </button>
           <button
             onClick={() => exportRef.current?.()}
@@ -67,7 +70,7 @@ export default function AnalyticsClient() {
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Icon name="ArrowDownTrayIcon" size={13} variant="outline" />
-            Export CSV
+            {T.exportCsv}
           </button>
         </div>
       </div>
@@ -75,8 +78,8 @@ export default function AnalyticsClient() {
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit">
         {([
-          { key: 'overall', label: 'Overall Analytics' },
-          { key: 'individual', label: 'Individual User Analytics' },
+          { key: 'overall', label: T.tabOverall },
+          { key: 'individual', label: T.tabIndividual },
         ] as { key: Tab; label: string }[]).map((tab) => (
           <button
             key={`tab-${tab.key}`}

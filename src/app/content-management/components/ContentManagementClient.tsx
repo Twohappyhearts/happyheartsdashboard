@@ -5,6 +5,7 @@ import Icon from '@/components/ui/AppIcon';
 
 import Toggle from '@/components/ui/Toggle';
 import SlideOver from '@/components/ui/SlideOver';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { toast } from 'sonner';
 import ContentForm from './ContentForm';
@@ -15,6 +16,7 @@ import {
   ContentError,
   createContent,
   deleteContent,
+  lessonFileUrls,
   listCategories,
   listContent,
   previewNextGroupId,
@@ -25,17 +27,21 @@ import {
   type ContentItem,
   type ContentKind,
 } from '@/lib/content';
+import { releaseLessonFiles } from '@/lib/uploads';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 type Tab = 'sessions' | 'resources';
 const kindOf = (tab: Tab): ContentKind => (tab === 'sessions' ? 'session' : 'resource');
 
-function formatEdited(iso: string) {
+function formatEdited(iso: string, locale: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(iso).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function ContentManagementClient() {
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useStaffT();
+  const T = t.content.page;
   const [activeTab, setActiveTab] = useState<Tab>('sessions');
   const [sessions, setSessions] = useState<ContentItem[] | null>(null);
   const [resources, setResources] = useState<ContentItem[] | null>(null);
@@ -49,6 +55,15 @@ export default function ContentManagementClient() {
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  /** The edit panel holds unsaved changes (closing it asks first). */
+  const [formDirty, setFormDirty] = useState(false);
+  /** Turning Active off hides the lesson from every patient at once, so it is confirmed first. */
+  const [hideTarget, setHideTarget] = useState<ContentItem | null>(null);
+
+  const closePanel = useCallback(() => {
+    setSlideOverOpen(false);
+    setFormDirty(false);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -62,7 +77,7 @@ export default function ContentManagementClient() {
       setCategories(c);
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof ContentError ? e.message : 'Could not load content.');
+      setLoadError(e instanceof ContentError ? e.message : T.loadFailed);
     }
   }, [supabase]);
 
@@ -87,6 +102,11 @@ export default function ContentManagementClient() {
     return matchSearch && matchActive;
   });
 
+  const requestToggleActive = (item: ContentItem) => {
+    if (item.active) setHideTarget(item);
+    else void handleToggleActive(item);
+  };
+
   const handleToggleActive = async (item: ContentItem) => {
     const next = !item.active;
     // Optimistic: flip now, roll back if the database refuses.
@@ -94,10 +114,10 @@ export default function ContentManagementClient() {
     setToggling((t) => ({ ...t, [item.id]: true }));
     try {
       await setContentActive(supabase, item.id, next);
-      toast.success(next ? `“${item.title}” is now visible in the app` : `“${item.title}” is now hidden from the app`);
+      toast.success(next ? T.nowVisible(item.title) : T.nowHidden(item.title));
     } catch (e) {
       setItems((prev) => prev && prev.map((i) => (i.id === item.id ? { ...i, active: item.active } : i)));
-      toast.error(e instanceof ContentError ? e.message : 'Could not change visibility.');
+      toast.error(e instanceof ContentError ? e.message : T.visibilityFailed);
     } finally {
       setToggling((t) => {
         const { [item.id]: _done, ...rest } = t;
@@ -121,13 +141,13 @@ export default function ContentManagementClient() {
     if (editingItem) {
       const saved = await updateContent(supabase, editingItem.id, input);
       setItems((prev) => prev && prev.map((i) => (i.id === saved.id ? saved : i)));
-      toast.success('Content updated successfully');
+      toast.success(T.updated);
     } else {
       const saved = await createContent(supabase, kindOf(activeTab), input);
       setItems((prev) => [...(prev ?? []), saved]);
-      toast.success(`Created ${saved.groupName || saved.groupId}`);
+      toast.success(T.created(saved.groupName || saved.groupId));
     }
-    setSlideOverOpen(false);
+    closePanel();
     void listCategories(supabase).then(setCategories).catch(() => {});
   };
 
@@ -135,11 +155,13 @@ export default function ContentManagementClient() {
     setDeleting(true);
     try {
       await deleteContent(supabase, id);
+      const removed = items.find((item) => item.id === id);
+      if (removed) releaseLessonFiles(lessonFileUrls(removed));
       setItems((prev) => prev && prev.filter((item) => item.id !== id));
       setDeleteConfirmId(null);
-      toast.success('Content deleted');
+      toast.success(T.deleted);
     } catch (e) {
-      toast.error(e instanceof ContentError ? e.message : 'Could not delete content.');
+      toast.error(e instanceof ContentError ? e.message : T.deleteFailed);
     } finally {
       setDeleting(false);
     }
@@ -155,10 +177,8 @@ export default function ContentManagementClient() {
       {/* Page Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-[22px] font-700 text-foreground">Content Management</h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            Manage educational sessions and community resources visible in the mobile app.
-          </p>
+          <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           {isSessions && (
@@ -167,7 +187,7 @@ export default function ContentManagementClient() {
               className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
             >
               <Icon name="TagIcon" size={16} variant="outline" />
-              Categories
+              {T.categories}
             </button>
           )}
           <button
@@ -176,7 +196,7 @@ export default function ContentManagementClient() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm disabled:opacity-60"
           >
             <Icon name="PlusIcon" size={16} variant="outline" />
-            {isSessions ? 'New Session' : 'New Resource'}
+            {isSessions ? T.newSession : T.newResource}
           </button>
         </div>
       </div>
@@ -193,8 +213,8 @@ export default function ContentManagementClient() {
             `}
           >
             {tab === 'sessions'
-              ? `Sessions (${sessions?.length ?? '…'})`
-              : `Community Resources (${resources?.length ?? '…'})`}
+              ? T.tabSessions(String(sessions?.length ?? '…'))
+              : T.tabResources(String(resources?.length ?? '…'))}
           </button>
         ))}
       </div>
@@ -210,7 +230,7 @@ export default function ContentManagementClient() {
           />
           <input
             type="text"
-            placeholder={isSessions ? 'Search by title, category, group, or tag...' : 'Search by title, group, or tag...'}
+            placeholder={isSessions ? T.searchSessions : T.searchResources}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring w-72"
@@ -222,11 +242,11 @@ export default function ContentManagementClient() {
               key={`filter-${f}`}
               onClick={() => setFilterActive(f)}
               className={`
-                px-3 py-1.5 rounded-md text-[12px] font-500 transition-all duration-150 capitalize
+                px-3 py-1.5 rounded-md text-[12px] font-500 transition-all duration-150
                 ${filterActive === f ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'}
               `}
             >
-              {f}
+              {T.filters[f]}
               {f !== 'all' && (
                 <span className="ml-1 text-muted-foreground">
                   ({items.filter((i) => (f === 'active' ? i.active : !i.active)).length})
@@ -236,7 +256,7 @@ export default function ContentManagementClient() {
           ))}
         </div>
         <span className="text-[12px] text-muted-foreground ml-auto">
-          {filtered.length} of {items.length} {activeTab}
+          {T.countOf(filtered.length, items.length, isSessions)}
         </span>
       </div>
 
@@ -246,18 +266,18 @@ export default function ContentManagementClient() {
           <table className="w-full min-w-[980px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-12">Thumb</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Title</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-12">{T.columns.thumb}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.title}</th>
                 {isSessions && (
-                  <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Category</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.category}</th>
                 )}
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Group / Session</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Media</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Duration</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Tags</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Active</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Last Edited</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">Actions</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.group}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.media}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.duration}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.tags}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.active}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.lastEdited}</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">{T.columns.actions}</th>
               </tr>
             </thead>
             <tbody>
@@ -276,7 +296,7 @@ export default function ContentManagementClient() {
                   <td colSpan={colCount} className="px-4 py-12 text-center">
                     <p className="text-[13px] text-danger mb-3">{loadError}</p>
                     <button onClick={() => void load()} className="text-[13px] font-600 text-primary hover:underline">
-                      Try again
+                      {t.common.tryAgain}
                     </button>
                   </td>
                 </tr>
@@ -285,13 +305,9 @@ export default function ContentManagementClient() {
                   <td colSpan={colCount}>
                     <EmptyState
                       icon="BookOpenIcon"
-                      title={`No ${activeTab} found`}
-                      description={
-                        items.length === 0
-                          ? `No ${activeTab} yet. Create the first ${isSessions ? 'session' : 'resource'}.`
-                          : `No ${activeTab} match your current filters. Try adjusting your search.`
-                      }
-                      action={{ label: `Create ${isSessions ? 'Session' : 'Resource'}`, onClick: handleNew }}
+                      title={T.emptyTitle(isSessions)}
+                      description={items.length === 0 ? T.emptyNone(isSessions) : T.emptyFiltered(isSessions)}
+                      action={{ label: isSessions ? T.createSession : T.createResource, onClick: handleNew }}
                     />
                   </td>
                 </tr>
@@ -309,7 +325,7 @@ export default function ContentManagementClient() {
                           <AppImage
                             key={item.thumbnailUrl}
                             src={item.thumbnailUrl}
-                            alt={item.thumbnailAlt || `Thumbnail for ${item.title}`}
+                            alt={item.thumbnailAlt || T.thumbAlt(item.title)}
                             width={40}
                             height={40}
                             className="w-full h-full object-cover"
@@ -332,7 +348,7 @@ export default function ContentManagementClient() {
                             {item.categoryName}
                           </span>
                         ) : (
-                          <span className="text-[11px] text-warning">No category</span>
+                          <span className="text-[11px] text-warning">{T.noCategory}</span>
                         )}
                       </td>
                     )}
@@ -343,25 +359,25 @@ export default function ContentManagementClient() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <span
-                          title={item.videoUrl ? `YouTube: ${item.videoUrl}` : 'No video'}
+                          title={item.videoUrl ? `YouTube: ${item.videoUrl}` : T.noVideo}
                           className={`w-6 h-6 rounded-md flex items-center justify-center ${item.videoUrl ? 'bg-danger/10' : 'bg-muted'}`}
                         >
                           <Icon name="PlayIcon" size={12} variant={item.videoUrl ? 'solid' : 'outline'} className={item.videoUrl ? 'text-danger' : 'text-muted-foreground'} />
                         </span>
                         <span
-                          title={item.audioUrl ? `SoundCloud: ${item.audioUrl}` : 'No audio'}
+                          title={item.audioUrl ? `SoundCloud: ${item.audioUrl}` : T.noAudio}
                           className={`w-6 h-6 rounded-md flex items-center justify-center ${item.audioUrl ? 'bg-warning/10' : 'bg-muted'}`}
                         >
                           <Icon name="MusicalNoteIcon" size={12} variant={item.audioUrl ? 'solid' : 'outline'} className={item.audioUrl ? 'text-warning' : 'text-muted-foreground'} />
                         </span>
                         <span
-                          title={item.infographicUrl ? 'Has infographic' : 'No infographic'}
+                          title={item.infographicUrl ? T.hasInfographic : T.noInfographic}
                           className={`w-6 h-6 rounded-md flex items-center justify-center ${item.infographicUrl ? 'bg-info/10' : 'bg-muted'}`}
                         >
                           <Icon name="PhotoIcon" size={12} variant={item.infographicUrl ? 'solid' : 'outline'} className={item.infographicUrl ? 'text-info' : 'text-muted-foreground'} />
                         </span>
                         <span
-                          title={item.quizUrl ? `Quiz: ${item.quizUrl}` : 'No quiz'}
+                          title={item.quizUrl ? T.quiz(item.quizUrl) : T.noQuiz}
                           className={`w-6 h-6 rounded-md flex items-center justify-center ${item.quizUrl ? 'bg-success/10' : 'bg-muted'}`}
                         >
                           <Icon name="PuzzlePieceIcon" size={12} variant={item.quizUrl ? 'solid' : 'outline'} className={item.quizUrl ? 'text-success' : 'text-muted-foreground'} />
@@ -394,24 +410,24 @@ export default function ContentManagementClient() {
                       <Toggle
                         checked={item.active}
                         disabled={!!toggling[item.id]}
-                        onChange={() => void handleToggleActive(item)}
+                        onChange={() => requestToggleActive(item)}
                       />
                     </td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums whitespace-nowrap">
-                      {formatEdited(item.updatedAt)}
+                      {formatEdited(item.updatedAt, locale)}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(item)}
-                          title="Edit content"
+                          title={T.editContent}
                           className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
                         >
                           <Icon name="PencilIcon" size={14} variant="outline" />
                         </button>
                         <button
                           onClick={() => setDeleteConfirmId(item.id)}
-                          title="Delete content — this cannot be undone"
+                          title={T.deleteHint}
                           className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-colors duration-100"
                         >
                           <Icon name="TrashIcon" size={14} variant="outline" />
@@ -435,14 +451,16 @@ export default function ContentManagementClient() {
               <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center">
                 <Icon name="ExclamationTriangleIcon" size={20} variant="outline" className="text-danger" />
               </div>
-              <h3 className="text-[15px] font-600 text-foreground">Delete Content?</h3>
+              <h3 className="text-[15px] font-600 text-foreground">{T.deleteTitle}</h3>
             </div>
             <p className="text-[13px] text-muted-foreground mb-2">
-              {deleteTarget ? <strong className="text-foreground">{deleteTarget.title}</strong> : 'This content'} will be removed
-              from the app immediately. This action cannot be undone.
+              {deleteTarget ? <strong className="text-foreground">{deleteTarget.title}</strong> : T.thisContent}
+              {T.deleteBody}
             </p>
             <p className="text-[12px] text-muted-foreground mb-5">
-              To hide it but keep its analytics history, turn off <strong>Active</strong> instead.
+              {T.deleteHideBefore}
+              <strong>{T.deleteHideActive}</strong>
+              {T.deleteHideAfter}
             </p>
             <div className="flex items-center justify-end gap-3">
               <button
@@ -450,14 +468,14 @@ export default function ContentManagementClient() {
                 disabled={deleting}
                 className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
               >
-                Cancel
+                {T.cancel}
               </button>
               <button
                 onClick={() => void handleDelete(deleteConfirmId)}
                 disabled={deleting}
                 className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90 transition-opacity duration-150 active:scale-95 disabled:opacity-60"
               >
-                {deleting ? 'Deleting…' : 'Delete Content'}
+                {deleting ? T.deleting : T.deleteButton}
               </button>
             </div>
           </div>
@@ -467,9 +485,10 @@ export default function ContentManagementClient() {
       {/* Slide-over form */}
       <SlideOver
         open={slideOverOpen}
-        onClose={() => setSlideOverOpen(false)}
-        title={editingItem ? 'Edit Content' : `New ${isSessions ? 'Session' : 'Resource'}`}
-        subtitle={editingItem ? `Editing: ${editingItem.title}` : 'Fill in all required fields and paste media URLs.'}
+        onClose={closePanel}
+        dirty={formDirty}
+        title={editingItem ? T.editTitle : isSessions ? T.newSession : T.newResource}
+        subtitle={editingItem ? T.editing(editingItem.title) : T.newSubtitle}
         width="xl"
         footer={undefined}
       >
@@ -478,7 +497,8 @@ export default function ContentManagementClient() {
             key={editingItem?.id ?? `new-${activeTab}`}
             item={editingItem}
             onSave={handleSave}
-            onCancel={() => setSlideOverOpen(false)}
+            onCancel={closePanel}
+            onDirtyChange={setFormDirty}
             nextGroupId={nextGroup.groupId}
             nextGroupName={nextGroup.groupName}
             categories={categories}
@@ -487,6 +507,40 @@ export default function ContentManagementClient() {
           />
         )}
       </SlideOver>
+
+      <Modal
+        open={!!hideTarget}
+        onClose={() => setHideTarget(null)}
+        title={T.hideTitle}
+        size="sm"
+        footer={
+          <>
+            <button
+              onClick={() => setHideTarget(null)}
+              className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
+            >
+              {T.cancel}
+            </button>
+            <button
+              onClick={() => {
+                const target = hideTarget;
+                setHideTarget(null);
+                if (target) void handleToggleActive(target);
+              }}
+              className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90"
+            >
+              {T.hideConfirm}
+            </button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+            <Icon name="EyeSlashIcon" size={18} variant="outline" className="text-warning" />
+          </div>
+          <p className="text-[13px] text-foreground">{hideTarget ? T.hideBody(hideTarget.title) : ''}</p>
+        </div>
+      </Modal>
 
       <CategoryManager
         open={categoriesOpen}

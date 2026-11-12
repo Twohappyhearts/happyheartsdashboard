@@ -12,7 +12,8 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { displayName, initials, useAuth } from '@/contexts/AuthContext';
 import { openConversationForPatient } from '@/lib/chat';
-import { ROLE_LABELS, UsersError, formatPhone, listUsers, updateUser, type AccountRole, type ManagedUser } from '@/lib/users';
+import { UsersError, formatPhone, listUsers, updateUser, type AccountRole, type ManagedUser } from '@/lib/users';
+import { useStaffT } from '@/lib/i18n/staff/context';
 import AddUserModal from './AddUserModal';
 import EditUserModal from './EditUserModal';
 import BroadcastModal from './BroadcastModal';
@@ -32,18 +33,19 @@ const ROLE_PILL: Record<AccountRole, string> = {
 };
 
 function RolePill({ role }: { role: AccountRole }) {
+  const T = useStaffT().t.users;
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-700 tracking-wider ${ROLE_PILL[role]}`}>
-      {ROLE_LABELS[role]}
+      {T.roles[role]}
     </span>
   );
 }
 
-function fmtDate(iso: string | null): string {
+function fmtDate(iso: string | null, locale: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 const nameOf = (u: ManagedUser) => displayName({ fullName: u.fullName, username: u.username });
@@ -52,6 +54,9 @@ export default function UserManagementClient() {
   const router = useRouter();
   const { profile } = useAuth();
   const callerIsAdmin = profile?.role === 'admin';
+  const { t, locale } = useStaffT();
+  const T = t.users;
+  const date = (iso: string | null) => fmtDate(iso, locale);
 
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +81,7 @@ export default function UserManagementClient() {
       setUsers(list);
       setError(null);
     } catch (e) {
-      setError(e instanceof UsersError ? e.message : 'Could not load users.');
+      setError(e instanceof UsersError ? e.message : T.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -143,11 +148,11 @@ export default function UserManagementClient() {
     setBusyId(u.id);
     try {
       await updateUser(u.id, { isActive: active });
-      toast.success(active ? `@${u.username} re-enabled` : `@${u.username} disabled — they can no longer sign in`);
+      toast.success(active ? T.reenabled(u.username) : T.disabledToast(u.username));
       setReenableTarget(null);
       await load();
     } catch (e) {
-      toast.error(e instanceof UsersError ? e.message : 'Could not change the account status.');
+      toast.error(e instanceof UsersError ? e.message : T.statusFailed);
     } finally {
       setBusyId(null);
     }
@@ -155,7 +160,7 @@ export default function UserManagementClient() {
 
   const requestToggle = (u: ManagedUser) => {
     if (!canManage(u)) {
-      toast.error(u.id === profile?.id ? 'You can’t disable your own account.' : 'Only an Admin can change Admin accounts.');
+      toast.error(u.id === profile?.id ? T.cantDisableSelf : T.adminOnly);
       return;
     }
     if (u.active) setActive(u, false);
@@ -165,7 +170,7 @@ export default function UserManagementClient() {
   const openChat = async (u: ManagedUser) => {
     if (u.role !== 'patient') return;
     if (!u.active) {
-      toast.error('Re-enable this account before messaging.');
+      toast.error(T.reenableFirst);
       return;
     }
     setBusyId(u.id);
@@ -173,7 +178,7 @@ export default function UserManagementClient() {
       const id = await openConversationForPatient(createClient(), u.id);
       router.push(`/messages?c=${encodeURIComponent(id)}`);
     } catch {
-      toast.error('Could not open the conversation.');
+      toast.error(T.openChatFailed);
       setBusyId(null);
     }
   };
@@ -191,10 +196,8 @@ export default function UserManagementClient() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[22px] font-700 text-foreground">User Management</h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            Patient, Careteam, and Admin accounts — patient usernames serve as REDCap participant codes.
-          </p>
+          <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -203,14 +206,14 @@ export default function UserManagementClient() {
             disabled={loading}
           >
             <Icon name="MegaphoneIcon" size={16} variant="outline" />
-            Broadcast Message
+            {T.broadcast}
           </button>
           <button
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
             onClick={() => setAddOpen(true)}
           >
             <Icon name="UserPlusIcon" size={16} variant="outline" />
-            Add User
+            {T.add}
           </button>
         </div>
       </div>
@@ -218,11 +221,11 @@ export default function UserManagementClient() {
       {/* Summary row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: 'Total Users', value: users.length, color: 'text-foreground', bg: 'bg-card border-border' },
-          { label: 'Active Users', value: count(u => u.active), color: 'text-success', bg: 'bg-success/5 border-success/20' },
-          { label: 'Admins', value: count(u => u.role === 'admin'), color: 'text-primary', bg: 'bg-primary/5 border-primary/20' },
-          { label: 'Careteam', value: count(u => u.role === 'staff'), color: 'text-success', bg: 'bg-card border-border' },
-          { label: 'Patients', value: count(u => u.role === 'patient'), color: 'text-info', bg: 'bg-info/5 border-info/20' },
+          { label: T.stats.total, value: users.length, color: 'text-foreground', bg: 'bg-card border-border' },
+          { label: T.stats.active, value: count(u => u.active), color: 'text-success', bg: 'bg-success/5 border-success/20' },
+          { label: T.stats.admins, value: count(u => u.role === 'admin'), color: 'text-primary', bg: 'bg-primary/5 border-primary/20' },
+          { label: T.stats.careteam, value: count(u => u.role === 'staff'), color: 'text-success', bg: 'bg-card border-border' },
+          { label: T.stats.patients, value: count(u => u.role === 'patient'), color: 'text-info', bg: 'bg-info/5 border-info/20' },
         ].map(stat => (
           <div key={`ustat-${stat.label}`} className={`rounded-xl border p-4 ${stat.bg}`}>
             <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{stat.label}</p>
@@ -237,7 +240,7 @@ export default function UserManagementClient() {
           <Icon name="MagnifyingGlassIcon" size={14} variant="outline" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search users by username or ID..."
+            placeholder={T.search}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring w-80"
@@ -249,20 +252,20 @@ export default function UserManagementClient() {
               key={`uf-${f}`}
               onClick={() => setStatusFilter(f)}
               className={`
-                px-3 py-1.5 rounded-md text-[12px] font-500 transition-all duration-150 capitalize
+                px-3 py-1.5 rounded-md text-[12px] font-500 transition-all duration-150
                 ${statusFilter === f ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'}
               `}
             >
-              {f}
+              {T.status[f]}
             </button>
           ))}
         </div>
         <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
           {([
-            { key: 'all', label: 'All roles' },
-            { key: 'patient', label: 'Patients' },
-            { key: 'staff', label: 'Careteam' },
-            { key: 'admin', label: 'Admins' },
+            { key: 'all', label: T.roleFilters.all },
+            { key: 'patient', label: T.roleFilters.patient },
+            { key: 'staff', label: T.roleFilters.staff },
+            { key: 'admin', label: T.roleFilters.admin },
           ] as { key: RoleFilter; label: string }[]).map(f => (
             <button
               key={`rf-${f.key}`}
@@ -276,7 +279,7 @@ export default function UserManagementClient() {
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-muted-foreground ml-auto">Users ({filtered.length} results)</span>
+        <span className="text-[12px] text-muted-foreground ml-auto">{T.results(filtered.length)}</span>
       </div>
 
       {/* Table */}
@@ -285,17 +288,9 @@ export default function UserManagementClient() {
           <table className="w-full min-w-[1080px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                {([
-                  { key: 'name', label: 'User' },
-                  { key: 'username', label: 'Username / Code' },
-                  { key: 'displayId', label: 'Display ID' },
-                  { key: 'role', label: 'Role' },
-                  { key: 'createdAt', label: 'Joined' },
-                  { key: 'lastActiveAt', label: 'Last Active' },
-                  { key: 'lessonsOpened', label: 'Sessions' },
-                  { key: 'alertsSent', label: 'Alerts' },
-                  { key: 'active', label: 'Status' },
-                ] as { key: SortKey; label: string }[]).map(col => (
+                {(['name', 'username', 'displayId', 'role', 'createdAt', 'lastActiveAt', 'lessonsOpened', 'alertsSent', 'active'] as SortKey[])
+                  .map((key) => ({ key, label: T.columns[key] }))
+                  .map(col => (
                   <th
                     key={`uth-${col.key}`}
                     onClick={() => handleSort(col.key)}
@@ -305,7 +300,7 @@ export default function UserManagementClient() {
                     <SortIcon col={col.key} />
                   </th>
                 ))}
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-32">Actions</th>
+                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-32">{T.columns.actions}</th>
               </tr>
             </thead>
             <tbody>
@@ -318,7 +313,7 @@ export default function UserManagementClient() {
               ) : error ? (
                 <tr>
                   <td colSpan={10}>
-                    <EmptyState icon="ExclamationTriangleIcon" title="Could not load users" description={error} action={{ label: 'Retry', onClick: () => { setLoading(true); load(); } }} />
+                    <EmptyState icon="ExclamationTriangleIcon" title={T.loadFailedTitle} description={error} action={{ label: T.retry, onClick: () => { setLoading(true); load(); } }} />
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (
@@ -326,9 +321,9 @@ export default function UserManagementClient() {
                   <td colSpan={10}>
                     <EmptyState
                       icon="UsersIcon"
-                      title="No users found"
-                      description="No users match your current search or filter. Try adjusting your criteria or add a new user."
-                      action={{ label: 'Add User', onClick: () => setAddOpen(true) }}
+                      title={T.emptyTitle}
+                      description={T.emptyBody}
+                      action={{ label: T.add, onClick: () => setAddOpen(true) }}
                     />
                   </td>
                 </tr>
@@ -358,23 +353,23 @@ export default function UserManagementClient() {
                     </td>
                     <td className="px-4 py-3 text-[12px] font-mono text-muted-foreground">{user.displayId || '—'}</td>
                     <td className="px-4 py-3"><RolePill role={user.role} /></td>
-                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{fmtDate(user.createdAt)}</td>
-                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{fmtDate(user.lastActiveAt)}</td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{date(user.createdAt)}</td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums">{date(user.lastActiveAt)}</td>
                     <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{isPatient ? user.lessonsOpened : '—'}</td>
                     <td className="px-4 py-3 text-[13px] tabular-nums font-500 text-foreground">{isPatient ? user.alertsSent : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-start gap-0.5">
-                        <Badge variant={user.active ? 'active' : 'suspended'} label={user.active ? 'Active' : 'Disabled'} />
+                        <Badge variant={user.active ? 'active' : 'suspended'} label={user.active ? T.active : T.disabled} />
                         {user.mustChangePassword && user.active && (
-                          <span className="text-[10px] text-muted-foreground" title="Must change the temporary password at next sign-in">temp password</span>
+                          <span className="text-[10px] text-muted-foreground" title={T.tempPasswordHint}>{T.tempPassword}</span>
                         )}
                       </div>
                     </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => setEditing(user)}
-                          title="Edit user"
+                          title={T.editUser}
                           className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
                         >
                           <Icon name="PencilSquareIcon" size={14} variant="outline" />
@@ -383,7 +378,7 @@ export default function UserManagementClient() {
                           <button
                             onClick={() => requestToggle(user)}
                             disabled={!manageable || busyId === user.id}
-                            title={manageable ? 'Disable account' : 'You can’t disable this account'}
+                            title={manageable ? T.disableAccount : T.cantDisable}
                             className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-colors duration-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                           >
                             <Icon name="NoSymbolIcon" size={14} variant="outline" />
@@ -392,7 +387,7 @@ export default function UserManagementClient() {
                           <button
                             onClick={() => requestToggle(user)}
                             disabled={!manageable || busyId === user.id}
-                            title="Re-enable account"
+                            title={T.reenableAccount}
                             className="p-1.5 rounded-md hover:bg-success/10 text-muted-foreground hover:text-success transition-colors duration-100 disabled:opacity-40"
                           >
                             <Icon name="CheckCircleIcon" size={14} variant="outline" />
@@ -402,7 +397,7 @@ export default function UserManagementClient() {
                           <button
                             onClick={() => openChat(user)}
                             disabled={busyId === user.id}
-                            title="Open chat"
+                            title={T.openChat}
                             className="p-1.5 rounded-md hover:bg-info/10 text-muted-foreground hover:text-info transition-colors duration-100 disabled:opacity-40"
                           >
                             <Icon name="ChatBubbleLeftRightIcon" size={14} variant="outline" />
@@ -410,7 +405,7 @@ export default function UserManagementClient() {
                         )}
                         <button
                           onClick={() => setSelectedId(user.id)}
-                          title="View user details"
+                          title={T.viewDetails}
                           className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
                         >
                           <Icon name="EyeIcon" size={14} variant="outline" />
@@ -426,7 +421,7 @@ export default function UserManagementClient() {
         {/* Pagination */}
         <div className="px-5 py-3 border-t border-border flex items-center justify-between">
           <p className="text-[12px] text-muted-foreground">
-            Showing {pageRows.length} of {filtered.length} users
+            {T.showing(pageRows.length, filtered.length)}
           </p>
           <div className="flex items-center gap-1">
             <button
@@ -434,7 +429,7 @@ export default function UserManagementClient() {
               disabled={currentPage <= 1}
               className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40"
             >
-              ← Prev
+              {T.prev}
             </button>
             {Array.from({ length: pageCount }, (_, i) => i + 1).map(n => (
               <button
@@ -452,7 +447,7 @@ export default function UserManagementClient() {
               disabled={currentPage >= pageCount}
               className="px-2.5 py-1.5 border border-border rounded-md text-[12px] text-muted-foreground hover:bg-muted transition-colors duration-100 disabled:opacity-40"
             >
-              Next →
+              {T.next}
             </button>
           </div>
         </div>
@@ -462,8 +457,8 @@ export default function UserManagementClient() {
       <SlideOver
         open={!!selectedPatient}
         onClose={() => setSelectedId(null)}
-        title="User Profile"
-        subtitle={selectedPatient ? `${ROLE_LABELS[selectedPatient.role]} · @${selectedPatient.username}` : ''}
+        title={T.profileTitle}
+        subtitle={selectedPatient ? `${T.roles[selectedPatient.role]} · @${selectedPatient.username}` : ''}
         width="md"
       >
         {selectedPatient && (
@@ -482,9 +477,9 @@ export default function UserManagementClient() {
 
             {/* Status */}
             <div>
-              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Account Status</p>
+              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">{T.accountStatus}</p>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant={selectedPatient.active ? 'active' : 'suspended'} label={selectedPatient.active ? 'Active' : 'Disabled'} />
+                <Badge variant={selectedPatient.active ? 'active' : 'suspended'} label={selectedPatient.active ? T.active : T.disabled} />
                 <RolePill role={selectedPatient.role} />
                 {canManage(selectedPatient) && (
                   selectedPatient.active ? (
@@ -493,7 +488,7 @@ export default function UserManagementClient() {
                       disabled={busyId === selectedPatient.id}
                       className="px-3 py-1 bg-warning/10 text-warning rounded-lg text-[12px] font-600 hover:bg-warning/20 transition-colors duration-150"
                     >
-                      Disable
+                      {T.disable}
                     </button>
                   ) : (
                     <button
@@ -501,7 +496,7 @@ export default function UserManagementClient() {
                       disabled={busyId === selectedPatient.id}
                       className="px-3 py-1 bg-success/10 text-success rounded-lg text-[12px] font-600 hover:bg-success/20 transition-colors duration-150"
                     >
-                      Re-enable
+                      {T.reenable}
                     </button>
                   )
                 )}
@@ -509,22 +504,22 @@ export default function UserManagementClient() {
                   onClick={() => setEditing(selectedPatient)}
                   className="px-3 py-1 bg-muted text-foreground rounded-lg text-[12px] font-600 hover:bg-muted/70 transition-colors duration-150"
                 >
-                  Edit
+                  {T.edit}
                 </button>
               </div>
               {selectedPatient.mustChangePassword && (
-                <p className="text-[11px] text-muted-foreground mt-2">Has a temporary password — must choose a new one at next sign-in.</p>
+                <p className="text-[11px] text-muted-foreground mt-2">{T.hasTempPassword}</p>
               )}
             </div>
 
             {/* Key details */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Display ID', value: selectedPatient.displayId || '—' },
-                { label: 'Phone', value: formatPhone(selectedPatient.phone) || '—' },
-                { label: 'Joined', value: fmtDate(selectedPatient.createdAt) },
-                { label: 'Last Sign-in', value: fmtDate(selectedPatient.lastSignInAt) },
-                { label: 'Last Active', value: fmtDate(selectedPatient.lastActiveAt) },
+                { label: T.details.displayId, value: selectedPatient.displayId || '—' },
+                { label: T.details.phone, value: formatPhone(selectedPatient.phone) || '—' },
+                { label: T.details.joined, value: date(selectedPatient.createdAt) },
+                { label: T.details.lastSignIn, value: date(selectedPatient.lastSignInAt) },
+                { label: T.details.lastActive, value: date(selectedPatient.lastActiveAt) },
               ].map(detail => (
                 <div key={`detail-${detail.label}`} className="p-3 bg-muted/30 rounded-lg">
                   <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{detail.label}</p>
@@ -537,12 +532,12 @@ export default function UserManagementClient() {
               <>
                 {/* Activity stats */}
                 <div>
-                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Activity Summary</p>
+                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">{T.activity}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: 'Sessions', value: selectedPatient.lessonsOpened, icon: 'BookOpenIcon' },
-                      { label: 'Completed', value: selectedPatient.lessonsCompleted, icon: 'CheckCircleIcon' },
-                      { label: 'Alerts', value: selectedPatient.alertsSent, icon: 'BellAlertIcon' },
+                      { label: T.activityStats.sessions, value: selectedPatient.lessonsOpened, icon: 'BookOpenIcon' },
+                      { label: T.activityStats.completed, value: selectedPatient.lessonsCompleted, icon: 'CheckCircleIcon' },
+                      { label: T.activityStats.alerts, value: selectedPatient.alertsSent, icon: 'BellAlertIcon' },
                     ].map(stat => (
                       <div key={`pstat-${stat.label}`} className="p-3 bg-muted/30 rounded-lg text-center">
                         <Icon name={stat.icon as Parameters<typeof Icon>[0]['name']} size={16} variant="outline" className="text-muted-foreground mx-auto mb-1" />
@@ -555,18 +550,18 @@ export default function UserManagementClient() {
 
                 {/* REDCap participant code */}
                 <div>
-                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">REDCap Participant Code</p>
+                  <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">{T.participantCode}</p>
                   <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2.5 border border-border">
                     <code className="text-[13px] font-mono text-foreground flex-1">{selectedPatient.username}</code>
                     <button
-                      onClick={() => { navigator.clipboard.writeText(selectedPatient.username); toast.success('Participant code copied'); }}
+                      onClick={() => { navigator.clipboard.writeText(selectedPatient.username); toast.success(T.codeCopied); }}
                       className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100"
-                      title="Copy participant code"
+                      title={T.copyCode}
                     >
                       <Icon name="ClipboardDocumentIcon" size={14} variant="outline" />
                     </button>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">This username is automatically appended to all REDCap survey links for this patient.</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{T.codeHint}</p>
                 </div>
 
                 <button
@@ -575,7 +570,7 @@ export default function UserManagementClient() {
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 disabled:opacity-60"
                 >
                   <Icon name="ChatBubbleLeftRightIcon" size={15} variant="outline" />
-                  Open Chat
+                  {T.openChatButton}
                 </button>
               </>
             )}

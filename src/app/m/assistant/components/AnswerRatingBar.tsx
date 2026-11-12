@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AgentChatError, saveAnswerRating, type AnswerRating } from '@/lib/agent-chat';
-import { bearerAuth } from '@/lib/agent-bridge';
+import { AgentChatError, saveAnswerRating, type AgentAuth, type AnswerRating } from '@/lib/agent-chat';
 
 const TOP_USABILITY = 5;
 const TOP_SAFETY = 3;
@@ -44,11 +43,13 @@ function ScoreRow({
 interface Props {
   messageId: string;
   rating: AnswerRating | null;
+  /** The app's Bearer token getter (ratings are shown in the app only). */
+  auth: AgentAuth;
   onSaved: (rating: AnswerRating) => void;
 }
 
 /** Trial only: usability and safety scores under an AI answer. Anything below the top score opens the feedback box. */
-export default function AnswerRatingBar({ messageId, rating, onSaved }: Props) {
+export default function AnswerRatingBar({ messageId, rating, auth, onSaved }: Props) {
   const [editing, setEditing] = useState(false);
   const [usability, setUsability] = useState<number | null>(null);
   const [safety, setSafety] = useState<number | null>(null);
@@ -62,7 +63,7 @@ export default function AnswerRatingBar({ messageId, rating, onSaved }: Props) {
     setError(null);
     const next: AnswerRating = { messageId, usability: u, safety: s, comment: text.trim() };
     try {
-      await saveAnswerRating(next, bearerAuth);
+      await saveAnswerRating(next, auth);
       onSaved(next);
       setBoxOpen(false);
       setEditing(false);

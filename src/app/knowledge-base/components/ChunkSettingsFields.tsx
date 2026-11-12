@@ -2,6 +2,8 @@
 
 import React from 'react';
 import { CHUNK_TARGET_RANGE, TOLERANCE_RANGE, type ChunkSettings } from '@/lib/knowledge';
+import { staffText } from '@/lib/i18n/staff';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 /** Raw input values (strings) for the three chunk settings. */
 export interface ChunkSettingsDraft {
@@ -21,12 +23,13 @@ export function fromDraft(d: ChunkSettingsDraft): ChunkSettings | string {
   const t = Number(d.target);
   const o = Number(d.overlap);
   const f = Number(d.tolerance);
+  const E = staffText().kb.chunkFields;
   if (!Number.isInteger(t) || t < CHUNK_TARGET_RANGE.min || t > CHUNK_TARGET_RANGE.max) {
-    return `Chunk size must be ${CHUNK_TARGET_RANGE.min}–${CHUNK_TARGET_RANGE.max} characters.`;
+    return E.sizeInvalid(CHUNK_TARGET_RANGE.min, CHUNK_TARGET_RANGE.max);
   }
-  if (!Number.isInteger(o) || o < 0 || o > Math.floor(t / 2)) return 'Overlap must be between 0 and half the chunk size.';
+  if (!Number.isInteger(o) || o < 0 || o > Math.floor(t / 2)) return E.overlapInvalid;
   if (!Number.isInteger(f) || f < TOLERANCE_RANGE.min || f > TOLERANCE_RANGE.max) {
-    return `Structure tolerance must be a whole number from ${TOLERANCE_RANGE.min} to ${TOLERANCE_RANGE.max}.`;
+    return E.toleranceInvalid(TOLERANCE_RANGE.min, TOLERANCE_RANGE.max);
   }
   return { targetChars: t, overlapChars: o, toleranceFactor: f };
 }
@@ -46,6 +49,8 @@ export default function ChunkSettingsFields({
   onChange: (next: ChunkSettingsDraft) => void;
   disabled?: boolean;
 }) {
+  const { t: text, locale } = useStaffT();
+  const T = text.kb.chunkFields;
   const t = Number(value.target);
   const f = Number(value.tolerance);
   const tol = Number.isFinite(t) && Number.isFinite(f) ? Math.min(t * f, CHUNK_TARGET_RANGE.max) : null;
@@ -53,7 +58,7 @@ export default function ChunkSettingsFields({
     <div className="space-y-2">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label className="block min-w-0">
-          <span className={labelClass}>Chunk size</span>
+          <span className={labelClass}>{T.size}</span>
           <input
             type="number"
             min={CHUNK_TARGET_RANGE.min}
@@ -64,10 +69,10 @@ export default function ChunkSettingsFields({
             onChange={(e) => onChange({ ...value, target: e.target.value })}
             className={inputClass}
           />
-          <span className={hintClass} title="Target size of a chunk, in characters">Characters per chunk</span>
+          <span className={hintClass} title={T.sizeTitle}>{T.sizeHint}</span>
         </label>
         <label className="block min-w-0">
-          <span className={labelClass}>Overlap</span>
+          <span className={labelClass}>{T.overlap}</span>
           <input
             type="number"
             min={0}
@@ -77,10 +82,10 @@ export default function ChunkSettingsFields({
             onChange={(e) => onChange({ ...value, overlap: e.target.value })}
             className={inputClass}
           />
-          <span className={hintClass} title="Characters repeated when a long paragraph is split">Characters repeated</span>
+          <span className={hintClass} title={T.overlapTitle}>{T.overlapHint}</span>
         </label>
         <label className="block min-w-0">
-          <span className={labelClass}>Tolerance (×)</span>
+          <span className={labelClass}>{T.tolerance}</span>
           <input
             type="number"
             min={TOLERANCE_RANGE.min}
@@ -93,15 +98,11 @@ export default function ChunkSettingsFields({
           />
           <span className={hintClass}>
             {TOLERANCE_RANGE.min}–{TOLERANCE_RANGE.max}
-            {tol ? ` · up to ${tol.toLocaleString()} chars` : ''}
+            {tol ? T.upTo(tol.toLocaleString(locale)) : ''}
           </span>
         </label>
       </div>
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Overlap is repeated only when a long paragraph has to be split. Structure tolerance: to keep a whole section, table, list or code block together, a chunk may grow to chunk size × this. 1 = split
-        strictly at the chunk size — sections get cut up; higher = more complete chunks, but coarser search and more context sent to the
-        model per answer.
-      </p>
+      <p className="text-[11px] text-muted-foreground leading-relaxed">{T.help}</p>
     </div>
   );
 }

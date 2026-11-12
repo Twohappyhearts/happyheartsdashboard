@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Users section (dashboard Prompt 6).
@@ -9,11 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type AccountRole = 'patient' | 'staff' | 'admin';
 
-export const ROLE_LABELS: Record<AccountRole, string> = {
-  patient: 'PATIENT',
-  staff: 'CARETEAM',
-  admin: 'ADMIN',
-};
+/** Role labels are in the staff text (src/lib/i18n/staff, `users.roles`). */
 
 export interface ManagedUser {
   id: string;
@@ -46,9 +43,10 @@ const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0) || 0);
 export async function listUsers(supabase: SupabaseClient): Promise<ManagedUser[]> {
   const { data, error } = await supabase.rpc('staff_list_accounts');
   if (error) {
-    if (error.code === '42501') throw new UsersError('Your account does not have staff permission.');
-    if (error.code === 'PGRST202') throw new UsersError('Run the user_management migration first.');
-    throw new UsersError(error.message || 'Could not load users.');
+    const E = staffText().users.errors;
+    if (error.code === '42501') throw new UsersError(E.noPermission);
+    if (error.code === 'PGRST202') throw new UsersError(E.runMigration);
+    throw new UsersError(error.message || E.load);
   }
   return ((data as Row[] | null) ?? []).map((r) => ({
     id: String(r.user_id),
@@ -80,11 +78,11 @@ async function callApi(url: string, method: string, body: unknown): Promise<void
       credentials: 'same-origin',
     });
   } catch {
-    throw new UsersError('Network error. Check your connection and try again.');
+    throw new UsersError(staffText().common.networkError);
   }
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new UsersError(data?.error || `Request failed (${res.status}).`, res.status);
+    throw new UsersError(data?.error || staffText().common.requestFailed(res.status), res.status);
   }
 }
 
@@ -123,8 +121,8 @@ export async function broadcastMessage(
     p_content: content,
   });
   if (error) {
-    if (error.code === '42501') throw new UsersError('Your account does not have staff permission.');
-    throw new UsersError(error.message || 'Could not send the broadcast.');
+    if (error.code === '42501') throw new UsersError(staffText().users.errors.noPermission);
+    throw new UsersError(error.message || staffText().users.errors.broadcast);
   }
   return num(data);
 }
@@ -142,7 +140,7 @@ export function phoneProblem(phone: string): string | null {
   if (!t) return null;
   const digits = t.replace(/[^0-9]/g, '');
   if (!/^\+?[0-9 ().-]+$/.test(t) || digits.length < 7 || digits.length > 15) {
-    return 'Enter a valid phone number, e.g. (949) 555-0100 or +1 949 555 0100.';
+    return staffText().users.errors.phone;
   }
   return null;
 }
@@ -165,10 +163,11 @@ export function formatPhone(stored: string): string {
 }
 
 export function passwordProblem(pw: string): string | null {
-  if (pw.length < 8) return 'At least 8 characters.';
-  if (pw.length > 72) return 'At most 72 characters.';
+  const T = staffText().password;
+  if (pw.length < 8) return T.tooShort;
+  if (pw.length > 72) return T.tooLong;
   if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/[0-9]/.test(pw)) {
-    return 'Needs an uppercase letter, a lowercase letter, and a number.';
+    return T.needsMix;
   }
   return null;
 }
@@ -182,7 +181,7 @@ export function passwordStrength(pw: string): { score: number; label: string } {
   if (/[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
   const s = Math.min(4, pw ? Math.max(1, score - 1) : 0);
-  return { score: s, label: ['', 'Weak', 'Fair', 'Good', 'Strong'][s] };
+  return { score: s, label: staffText().password.strength[s] ?? '' };
 }
 
 /** Random temporary password that satisfies the rules (for "Generate"). */

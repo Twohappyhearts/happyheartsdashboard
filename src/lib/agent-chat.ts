@@ -86,3 +86,25 @@ export const conversationTitle = (c: Pick<AgentConversation, 'title'>) => c.titl
 
 export const historyToUIMessages = (messages: AgentHistoryMessage[]): UIMessage[] =>
   messages.map(({ id, role, parts }) => ({ id, role, parts }) as UIMessage);
+
+export interface AgentConsentStatus {
+  agreed: boolean;
+  agreedAt: string | null;
+  /** false for staff and admin accounts: they are not asked. */
+  required: boolean;
+  version: number;
+  /** Current Terms of Use version (0 = none uploaded yet). */
+  termsVersion?: number;
+  /** Language messages to the care team are written in (e.g. "en"). */
+  careTeamLanguage?: string;
+}
+
+/** Has the caller accepted the AI assistant notice? */
+export const getAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', {}, auth);
+
+/** The caller ticked "I understand and agree" and pressed Continue. */
+export const acceptAgentConsent = (auth?: AgentAuth) => request<AgentConsentStatus>('/api/agent/consent', { method: 'POST' }, auth);
+
+/** Short-lived link (about 10 minutes) to the original file of a cited knowledge-base document. */
+export const getAgentDocumentUrl = (documentId: string, auth?: AgentAuth) =>
+  request<{ url: string }>(`/api/agent/sources/${encodeURIComponent(documentId)}`, {}, auth);

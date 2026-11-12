@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Survey Links (dashboard Prompt 5). Surveys are built and answered in REDCap;
@@ -15,11 +16,14 @@ export const CODE_RE = /^[A-Z][A-Z0-9_]{0,49}$/;
 export const SURVEY_CATEGORIES = ['Emotional Assessment', 'Basic Needs Assessment'] as const;
 export const SURVEY_FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'As needed', 'One time'] as const;
 
-/** Where the app lists a link (survey_links.placement). Both open the same way (REDCap web view). */
+/**
+ * Where the app lists a link (survey_links.placement). Both open the same way (REDCap web view).
+ * The dashboard shows these labels in its own language (staff text `surveys.placements`).
+ */
 export type SurveyPlacement = 'resource' | 'survey';
 export const SURVEY_PLACEMENTS: { value: SurveyPlacement; label: string; hint: string }[] = [
   { value: 'resource', label: 'Resources', hint: 'Resources tab (bottom navigation)' },
-  { value: 'survey', label: 'Survey', hint: 'Survey, in the side menu' },
+  { value: 'survey', label: 'Holistic Assessments', hint: 'Holistic Assessments, in the side menu' },
 ];
 export const placementLabel = (p: SurveyPlacement) => SURVEY_PLACEMENTS.find((x) => x.value === p)?.label ?? 'Resources';
 
@@ -50,11 +54,12 @@ type Row = Record<string, unknown>;
 
 function fail(e: { code?: string; message?: string } | null, fallback: string): SurveyError {
   if (!e) return new SurveyError(fallback);
-  if (e.code === '42501') return new SurveyError('Your account does not have staff permission for this.', e.code);
-  if (e.code === '23505') return new SurveyError('Another survey already uses this code.', e.code);
-  if (e.code === '23514') return new SurveyError('Some fields are too long or in the wrong format.', e.code);
+  const E = staffText().surveys.errors;
+  if (e.code === '42501') return new SurveyError(staffText().common.noStaffPermission, e.code);
+  if (e.code === '23505') return new SurveyError(E.codeTaken, e.code);
+  if (e.code === '23514') return new SurveyError(E.tooLong, e.code);
   if (e.code === 'PGRST204' || e.code === '42703') {
-    return new SurveyError('Run the surveys migration first (missing columns).', e.code);
+    return new SurveyError(E.missingColumns, e.code);
   }
   return new SurveyError(e.message || fallback, e.code);
 }
@@ -99,30 +104,30 @@ export async function listSurveys(supabase: SupabaseClient): Promise<SurveyLink[
     .select(COLUMNS)
     .order('sort_order')
     .order('title');
-  if (error) throw fail(error, 'Could not load survey links.');
+  if (error) throw fail(error, staffText().surveys.errors.load);
   return ((data as Row[] | null) ?? []).map(toSurvey);
 }
 
 export async function createSurvey(supabase: SupabaseClient, input: SurveyInput): Promise<SurveyLink> {
   const { data, error } = await supabase.from('survey_links').insert(toRow(input)).select(COLUMNS).single();
-  if (error) throw fail(error, 'Could not add the survey.');
+  if (error) throw fail(error, staffText().surveys.errors.add);
   return toSurvey(data as Row);
 }
 
 export async function updateSurvey(supabase: SupabaseClient, id: string, input: SurveyInput): Promise<SurveyLink> {
   const { data, error } = await supabase.from('survey_links').update(toRow(input)).eq('id', id).select(COLUMNS).single();
-  if (error) throw fail(error, 'Could not save the survey.');
+  if (error) throw fail(error, staffText().surveys.errors.save);
   return toSurvey(data as Row);
 }
 
 export async function setSurveyActive(supabase: SupabaseClient, id: string, active: boolean): Promise<void> {
   const { error } = await supabase.from('survey_links').update({ is_active: active }).eq('id', id);
-  if (error) throw fail(error, 'Could not change visibility.');
+  if (error) throw fail(error, staffText().surveys.errors.visibility);
 }
 
 export async function deleteSurvey(supabase: SupabaseClient, id: string): Promise<void> {
   const { error } = await supabase.from('survey_links').delete().eq('id', id);
-  if (error) throw fail(error, 'Could not delete the survey.');
+  if (error) throw fail(error, staffText().surveys.errors.delete);
 }
 
 /** Exactly what the app opens for a participant. */
@@ -152,7 +157,7 @@ export async function completionsForSurvey(
     .eq('survey_id', surveyId)
     .order('completed_at', { ascending: false })
     .limit(5000);
-  if (error) throw fail(error, 'Could not load completions.');
+  if (error) throw fail(error, staffText().surveys.errors.completions);
   const map = new Map<string, CompletionInfo>();
   for (const r of (data as Row[] | null) ?? []) {
     const uid = String(r.user_id);
@@ -166,7 +171,7 @@ export async function completionsForSurvey(
 /** surveyId -> number of completions (all patients). */
 export async function completionCounts(supabase: SupabaseClient): Promise<Map<string, number>> {
   const { data, error } = await supabase.from('survey_completions').select('survey_id').limit(10000);
-  if (error) throw fail(error, 'Could not load completions.');
+  if (error) throw fail(error, staffText().surveys.errors.completions);
   const map = new Map<string, number>();
   for (const r of (data as Row[] | null) ?? []) {
     if (!r.survey_id) continue;

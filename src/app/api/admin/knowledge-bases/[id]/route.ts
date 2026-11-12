@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { removeDocumentFiles } from '../../knowledge/files';
 import { assertNotBusy } from '../../knowledge/claim';
 import { UUID_RE, friendlyDbError, readKnowledgeBaseFields } from '../validate';
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!data?.length) throw new ApiError(404, 'Knowledge base not found.');
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }
 
@@ -57,6 +57,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (error) throw error;
     return NextResponse.json({ ok: true, deletedDocuments: docIds.length });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

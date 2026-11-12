@@ -19,6 +19,7 @@ import {
   type PatientVisit,
 } from '@/lib/analytics';
 import type { ExportFn } from './AnalyticsClient';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   refreshKey: number;
@@ -35,9 +36,9 @@ function fmtTime(sec: number): string {
   return `${m}m`;
 }
 
-function fmtDate(iso: string | null, withTime = false): string {
+function fmtDate(iso: string | null, locale: string, withTime = false): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', {
+  return new Date(iso).toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
@@ -64,6 +65,9 @@ function VisitChip({ icon, label }: { icon: string; label: string }) {
 }
 
 export default function IndividualAnalytics({ refreshKey, onLoaded, onExportReady }: Props) {
+  const { t, locale } = useStaffT();
+  const T = t.analytics.individual;
+  const date = (iso: string | null, withTime = false) => fmtDate(iso, locale, withTime);
   const [users, setUsers] = useState<PatientSummary[]>([]);
   const [totalSessions, setTotalSessions] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -91,7 +95,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
         onLoaded();
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof AnalyticsError ? e.message : 'Could not load patients.');
+        if (!cancelled) setError(e instanceof AnalyticsError ? e.message : T.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setListLoading(false);
@@ -122,7 +126,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
         if (cancelled) return;
         setLessons([]);
         setVisits([]);
-        setDetailError(e instanceof AnalyticsError ? e.message : 'Could not load this patient’s activity.');
+        setDetailError(e instanceof AnalyticsError ? e.message : T.detailFailed);
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -193,7 +197,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
             <Icon name="MagnifyingGlassIcon" size={13} variant="outline" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Find patient..."
+              placeholder={T.find}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-7 pr-3 py-1.5 border border-border rounded-lg text-[12px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -207,7 +211,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
             </div>
           ) : filteredUsers.length === 0 ? (
             <p className="px-4 py-8 text-center text-[12px] text-muted-foreground">
-              {users.length === 0 ? 'No patient accounts yet.' : 'No patients match your search.'}
+              {users.length === 0 ? T.noPatients : T.noMatch}
             </p>
           ) : (
             filteredUsers.map(user => {
@@ -234,13 +238,13 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
                     </div>
                   </div>
                   <div className="flex items-center gap-2 mt-1.5 pl-9">
-                    <span className="text-[10px] text-muted-foreground">{user.lessonsOpened}/{totalSessions} sessions</span>
+                    <span className="text-[10px] text-muted-foreground">{T.sessions(user.lessonsOpened, totalSessions)}</span>
                     <span className="text-[10px] text-muted-foreground">·</span>
                     <span className="text-[10px] text-muted-foreground">{fmtTime(user.totalTimeSec)}</span>
                     {!user.active && (
                       <>
                         <span className="text-[10px] text-muted-foreground">·</span>
-                        <span className="text-[10px] text-warning">inactive</span>
+                        <span className="text-[10px] text-warning">{T.inactive}</span>
                       </>
                     )}
                   </div>
@@ -255,7 +259,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
       <div className="xl:col-span-3 space-y-4">
         {!selectedUser ? (
           <div className="bg-card rounded-xl border border-border shadow-card p-10 text-center text-[13px] text-muted-foreground">
-            {listLoading ? 'Loading…' : 'Select a patient to see their activity.'}
+            {listLoading ? T.loading : T.select}
           </div>
         ) : (
           <>
@@ -271,19 +275,19 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
                 </div>
                 <div className="ml-auto grid grid-cols-4 gap-6 text-right">
                   <div>
-                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">Last Active</p>
-                    <p className="text-[13px] font-600 text-foreground mt-0.5">{fmtDate(selectedUser.lastActiveAt)}</p>
+                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{T.lastActive}</p>
+                    <p className="text-[13px] font-600 text-foreground mt-0.5">{date(selectedUser.lastActiveAt)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">Sessions</p>
+                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{T.sessionsLabel}</p>
                     <p className="text-[13px] font-600 text-foreground mt-0.5">{selectedUser.lessonsOpened} / {totalSessions}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">Completed</p>
+                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{T.completed}</p>
                     <p className="text-[13px] font-600 text-foreground mt-0.5">{selectedUser.lessonsCompleted}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">Total Time</p>
+                    <p className="text-[10px] font-600 text-muted-foreground uppercase tracking-wider">{T.totalTime}</p>
                     <p className="text-[13px] font-600 text-foreground mt-0.5">{fmtTime(selectedUser.totalTimeSec)}</p>
                   </div>
                 </div>
@@ -293,34 +297,34 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
             {/* Session timeline */}
             <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
               <div className="px-5 py-3 border-b border-border flex items-center justify-between">
-                <h3 className="text-[14px] font-600 text-foreground">Session Activity Timeline</h3>
+                <h3 className="text-[14px] font-600 text-foreground">{T.timeline}</h3>
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-info inline-block" /> Opened</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-danger inline-block" /> Video</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning inline-block" /> Audio</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-accent inline-block" /> Infographic</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-500 inline-block" /> Notes</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-success inline-block" /> Completed</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-info inline-block" /> {T.legend.opened}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-danger inline-block" /> {T.legend.video}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning inline-block" /> {T.legend.audio}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-accent inline-block" /> {T.legend.infographic}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-500 inline-block" /> {T.legend.notes}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-success inline-block" /> {T.legend.completed}</span>
                 </div>
               </div>
               <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full min-w-[820px]">
                   <thead>
                     <tr className="border-b border-border bg-muted/20">
-                      <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Session</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Opened</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Video</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Audio</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Infographic</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Notes</th>
-                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Completed</th>
+                      <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.session}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.opened}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.video}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.audio}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.infographic}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.notes}</th>
+                      <th className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.completed}</th>
                       <th
                         className="text-center px-3 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider"
-                        title="Watched ≥80% of the video · viewed the infographic full-screen ≥10s · tapped “I finished the quiz”"
+                        title={T.engagedHint}
                       >
-                        Engaged
+                        {T.columns.engaged}
                       </th>
-                      <th className="text-right px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Time</th>
+                      <th className="text-right px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.time}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -334,7 +338,7 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
                       </tr>
                     ) : lessons.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-5 py-8 text-center text-[12px] text-muted-foreground">No sessions yet.</td>
+                        <td colSpan={9} className="px-5 py-8 text-center text-[12px] text-muted-foreground">{T.noSessions}</td>
                       </tr>
                     ) : (
                       lessons.map((s) => (
@@ -343,22 +347,22 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
                             <p className="text-[12px] font-500 text-foreground">{s.title}</p>
                             {s.opened && (
                               <p className="text-[10px] text-muted-foreground">
-                                {s.visits} {s.visits === 1 ? 'visit' : 'visits'} · last {fmtDate(s.lastOpenedAt)}
-                                {!s.active && <span className="text-warning"> · hidden</span>}
+                                {T.visits(s.visits, date(s.lastOpenedAt))}
+                                {!s.active && <span className="text-warning">{T.hidden}</span>}
                               </p>
                             )}
                           </td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.opened} color="bg-info" title={s.opened ? `Last opened ${fmtDate(s.lastOpenedAt, true)}` : 'Not opened'} /></td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.videoPlayed} color="bg-danger" title={`Video watched: ${fmtDuration(s.videoSec)}`} /></td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.audioPlayed} color="bg-warning" title={`Audio listened: ${fmtDuration(s.audioSec)}`} /></td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.infographicViewed} color="bg-accent" title={`Infographic full-screen: ${fmtDuration(s.infographicSec)}`} /></td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.scriptRead} color="bg-violet-500" title={`Lesson notes on screen: ${fmtDuration(s.scriptSec)}`} /></td>
-                          <td className="px-3 py-3 text-center"><EventDot active={s.completed} color="bg-success" title={s.completed ? `Completed ${fmtDate(s.completedAt, true)}` : 'Not completed'} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.opened} color="bg-info" title={s.opened ? T.lastOpened(date(s.lastOpenedAt, true)) : T.notOpened} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.videoPlayed} color="bg-danger" title={T.videoWatched(fmtDuration(s.videoSec))} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.audioPlayed} color="bg-warning" title={T.audioListened(fmtDuration(s.audioSec))} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.infographicViewed} color="bg-accent" title={T.infographicTime(fmtDuration(s.infographicSec))} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.scriptRead} color="bg-violet-500" title={T.notesTime(fmtDuration(s.scriptSec))} /></td>
+                          <td className="px-3 py-3 text-center"><EventDot active={s.completed} color="bg-success" title={s.completed ? T.completedAt(date(s.completedAt, true)) : T.notCompleted} /></td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-center gap-1">
-                              <span title="Watched ≥80% of the video" className={`w-2 h-2 rounded-sm ${s.watchedVideo ? 'bg-danger' : 'bg-muted'}`} />
-                              <span title="Viewed the infographic full-screen ≥10s" className={`w-2 h-2 rounded-sm ${s.reviewedInfographic ? 'bg-accent' : 'bg-muted'}`} />
-                              <span title="Finished the quiz (self-reported)" className={`w-2 h-2 rounded-sm ${s.quizCompleted ? 'bg-success' : 'bg-muted'}`} />
+                              <span title={T.watched80} className={`w-2 h-2 rounded-sm ${s.watchedVideo ? 'bg-danger' : 'bg-muted'}`} />
+                              <span title={T.viewed10} className={`w-2 h-2 rounded-sm ${s.reviewedInfographic ? 'bg-accent' : 'bg-muted'}`} />
+                              <span title={T.quizDone} className={`w-2 h-2 rounded-sm ${s.quizCompleted ? 'bg-success' : 'bg-muted'}`} />
                             </div>
                           </td>
                           <td className="px-5 py-3 text-right text-[12px] tabular-nums text-muted-foreground">
@@ -375,14 +379,14 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
             {/* Recent visits */}
             <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
               <div className="px-5 py-3 border-b border-border flex items-center justify-between">
-                <h3 className="text-[14px] font-600 text-foreground">Recent Visits</h3>
-                <span className="text-[11px] text-muted-foreground">Latest {visits.length} · newest first</span>
+                <h3 className="text-[14px] font-600 text-foreground">{T.recentVisits}</h3>
+                <span className="text-[11px] text-muted-foreground">{T.latest(visits.length)}</span>
               </div>
               {detailLoading && visits.length === 0 ? (
                 <div className="p-5"><Skeleton className="h-20 w-full" /></div>
               ) : visits.length === 0 ? (
                 <p className="px-5 py-8 text-center text-[12px] text-muted-foreground">
-                  No lesson visits yet. Activity appears here a few seconds after the patient opens a lesson in the app.
+                  {T.noVisits}
                 </p>
               ) : (
                 <ul className="divide-y divide-border">
@@ -393,19 +397,19 @@ export default function IndividualAnalytics({ refreshKey, onLoaded, onExportRead
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[12px] font-600 text-foreground truncate">{v.title}</p>
                           <span className="text-[11px] text-muted-foreground whitespace-nowrap tabular-nums">
-                            {fmtDate(v.startedAt, true)} · {fmtDuration(v.timeOnPageSec)} on page
+                            {T.onPage(date(v.startedAt, true), fmtDuration(v.timeOnPageSec))}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          {v.videoPlays > 0 && <VisitChip icon="▶" label={`Video ${fmtDuration(v.videoSec)}`} />}
-                          {v.audioPlays > 0 && <VisitChip icon="♪" label={`Audio ${fmtDuration(v.audioSec)}`} />}
-                          {v.infographicOpens > 0 && <VisitChip icon="🖼" label={`Infographic ${fmtDuration(v.infographicSec)}`} />}
-                          {v.scriptSec > 0 && <VisitChip icon="📝" label={`Notes ${fmtDuration(v.scriptSec)}`} />}
-                          {v.quizStarts > 0 && <VisitChip icon="🎮" label={v.quizCompleted ? 'Quiz finished' : 'Quiz started'} />}
-                          {v.quizStarts === 0 && v.quizCompleted && <VisitChip icon="🎮" label="Quiz finished" />}
-                          {v.completed && <VisitChip icon="✓" label="Marked completed" />}
+                          {v.videoPlays > 0 && <VisitChip icon="▶" label={T.chips.video(fmtDuration(v.videoSec))} />}
+                          {v.audioPlays > 0 && <VisitChip icon="♪" label={T.chips.audio(fmtDuration(v.audioSec))} />}
+                          {v.infographicOpens > 0 && <VisitChip icon="🖼" label={T.chips.infographic(fmtDuration(v.infographicSec))} />}
+                          {v.scriptSec > 0 && <VisitChip icon="📝" label={T.chips.notes(fmtDuration(v.scriptSec))} />}
+                          {v.quizStarts > 0 && <VisitChip icon="🎮" label={v.quizCompleted ? T.chips.quizFinished : T.chips.quizStarted} />}
+                          {v.quizStarts === 0 && v.quizCompleted && <VisitChip icon="🎮" label={T.chips.quizFinished} />}
+                          {v.completed && <VisitChip icon="✓" label={T.chips.completed} />}
                           {v.videoPlays + v.audioPlays + v.infographicOpens + v.quizStarts === 0 && v.scriptSec === 0 && !v.completed && !v.quizCompleted && (
-                            <span className="text-[11px] text-muted-foreground">Browsed the page</span>
+                            <span className="text-[11px] text-muted-foreground">{T.chips.browsed}</span>
                           )}
                         </div>
                       </div>

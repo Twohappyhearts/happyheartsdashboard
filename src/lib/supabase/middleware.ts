@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from './config';
+import { isStaffLang, STAFF_LANG_COOKIE, staffTextFor } from '@/lib/i18n/staff';
 
 // '/m' = pages shown inside the mobile app's WebView; they authenticate API calls
 // with the patient's Bearer token, not the dashboard cookie.
@@ -43,8 +44,10 @@ export async function updateSession(request: NextRequest) {
   if (!signedIn && hasBearer && path.startsWith('/api/agent/')) return response;
 
   if (!signedIn && path.startsWith('/api/')) {
-    // API callers get JSON, not a redirect to the sign-in page.
-    return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 });
+    // API callers get JSON, not a redirect to the sign-in page (in the dashboard language).
+    const lang = request.cookies.get(STAFF_LANG_COOKIE)?.value;
+    const message = staffTextFor(isStaffLang(lang) ? lang : 'en').serverMessages.signInAgain;
+    return NextResponse.json({ error: message }, { status: 401 });
   }
 
   if (!signedIn && !isPublic) {

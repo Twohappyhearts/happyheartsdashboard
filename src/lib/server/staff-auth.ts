@@ -2,6 +2,8 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getStaffLang } from '@/lib/i18n/staff/server';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
 export type AccountRole = 'patient' | 'staff' | 'admin';
 
@@ -17,17 +19,30 @@ export class ApiError extends Error {
   }
 }
 
-export function jsonError(e: unknown) {
-  if (e instanceof ApiError) return NextResponse.json({ error: e.message }, { status: e.status });
+export function jsonError(e: unknown, translate: (message: string) => string = (m) => m) {
+  if (e instanceof ApiError) return NextResponse.json({ error: translate(e.message) }, { status: e.status });
   console.error('[admin api]', e);
-  return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
+  return NextResponse.json({ error: translate('Something went wrong. Please try again.') }, { status: 500 });
+}
+
+/**
+ * jsonError for the dashboard's own routes (src/app/api/admin/*): the message is in the staff
+ * dashboard language (hh_staff_lang cookie). The agent routes, which the patient chat also
+ * calls, keep jsonError.
+ */
+export async function staffJsonError(e: unknown) {
+  const lang = await getStaffLang();
+  return jsonError(e, (m) => translateServerMessage(m, lang));
 }
 
 /**
  * The signed-in dashboard user, verified on the server (JWT checked by
  * Supabase, role read with the admin client). Throws 401/403 otherwise.
+ * `forbidden` is the 403 message (the default suits the user-management routes).
  */
-export async function requireStaffCaller(): Promise<StaffCaller> {
+export async function requireStaffCaller(
+  forbidden = 'Only active Careteam or Admin accounts can manage users.'
+): Promise<StaffCaller> {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw new ApiError(401, 'Please sign in again.');
@@ -40,9 +55,16 @@ export async function requireStaffCaller(): Promise<StaffCaller> {
     .maybeSingle();
   if (roleErr) throw roleErr;
   if (!row || !row.is_active || (row.role !== 'staff' && row.role !== 'admin')) {
-    throw new ApiError(403, 'Only active Careteam or Admin accounts can manage users.');
+    throw new ApiError(403, forbidden);
   }
   return { userId: data.user.id, role: row.role };
+}
+
+/** Like requireStaffCaller, but only an active Admin passes (same rule as is_active_admin() in the database). */
+export async function requireAdminCaller(forbidden = 'Only an active Admin account can do this.'): Promise<StaffCaller> {
+  const caller = await requireStaffCaller(forbidden);
+  if (caller.role !== 'admin') throw new ApiError(403, forbidden);
+  return caller;
 }
 
 export const USERNAME_RE = /^[A-Za-z0-9]{3,20}$/;

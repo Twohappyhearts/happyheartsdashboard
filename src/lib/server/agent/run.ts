@@ -10,8 +10,9 @@ import {
   isToolUIPart,
   streamText,
   type UIMessage,
+  type UIMessageChunk,
 } from 'ai';
-import { FIXED_REPLIES, FIXED_REPLIES_ES, type CareteamSituation } from '@/lib/agent-fixed-replies';
+import { fixedReplySituation } from '@/lib/agent-fixed-replies';
 import { ApiError } from '@/lib/server/staff-auth';
 import { applyApprovals, type ApprovalAnswer } from './approval';
 import type { AgentCaller } from './auth';
@@ -31,8 +32,12 @@ import {
   type Conversation,
   type MessageStatus,
 } from './store';
-import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL } from './tools';
+import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL, WEB_TOOL } from './tools';
+import { withWebDomains } from './web-domains';
+import { createWebSearch } from './websearch';
 import { generateConversationTitle } from './title';
+import { languageName, type InstructionOptions } from './prompt';
+import { careTeamLanguage } from './settings';
 
 export type AgentRequest =
   | { kind: 'message'; conversationId?: string; text: string }
@@ -42,19 +47,12 @@ const needsApproval = new Set<string>(TOOLS_NEEDING_APPROVAL);
 
 /** Each search is an embedding + hybrid search + rerank plus another model step; cap them per turn. */
 const MAX_SEARCHES_PER_TURN = 2;
+/** Each web search is a separate OpenAI request with the built-in search; same cap. */
+const MAX_WEB_SEARCHES_PER_TURN = 2;
 const lastUserId = (messages: UIMessage[]) => [...messages].reverse().find((m) => m.role === 'user')?.id ?? null;
 
-const squash = (t: string) => t.replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').toLowerCase();
-
-/** Which fixed reply (rule 1a / 1b / 2), in English or Spanish, the text contains, if any. Longer replies first. */
-export function fixedReplySituation(text: string): CareteamSituation | null {
-  const t = squash(text);
-  const order: CareteamSituation[] = ['crisis_other', 'crisis', 'urgent', 'personal'];
-  for (const situation of order) {
-    if (t.includes(squash(FIXED_REPLIES[situation])) || t.includes(squash(FIXED_REPLIES_ES[situation]))) return situation;
-  }
-  return null;
-}
+// Recognizes the fixed replies in every language the app supports (agent-fixed-replies.ts).
+export { fixedReplySituation };
 
 /**
  * Situations whose care-team offer the user turned down (pressed Cancel) earlier in the
@@ -83,11 +81,19 @@ export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
  *   5. onEnd: save the assistant message (full parts), then compress in the background if needed
  */
 export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Promise<Response> {
-  const cfg = agentConfig();
+  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites), and
+  // care-team drafts are written in the first language the research team reads (Settings).
+  const [cfg, careteamLanguage] = await Promise.all([withWebDomains(agentConfig(), caller.admin), careTeamLanguage(caller.admin)]);
   // Filled in when the patient edited a care-team message in the confirmation.
   const careteamEdits = new Map<string, string>();
-  const tools = createAgentTools(caller, { careteamEdits });
-  const opts = { canNotifyCareteam: true };
+  const searchWeb = createWebSearch(cfg);
+  const tools = createAgentTools(caller, {
+    careteamEdits,
+    searchWeb,
+    webSites: cfg.webSearch?.domains,
+    careteamLanguageName: languageName(careteamLanguage),
+  });
+  const opts: InstructionOptions = { canNotifyCareteam: true, canSearchWeb: searchWeb != null, careteamLanguage };
   const { admin } = caller;
 
   let conversation: Conversation;
@@ -157,10 +163,13 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     experimental_toolApprovalSecret: cfg.toolApprovalSecret,
     stopWhen: isStepCount(cfg.maxSteps),
     providerOptions: thinkingOptions(cfg, cfg.thinking),
-    // After MAX_SEARCHES_PER_TURN searches the model must answer with what it has.
+    // After the cap for a search tool the model must answer with what it has.
     prepareStep: ({ steps }) => {
-      const searches = steps.reduce((n, st) => n + st.toolCalls.filter((c) => c.toolName === SEARCH_TOOL).length, 0);
-      return searches >= MAX_SEARCHES_PER_TURN ? { activeTools: toolNames.filter((n) => n !== SEARCH_TOOL) } : {};
+      const count = (name: string) => steps.reduce((n, st) => n + st.toolCalls.filter((c) => c.toolName === name).length, 0);
+      const spent = new Set<string>();
+      if (count(SEARCH_TOOL) >= MAX_SEARCHES_PER_TURN) spent.add(SEARCH_TOOL);
+      if (count(WEB_TOOL) >= MAX_WEB_SEARCHES_PER_TURN) spent.add(WEB_TOOL);
+      return spent.size ? { activeTools: toolNames.filter((n) => !spent.has(n)) } : {};
     },
     onStepEnd: (step) => {
       const now = Date.now();
@@ -197,7 +206,7 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
         console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer missing after a "${situation}" reply; asking for it`);
         const followUp = streamText({
           model: chatModel(cfg),
-          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}", the language of that reply, and a draft in the user's words. Write no other text.`,
+          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}", the language code of that reply, and a draft in ${languageName(careteamLanguage)} in the user's words that keeps every detail they gave. Write no other text.`,
           messages: [...modelMessages, ...(await result.responseMessages)],
           tools,
           activeTools: ['notifyCareteam'],
@@ -260,8 +269,24 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
   void drain(toServer);
 
   return createUIMessageStreamResponse({
-    stream: toClient,
+    // Patients never receive the model's reasoning; staff see it in the dashboard preview.
+    stream: caller.role === 'patient' ? toClient.pipeThrough(withoutReasoning()) : toClient,
     headers: { 'X-Conversation-Id': conversationId, 'X-Context-Level': built.level },
+  });
+}
+
+const REASONING_CHUNKS = new Set<string>(['reasoning-start', 'reasoning-delta', 'reasoning-end', 'reasoning-file']);
+
+/**
+ * Drops reasoning from the copy sent to a patient. The stream itself keeps sendReasoning on, so
+ * the saved message keeps its reasoning parts and an approval answer continues the turn with
+ * the same context as before; the history route strips them for patients as well.
+ */
+function withoutReasoning() {
+  return new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, controller) {
+      if (!REASONING_CHUNKS.has(chunk.type)) controller.enqueue(chunk);
+    },
   });
 }
 
@@ -285,7 +310,12 @@ function streamError(e: unknown) {
 }
 
 /** After a turn, summarize now so the next request does not pay for it. */
-async function compressAfterTurn(caller: AgentCaller, conversationId: string, cfg: AgentConfig, opts: { canNotifyCareteam: boolean }) {
+async function compressAfterTurn(
+  caller: AgentCaller,
+  conversationId: string,
+  cfg: AgentConfig,
+  opts: InstructionOptions,
+) {
   try {
     const state: AgentState = await loadState(caller.admin, caller.userId, conversationId);
     if (buildContext(state, cfg, opts).needsSummary) await summarize(caller.admin, state, cfg);

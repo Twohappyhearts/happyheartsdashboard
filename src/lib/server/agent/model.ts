@@ -16,14 +16,14 @@ import type { AgentConfig } from './config';
  */
 const PROVIDER_NAME = { dashscope: 'dashscope', deepseek: 'deepseek' } as const;
 
-let cached: { key: string; make: (id: string) => LanguageModel } | null = null;
+let cached: { key: string; make: (id: string) => LanguageModel; openai?: ReturnType<typeof createOpenAI> } | null = null;
 
 function factory(cfg: AgentConfig) {
   const key = `${cfg.provider}|${cfg.apiKey}|${cfg.baseURL ?? ''}`;
   if (!cached || cached.key !== key) {
     if (cfg.provider === 'openai') {
       const p = createOpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
-      cached = { key, make: (id) => p.responses(id) };
+      cached = { key, make: (id) => p.responses(id), openai: p };
     } else if (cfg.provider === 'deepseek') {
       const p = createDeepSeek({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
       cached = { key, make: (id) => p(id) };
@@ -38,6 +38,12 @@ function factory(cfg: AgentConfig) {
     }
   }
   return cached.make;
+}
+
+/** The OpenAI provider (for its built-in tools such as web search); null for other providers. */
+export function openaiProvider(cfg: AgentConfig) {
+  factory(cfg);
+  return cached?.openai ?? null;
 }
 
 /** Main chat model (AGENT_MODEL, or the provider's default in config.ts). */
