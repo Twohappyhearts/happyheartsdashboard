@@ -11,17 +11,20 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { KnowledgeError, deleteKnowledgeBase, listKnowledgeBases, type KnowledgeBase } from '@/lib/knowledge';
 import KnowledgeBaseFormModal from './KnowledgeBaseFormModal';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 const PAGE_SIZE = 10;
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string, locale: string) {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function KnowledgeBaseListClient() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const { t, locale } = useStaffT();
+  const T = t.kb.list;
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,7 +41,7 @@ export default function KnowledgeBaseListClient() {
       setBases(await listKnowledgeBases(supabase));
       setError(null);
     } catch (e) {
-      setError(e instanceof KnowledgeError ? e.message : 'Could not load knowledge bases.');
+      setError(e instanceof KnowledgeError ? e.message : T.loadFailed);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -63,34 +66,33 @@ export default function KnowledgeBaseListClient() {
     setDeleting(true);
     try {
       await deleteKnowledgeBase(deleteTarget.id);
-      toast.success(`Deleted “${deleteTarget.name}”`);
+      toast.success(T.deleted(deleteTarget.name));
       setDeleteTarget(null);
       await load();
     } catch (e) {
-      toast.error(e instanceof KnowledgeError ? e.message : 'Could not delete the knowledge base.');
+      toast.error(e instanceof KnowledgeError ? e.message : T.deleteFailed);
     } finally {
       setDeleting(false);
     }
   };
 
   const stats = [
-    { label: 'Knowledge Bases', value: bases.length, icon: 'CircleStackIcon' },
-    { label: 'Documents', value: bases.reduce((n, b) => n + b.documentCount, 0), icon: 'DocumentTextIcon' },
-    { label: 'Not Chunked', value: bases.reduce((n, b) => n + b.notChunkedCount, 0), icon: 'ScissorsIcon' },
-    { label: 'Searchable Chunks', value: bases.reduce((n, b) => n + b.chunkCount, 0), icon: 'Squares2X2Icon' },
+    { label: T.stats.bases, value: bases.length, icon: 'CircleStackIcon' },
+    { label: T.stats.documents, value: bases.reduce((n, b) => n + b.documentCount, 0), icon: 'DocumentTextIcon' },
+    { label: T.stats.notChunked, value: bases.reduce((n, b) => n + b.notChunkedCount, 0), icon: 'ScissorsIcon' },
+    { label: T.stats.chunks, value: bases.reduce((n, b) => n + b.chunkCount, 0), icon: 'Squares2X2Icon' },
   ];
 
-  const headers = ['Name', 'ID', 'Embedding', 'Documents', 'Chunks', 'Owner', 'Created', 'Updated', 'Actions'];
+  const C = T.columns;
+  const headers = [C.name, C.id, C.embedding, C.documents, C.chunks, C.owner, C.created, C.updated, C.actions];
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 basis-[280px]">
-          <h1 className="text-[22px] font-700 text-foreground">Knowledge Base</h1>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            Collections of documents the AI assistant can search to answer patient questions. Open one to manage its documents.
-          </p>
+          <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -101,7 +103,7 @@ export default function KnowledgeBaseListClient() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search knowledge bases"
+              placeholder={T.search}
               className="w-[220px] pl-8 pr-3 py-2.5 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
@@ -113,7 +115,7 @@ export default function KnowledgeBaseListClient() {
             className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground bg-card hover:bg-muted transition-colors duration-150 whitespace-nowrap"
           >
             <Icon name="ArrowPathIcon" size={16} variant="outline" className={refreshing ? 'animate-spin' : ''} />
-            Refresh
+            {T.refresh}
           </button>
           <button
             onClick={() => {
@@ -123,7 +125,7 @@ export default function KnowledgeBaseListClient() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
           >
             <Icon name="PlusIcon" size={16} variant="outline" />
-            New Knowledge Base
+            {T.new}
           </button>
         </div>
       </div>
@@ -166,20 +168,20 @@ export default function KnowledgeBaseListClient() {
               ) : error ? (
                 <tr>
                   <td colSpan={headers.length}>
-                    <EmptyState icon="ExclamationTriangleIcon" title="Could not load knowledge bases" description={error} action={{ label: 'Retry', onClick: () => { setLoading(true); load(); } }} />
+                    <EmptyState icon="ExclamationTriangleIcon" title={T.loadFailedTitle} description={error} action={{ label: T.retry, onClick: () => { setLoading(true); load(); } }} />
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={headers.length}>
                     {search ? (
-                      <EmptyState icon="MagnifyingGlassIcon" title="No matches" description={`No knowledge base matches “${search}”.`} />
+                      <EmptyState icon="MagnifyingGlassIcon" title={T.noMatches} description={T.noMatchesBody(search)} />
                     ) : (
                       <EmptyState
                         icon="CircleStackIcon"
-                        title="No knowledge bases yet"
-                        description="Create one, then upload documents into it."
-                        action={{ label: 'New Knowledge Base', onClick: () => { setEditing(null); setFormOpen(true); } }}
+                        title={T.emptyTitle}
+                        description={T.emptyBody}
+                        action={{ label: T.new, onClick: () => { setEditing(null); setFormOpen(true); } }}
                       />
                     )}
                   </td>
@@ -200,7 +202,7 @@ export default function KnowledgeBaseListClient() {
                         >
                           {b.name}
                         </Link>
-                        {!b.active && <Badge variant="inactive" label="Off" size="sm" />}
+                        {!b.active && <Badge variant="inactive" label={T.off} size="sm" />}
                       </div>
                       {b.description && <p className="text-[11px] text-muted-foreground truncate">{b.description}</p>}
                     </td>
@@ -208,20 +210,20 @@ export default function KnowledgeBaseListClient() {
                       <span className="text-[11px] font-mono px-2 py-0.5 rounded-full border border-border text-muted-foreground whitespace-nowrap">{b.slug}</span>
                     </td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">
-                      {b.embeddingModel ?? <span title="Added when vector search is switched on">Keyword only</span>}
+                      {b.embeddingModel ?? <span title={T.keywordOnlyHint}>{T.keywordOnly}</span>}
                     </td>
                     <td className="px-4 py-3 text-[13px] font-500 text-foreground tabular-nums">
                       {b.documentCount}
                       {b.notChunkedCount > 0 && (
-                        <span className="ml-1.5 text-[11px] font-400 text-warning" title="Uploaded but not chunked yet">
-                          ({b.notChunkedCount} not chunked)
+                        <span className="ml-1.5 text-[11px] font-400 text-warning" title={T.notChunkedHint}>
+                          {T.notChunked(b.notChunkedCount)}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-[13px] text-foreground tabular-nums">{b.chunkCount}</td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground">{b.ownerUsername ?? '—'}</td>
-                    <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.createdAt)}</td>
-                    <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.createdAt, locale)}</td>
+                    <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.updatedAt, locale)}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button
@@ -232,14 +234,14 @@ export default function KnowledgeBaseListClient() {
                           className="flex items-center gap-1.5 px-2.5 py-1.5 border border-border rounded-md text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-100"
                         >
                           <Icon name="PencilSquareIcon" size={13} variant="outline" />
-                          Edit
+                          {T.edit}
                         </button>
                         <button
                           onClick={() => setDeleteTarget(b)}
                           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-500 text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors duration-100"
                         >
                           <Icon name="TrashIcon" size={13} variant="outline" />
-                          Delete
+                          {T.delete}
                         </button>
                       </div>
                     </td>
@@ -254,14 +256,14 @@ export default function KnowledgeBaseListClient() {
       {/* Pagination */}
       {!loading && !error && filtered.length > 0 && (
         <div className="flex items-center justify-between text-[12px] text-muted-foreground">
-          <span>{filtered.length} knowledge base{filtered.length === 1 ? '' : 's'}</span>
+          <span>{T.count(filtered.length)}</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(current - 1)}
               disabled={current <= 1}
               className="px-3 py-1.5 border border-border rounded-lg bg-card hover:bg-muted transition-colors duration-150 disabled:opacity-50"
             >
-              Previous
+              {T.previous}
             </button>
             <span className="tabular-nums">{current} / {pageCount}</span>
             <button
@@ -269,7 +271,7 @@ export default function KnowledgeBaseListClient() {
               disabled={current >= pageCount}
               className="px-3 py-1.5 border border-border rounded-lg bg-card hover:bg-muted transition-colors duration-150 disabled:opacity-50"
             >
-              Next
+              {T.next}
             </button>
           </div>
         </div>
@@ -295,21 +297,15 @@ export default function KnowledgeBaseListClient() {
               <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center">
                 <Icon name="ExclamationTriangleIcon" size={20} variant="outline" className="text-danger" />
               </div>
-              <h3 className="text-[15px] font-600 text-foreground">Delete knowledge base?</h3>
+              <h3 className="text-[15px] font-600 text-foreground">{T.deleteTitle}</h3>
             </div>
-            <p className="text-[13px] text-muted-foreground mb-5">
-              “{deleteTarget.name}”
-              {deleteTarget.documentCount > 0
-                ? ` and its ${deleteTarget.documentCount} document${deleteTarget.documentCount === 1 ? '' : 's'} (files and chunks) will be permanently deleted.`
-                : ' will be deleted.'}{' '}
-              To keep it but stop the AI from using it, turn off “Use in AI” in Edit instead.
-            </p>
+            <p className="text-[13px] text-muted-foreground mb-5">{T.deleteBody(deleteTarget.name, deleteTarget.documentCount)}</p>
             <div className="flex items-center justify-end gap-3">
               <button onClick={() => setDeleteTarget(null)} disabled={deleting} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-                Cancel
+                {T.cancel}
               </button>
               <button onClick={confirmDelete} disabled={deleting} className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90 transition-opacity duration-150 active:scale-95 disabled:opacity-60">
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? T.deleting : T.delete}
               </button>
             </div>
           </div>

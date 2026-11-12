@@ -34,6 +34,10 @@ import KnowledgeBaseFormModal from './KnowledgeBaseFormModal';
 import DocumentEditModal from './DocumentEditModal';
 import ChunkContent from './ChunkContent';
 import SearchTestPanel from './SearchTestPanel';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import { staffText, type StaffText } from '@/lib/i18n/staff';
+
+type DocsText = StaffText['kb']['docs'];
 
 const PAGE_SIZE = 10;
 
@@ -44,42 +48,42 @@ interface UploadItem {
   message?: string;
 }
 
-const STATUS: Record<KnowledgeStatus, { label: string; dot: string }> = {
-  uploaded: { label: 'Not chunked', dot: 'bg-[#A0AEC0]' },
-  parsed: { label: 'Not chunked', dot: 'bg-[#A0AEC0]' },
-  parsing: { label: 'Chunking…', dot: 'bg-warning animate-pulse' },
-  processing: { label: 'Chunking…', dot: 'bg-warning animate-pulse' },
-  ready: { label: 'Ready', dot: 'bg-success' },
-  failed: { label: 'Failed', dot: 'bg-danger' },
+const STATUS: Record<KnowledgeStatus, { label: keyof DocsText['status']; dot: string }> = {
+  uploaded: { label: 'notChunked', dot: 'bg-[#A0AEC0]' },
+  parsed: { label: 'notChunked', dot: 'bg-[#A0AEC0]' },
+  parsing: { label: 'chunking', dot: 'bg-warning animate-pulse' },
+  processing: { label: 'chunking', dot: 'bg-warning animate-pulse' },
+  ready: { label: 'ready', dot: 'bg-success' },
+  failed: { label: 'failed', dot: 'bg-danger' },
 };
 
 type StatusFilter = 'all' | 'not' | 'busy' | 'ready' | 'failed';
-const STATUS_FILTERS: { value: StatusFilter; label: string; match: (d: KnowledgeDocument) => boolean }[] = [
-  { value: 'all', label: 'All statuses', match: () => true },
-  { value: 'not', label: 'Not chunked', match: (d) => d.status === 'uploaded' || d.status === 'parsed' },
-  { value: 'busy', label: 'Chunking', match: (d) => d.status === 'parsing' || d.status === 'processing' },
-  { value: 'ready', label: 'Ready', match: (d) => d.status === 'ready' },
-  { value: 'failed', label: 'Failed / last attempt failed', match: (d) => d.status === 'failed' || !!d.error },
+const STATUS_FILTERS: { value: StatusFilter; match: (d: KnowledgeDocument) => boolean }[] = [
+  { value: 'all', match: () => true },
+  { value: 'not', match: (d) => d.status === 'uploaded' || d.status === 'parsed' },
+  { value: 'busy', match: (d) => d.status === 'parsing' || d.status === 'processing' },
+  { value: 'ready', match: (d) => d.status === 'ready' },
+  { value: 'failed', match: (d) => d.status === 'failed' || !!d.error },
 ];
 
 /** A Chunk job is running: the document is locked. */
 const busy = (d: KnowledgeDocument) => d.status === 'parsing' || d.status === 'processing';
 
 /** Second line under the status: job progress, or why the last attempt failed. */
-function statusDetail(doc: KnowledgeDocument): { text: string; tone: 'muted' | 'danger' } | null {
+function statusDetail(doc: KnowledgeDocument, T: DocsText['detail']): { text: string; tone: 'muted' | 'danger' } | null {
   if (doc.status === 'parsing') {
     const p = doc.parseProgress;
-    if (doc.parser !== 'mineru') return { text: 'Reading the file', tone: 'muted' };
-    if (p?.state === 'importing') return { text: 'MinerU · importing result', tone: 'muted' };
-    if (p?.totalPages) return { text: `Reading file (MinerU) · ${p.extractedPages ?? 0}/${p.totalPages} pages`, tone: 'muted' };
-    return { text: `Reading file (MinerU) · ${p?.state === 'running' ? 'running' : 'queued'}`, tone: 'muted' };
+    if (doc.parser !== 'mineru') return { text: T.reading, tone: 'muted' };
+    if (p?.state === 'importing') return { text: T.importing, tone: 'muted' };
+    if (p?.totalPages) return { text: T.pages(p.extractedPages ?? 0, p.totalPages), tone: 'muted' };
+    return { text: p?.state === 'running' ? T.running : T.queued, tone: 'muted' };
   }
   if (doc.status === 'processing') {
     const j = doc.jobProgress;
-    if (j?.phase === 'embedding' && j.total) return { text: `Embedding · ${j.done ?? 0}/${j.total}`, tone: 'muted' };
-    return { text: 'Splitting into chunks', tone: 'muted' };
+    if (j?.phase === 'embedding' && j.total) return { text: T.embedding(j.done ?? 0, j.total), tone: 'muted' };
+    return { text: T.splitting, tone: 'muted' };
   }
-  if (doc.error) return { text: doc.chunkGeneration ? 'Last attempt failed · previous chunks kept' : 'Last attempt failed', tone: 'danger' };
+  if (doc.error) return { text: doc.chunkGeneration ? T.failedKept : T.failed, tone: 'danger' };
   return null;
 }
 
@@ -89,7 +93,8 @@ function fileExt(doc: KnowledgeDocument) {
 
 function typeLabel(doc: KnowledgeDocument) {
   const ext = fileExt(doc);
-  return ext === 'md' ? 'markdown' : ext || 'file';
+  const T = staffText().kb.docs.fileType;
+  return ext === 'md' ? T.markdown : ext || T.file;
 }
 
 function FileIcon({ doc }: { doc: KnowledgeDocument }) {
@@ -101,6 +106,7 @@ function FileIcon({ doc }: { doc: KnowledgeDocument }) {
 /** "⋯" menu with less frequent actions. */
 function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete: () => void; disabled: boolean }) {
   const [open, setOpen] = useState(false);
+  const T = useStaffT().t.kb.docs;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -115,7 +121,7 @@ function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
-        aria-label="More actions"
+        aria-label={T.moreActions}
         className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100 disabled:opacity-40 disabled:pointer-events-none"
       >
         <Icon name="EllipsisHorizontalIcon" size={16} variant="outline" />
@@ -130,7 +136,7 @@ function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete
             className="flex items-center gap-2 px-3 py-2 text-[12px] text-foreground hover:bg-muted"
           >
             <Icon name="ArrowDownTrayIcon" size={14} variant="outline" />
-            Download original
+            {T.downloadOriginal}
           </a>
           {doc.hasParsed && (
             <a
@@ -141,7 +147,7 @@ function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete
               className="flex items-center gap-2 px-3 py-2 text-[12px] text-foreground hover:bg-muted"
             >
               <Icon name="DocumentTextIcon" size={14} variant="outline" />
-              Download extracted text (Markdown)
+              {T.downloadParsed}
             </a>
           )}
           <button
@@ -152,7 +158,7 @@ function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete
             className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-danger hover:bg-danger/10"
           >
             <Icon name="TrashIcon" size={14} variant="outline" />
-            Delete
+            {T.delete}
           </button>
         </div>
       )}
@@ -165,6 +171,8 @@ const actionBtn =
 
 export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { knowledgeBaseId: string }) {
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useStaffT();
+  const T = t.kb.docs;
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
   const [kbMissing, setKbMissing] = useState(false);
   const [editingKb, setEditingKb] = useState(false);
@@ -208,7 +216,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
       setSelected((sel) => new Set([...sel].filter((id) => list.some((d) => d.id === id && !busy(d)))));
       setError(null);
     } catch (e) {
-      setError(e instanceof KnowledgeError ? e.message : 'Could not load documents.');
+      setError(e instanceof KnowledgeError ? e.message : T.loadFailed);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -243,8 +251,8 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
   const uploadFiles = async (files: File[]) => {
     const accepted = files.filter((f) => {
       const ok = ACCEPTED_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext));
-      if (!ok) toast.error(`${f.name}: only PDF, Word, PowerPoint, .txt and .md files are supported`);
-      else if (f.size > MAX_UPLOAD_MB * 1024 * 1024) toast.error(`${f.name}: larger than ${MAX_UPLOAD_MB} MB`);
+      if (!ok) toast.error(T.unsupported(f.name));
+      else if (f.size > MAX_UPLOAD_MB * 1024 * 1024) toast.error(T.tooLarge(f.name, MAX_UPLOAD_MB));
       return ok && f.size <= MAX_UPLOAD_MB * 1024 * 1024;
     });
     // Upload stores the file and starts parsing; chunking is a separate step.
@@ -256,15 +264,15 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
         const res = await uploadDocument(file, knowledgeBaseId);
         ok += 1;
         void res;
-        setUploads((u) => u.map((x) => (x.key === key ? { ...x, state: 'done', message: 'Uploaded — not chunked yet' } : x)));
+        setUploads((u) => u.map((x) => (x.key === key ? { ...x, state: 'done', message: T.uploadedNotChunked } : x)));
       } catch (e) {
-        const message = e instanceof KnowledgeError ? e.message : 'Upload failed';
+        const message = e instanceof KnowledgeError ? e.message : T.uploadFailed;
         setUploads((u) => u.map((x) => (x.key === key ? { ...x, state: 'failed', message } : x)));
         toast.error(`${file.name}: ${message}`);
       }
       await load();
     }
-    if (ok) toast.success(`Uploaded ${ok} file${ok === 1 ? '' : 's'} — select and click Chunk to process`);
+    if (ok) toast.success(T.uploaded(ok));
   };
 
   // ---- Row actions --------------------------------------------------------
@@ -275,7 +283,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
       await updateDocument(doc.id, { isActive: next });
     } catch (e) {
       setDocs((d) => d.map((x) => (x.id === doc.id ? { ...x, active: doc.active } : x)));
-      toast.error(e instanceof KnowledgeError ? e.message : 'Could not update the document.');
+      toast.error(e instanceof KnowledgeError ? e.message : T.updateFailed);
     }
   };
 
@@ -287,7 +295,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
     try {
       setChunks(await listChunks(supabase, doc.id, doc.chunkGeneration));
     } catch (e) {
-      toast.error(e instanceof KnowledgeError ? e.message : 'Could not load chunks.');
+      toast.error(e instanceof KnowledgeError ? e.message : T.chunksFailed);
     } finally {
       setChunksLoading(false);
     }
@@ -305,8 +313,8 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
       }
     }
     const done = deleteTargets.length - failed;
-    if (done) toast.success(`Deleted ${done} document${done === 1 ? '' : 's'}`);
-    if (failed) toast.error(`${failed} document${failed === 1 ? '' : 's'} could not be deleted`);
+    if (done) toast.success(T.deletedDocs(done));
+    if (failed) toast.error(T.deleteFailedDocs(failed));
     if (viewing && deleteTargets.some((d) => d.id === viewing.id)) setViewing(null);
     setDeleteTargets(null);
     setDeleting(false);
@@ -351,28 +359,29 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
       <div className="bg-card rounded-xl border border-border shadow-card">
         <EmptyState
           icon="CircleStackIcon"
-          title="Knowledge base not found"
-          description="It may have been deleted."
-          action={{ label: 'Back to knowledge bases', onClick: () => window.location.assign('/knowledge-base') }}
+          title={T.notFoundTitle}
+          description={T.notFoundBody}
+          action={{ label: T.backToList, onClick: () => window.location.assign('/knowledge-base') }}
         />
       </div>
     );
   }
 
-  const headers = ['Document', 'Status', 'Enabled', 'Chunks', 'Chunk settings', 'Updated', 'Actions'];
+  const C = T.columns;
+  const headers = [C.document, C.status, C.enabled, C.chunks, C.settings, C.updated, C.actions];
 
   return (
     <div className="space-y-5 pb-24">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 basis-[280px]">
-          <h1 className="text-[22px] font-700 text-foreground">Documents</h1>
+          <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
           <div className="text-[13px] text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
             {kb ? (
               <>
                 <span>{kb.name}</span>
                 <span className="font-mono text-[12px]">({kb.slug})</span>
-                {!kb.active && <Badge variant="inactive" label="Off — not used by AI" size="sm" />}
+                {!kb.active && <Badge variant="inactive" label={T.kbOff} size="sm" />}
               </>
             ) : (
               <Skeleton className="h-4 w-40" />
@@ -385,23 +394,23 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
             className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground bg-card hover:bg-muted transition-colors duration-150 whitespace-nowrap"
           >
             <Icon name="ArrowLeftIcon" size={16} variant="outline" />
-            Back to Knowledge Bases
+            {T.back}
           </Link>
           <button
             onClick={() => setEditingKb(true)}
             disabled={!kb}
-            title="Knowledge base settings"
+            title={T.settingsHint}
             className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground bg-card hover:bg-muted transition-colors duration-150 disabled:opacity-50 whitespace-nowrap"
           >
             <Icon name="Cog6ToothIcon" size={16} variant="outline" />
-            Settings
+            {T.settings}
           </button>
           <button
             onClick={() => fileInput.current?.click()}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
           >
             <Icon name="ArrowUpTrayIcon" size={16} variant="outline" />
-            Upload Documents
+            {T.upload}
           </button>
           <input
             ref={fileInput}
@@ -431,9 +440,9 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                   <Icon name="ExclamationCircleIcon" size={14} variant="solid" className="text-danger" />
                 )}
                 <span className="font-500 text-foreground truncate flex-1">{u.name}</span>
-                <span className={u.state === 'failed' ? 'text-danger' : 'text-muted-foreground'}>{u.state === 'uploading' ? 'Uploading…' : u.message}</span>
+                <span className={u.state === 'failed' ? 'text-danger' : 'text-muted-foreground'}>{u.state === 'uploading' ? T.uploading : u.message}</span>
                 {u.state === 'failed' && (
-                  <button onClick={() => setUploads((x) => x.filter((y) => y.key !== u.key))} aria-label="Dismiss" className="text-muted-foreground hover:text-foreground">
+                  <button onClick={() => setUploads((x) => x.filter((y) => y.key !== u.key))} aria-label={T.dismiss} className="text-muted-foreground hover:text-foreground">
                     <Icon name="XMarkIcon" size={14} variant="outline" />
                   </button>
                 )}
@@ -462,13 +471,13 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
         {dragging && (
           <div className="absolute inset-0 z-20 rounded-xl bg-primary/5 border-2 border-dashed border-primary flex flex-col items-center justify-center pointer-events-none">
             <Icon name="DocumentArrowUpIcon" size={28} variant="outline" className="text-primary mb-1" />
-            <p className="text-[13px] font-600 text-foreground">Drop to upload into {kb?.name ?? 'this knowledge base'}</p>
+            <p className="text-[13px] font-600 text-foreground">{T.dropHere(kb?.name ?? T.thisKb)}</p>
           </div>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-border">
           <div>
-            <h2 className="text-[15px] font-700 text-foreground">Document list</h2>
+            <h2 className="text-[15px] font-700 text-foreground">{T.listTitle}</h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -479,7 +488,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Search documents"
+                placeholder={T.search}
                 className="w-[220px] pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -489,12 +498,12 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                 setStatusFilter(e.target.value as StatusFilter);
                 setPage(1);
               }}
-              aria-label="Filter by status"
+              aria-label={T.filterLabel}
               className="px-3 py-2 border border-border rounded-lg text-[13px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {STATUS_FILTERS.map((f) => (
                 <option key={`sf-${f.value}`} value={f.value}>
-                  {f.label}
+                  {T.filters[f.value]}
                   {f.value !== 'all' ? ` (${docs.filter(f.match).length})` : ''}
                 </option>
               ))}
@@ -507,7 +516,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
               className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
             >
               <Icon name="ArrowPathIcon" size={15} variant="outline" className={refreshing ? 'animate-spin' : ''} />
-              Refresh
+              {T.refresh}
             </button>
           </div>
         </div>
@@ -519,7 +528,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                 <th className="pl-5 pr-1 py-3 w-8">
                   <input
                     type="checkbox"
-                    aria-label="Select all on this page"
+                    aria-label={T.selectPage}
                     checked={pageAllSelected}
                     disabled={selectableRows.length === 0}
                     onChange={togglePage}
@@ -543,7 +552,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
               ) : error ? (
                 <tr>
                   <td colSpan={headers.length + 1}>
-                    <EmptyState icon="ExclamationTriangleIcon" title="Could not load documents" description={error} action={{ label: 'Retry', onClick: () => { setLoading(true); load(); } }} />
+                    <EmptyState icon="ExclamationTriangleIcon" title={T.loadFailedTitle} description={error} action={{ label: T.retry, onClick: () => { setLoading(true); load(); } }} />
                   </td>
                 </tr>
               ) : docs.length === 0 ? (
@@ -551,16 +560,16 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                   <td colSpan={headers.length + 1}>
                     <EmptyState
                       icon="DocumentArrowUpIcon"
-                      title="No documents yet"
-                      description="Upload patient-education PDFs or guides — or drag files onto this table."
-                      action={{ label: 'Upload Documents', onClick: () => fileInput.current?.click() }}
+                      title={T.emptyTitle}
+                      description={T.emptyBody}
+                      action={{ label: T.upload, onClick: () => fileInput.current?.click() }}
                     />
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={headers.length + 1}>
-                    <EmptyState icon="FunnelIcon" title="No matching documents" description="Try another search or status." />
+                    <EmptyState icon="FunnelIcon" title={T.noMatchTitle} description={T.noMatchBody} />
                   </td>
                 </tr>
               ) : (
@@ -568,7 +577,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                   const st = STATUS[doc.status];
                   const isSel = selected.has(doc.id);
                   const locked = busy(doc);
-                  const detail = statusDetail(doc);
+                  const detail = statusDetail(doc, T.detail);
                   return (
                     <tr
                       key={doc.id}
@@ -577,10 +586,10 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                       <td className="pl-5 pr-1 py-3">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${doc.title}`}
+                          aria-label={T.selectDoc(doc.title)}
                           checked={isSel}
                           disabled={locked}
-                          title={locked ? 'Being chunked — wait until it finishes' : undefined}
+                          title={locked ? T.busyHint : undefined}
                           onChange={() => toggleSelected(doc.id)}
                           className="accent-[var(--primary)] w-4 h-4"
                         />
@@ -594,7 +603,8 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                             </button>
                             <p className="text-[11px] text-muted-foreground truncate">
                               {typeLabel(doc)} · {fmtBytes(doc.sizeBytes)}
-                              {doc.pageCount ? ` · ${doc.pageCount} pages` : ''} · Local file
+                              {doc.pageCount ? T.pages(doc.pageCount) : ''}
+                              {T.localFile}
                             </p>
                           </div>
                         </div>
@@ -602,7 +612,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 text-[12px] text-foreground whitespace-nowrap" title={doc.error ?? undefined}>
                           <span className={`w-2 h-2 rounded-full ${st.dot}`} />
-                          {st.label}
+                          {T.status[st.label]}
                         </span>
                         {detail && (
                           <p
@@ -617,12 +627,12 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                         <span
                           title={
                             locked
-                              ? 'Being chunked — wait until it finishes'
+                              ? T.busyHint
                               : doc.chunkGeneration
                                 ? doc.active
-                                  ? 'Used by the AI assistant'
-                                  : 'Hidden from the AI assistant'
-                                : 'Chunk the document first'
+                                  ? T.usedByAi
+                                  : T.hiddenFromAi
+                                : T.chunkFirst
                           }
                         >
                           <Toggle checked={doc.active} onChange={() => toggleActive(doc)} disabled={locked || !doc.chunkGeneration} />
@@ -632,7 +642,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                       <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">
                         {doc.chunkSettings ? (
                           <span
-                            title={`${doc.chunkSettings.targetChars} characters per chunk, ${doc.chunkSettings.overlapChars} overlap, structure tolerance ×${doc.chunkSettings.toleranceFactor}`}
+                            title={T.settingsTitle(doc.chunkSettings.targetChars, doc.chunkSettings.overlapChars, doc.chunkSettings.toleranceFactor)}
                           >
                             {doc.chunkSettings.targetChars} / {doc.chunkSettings.overlapChars} · ×{doc.chunkSettings.toleranceFactor}
                           </span>
@@ -641,26 +651,26 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                         )}
                       </td>
                       <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">
-                        {doc.uploaderUsername ?? '—'} · {fmtRelative(doc.updatedAt)}
+                        {doc.uploaderUsername ?? '—'} · {fmtRelative(doc.updatedAt, locale)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => openChunks(doc)} className={actionBtn}>
                             <Icon name="EyeIcon" size={13} variant="outline" />
-                            Preview
+                            {T.preview}
                           </button>
                           <button onClick={() => setEditingDoc(doc)} disabled={locked} className={actionBtn}>
                             <Icon name="PencilSquareIcon" size={13} variant="outline" />
-                            Edit
+                            {T.edit}
                           </button>
                           <button
                             onClick={() => setChunkTargets([doc])}
                             disabled={locked}
-                            title={locked ? 'Being chunked — wait until it finishes' : 'Chunk and embed'}
+                            title={locked ? T.busyHint : T.chunkHint}
                             className={actionBtn}
                           >
                             <Icon name={locked ? 'ArrowPathIcon' : 'ScissorsIcon'} size={13} variant="outline" className={locked ? 'animate-spin' : ''} />
-                            {locked ? 'Chunking…' : doc.chunkGeneration ? 'Re-chunk' : 'Chunk'}
+                            {locked ? T.chunking : doc.chunkGeneration ? T.rechunk : T.chunk}
                           </button>
                           <RowMenu doc={doc} onDelete={() => setDeleteTargets([doc])} disabled={locked} />
                         </div>
@@ -675,17 +685,14 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
 
         {!loading && !error && docs.length > 0 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-border text-[12px] text-muted-foreground">
-            <span>
-              {filtered.length} document{filtered.length === 1 ? '' : 's'}
-              {filtered.length !== docs.length ? ` (of ${docs.length})` : ''}
-            </span>
+            <span>{T.count(filtered.length, docs.length)}</span>
             <div className="flex items-center gap-2">
               <button onClick={() => setPage(current - 1)} disabled={current <= 1} className="px-3 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors duration-150 disabled:opacity-50">
-                Previous
+                {T.previous}
               </button>
               <span className="tabular-nums">{current} / {pageCount}</span>
               <button onClick={() => setPage(current + 1)} disabled={current >= pageCount} className="px-3 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors duration-150 disabled:opacity-50">
-                Next
+                {T.next}
               </button>
             </div>
           </div>
@@ -701,17 +708,17 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
           <div className="flex items-center gap-1 bg-foreground text-white rounded-xl shadow-modal px-2 py-2 text-[13px]">
             <span className="flex items-center gap-2 px-3 py-1.5 font-600 whitespace-nowrap">
               <Icon name="CheckIcon" size={16} variant="outline" className="text-success" />
-              {selected.size} selected
+              {T.selected(selected.size)}
             </span>
             <span className="w-px h-5 bg-white/20" />
             <button
               onClick={() => setChunkTargets(actionable)}
               disabled={actionable.length === 0}
-              title="Chunk and embed each selected document"
+              title={T.batchHint}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors duration-150 disabled:opacity-50 whitespace-nowrap"
             >
               <Icon name="ScissorsIcon" size={15} variant="outline" />
-              Batch chunk
+              {T.batchChunk}
             </button>
             <button
               onClick={() => setDeleteTargets(actionable)}
@@ -719,10 +726,10 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[#FF8A8A] hover:bg-white/10 transition-colors duration-150 whitespace-nowrap"
             >
               <Icon name="TrashIcon" size={15} variant="outline" />
-              Delete
+              {T.delete}
             </button>
             <span className="w-px h-5 bg-white/20" />
-            <button onClick={() => setSelected(new Set())} aria-label="Clear selection" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors duration-150">
+            <button onClick={() => setSelected(new Set())} aria-label={T.clearSelection} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors duration-150">
               <Icon name="XMarkIcon" size={16} variant="outline" />
             </button>
           </div>
@@ -736,13 +743,13 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
           setViewing(null);
           setChunks([]);
         }}
-        title={viewing?.title ?? 'Chunks'}
+        title={viewing?.title ?? T.chunksTitle}
         subtitle={
           viewing
             ? [
               viewing.fileName,
-              viewing.chunkGeneration ? `${viewing.chunkCount} chunks` : null,
-              viewing.pageCount ? `${viewing.pageCount} pages` : null,
+              viewing.chunkGeneration ? T.chunkCount(viewing.chunkCount) : null,
+              viewing.pageCount ? T.pageCount(viewing.pageCount) : null,
               viewing.chunkSettings
                 ? `${viewing.chunkSettings.targetChars} / ${viewing.chunkSettings.overlapChars} · ×${viewing.chunkSettings.toleranceFactor}`
                 : null,
@@ -759,35 +766,35 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
         ) : viewing && !viewing.chunkGeneration ? (
           <div className="text-center py-8 space-y-3">
             <p className="text-[13px] text-muted-foreground">
-              {busy(viewing) ? 'This document is being chunked.' : 'This document hasn’t been chunked yet.'}
+              {busy(viewing) ? T.beingChunked : T.notChunkedYet}
             </p>
-            {viewing.error && <p className="text-[12px] text-danger">Last attempt failed: {viewing.error}</p>}
+            {viewing.error && <p className="text-[12px] text-danger">{T.lastFailed(viewing.error)}</p>}
             {!busy(viewing) && (
               <button
                 onClick={() => setChunkTargets([viewing])}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95"
               >
-                {viewing.error ? 'Try again' : 'Chunk now'}
+                {viewing.error ? T.tryAgain : T.chunkNow}
               </button>
             )}
           </div>
         ) : chunks.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">No chunks.</p>
+          <p className="text-[13px] text-muted-foreground">{T.noChunks}</p>
         ) : (
           <div className="space-y-3">
             <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
               <input type="checkbox" checked={showSearchText} onChange={(e) => setShowSearchText(e.target.checked)} className="accent-[var(--primary)]" />
-              Show search text (what keyword search and the embedding are computed from)
+              {T.showSearchText}
             </label>
-            {viewing && busy(viewing) && <p className="text-[12px] text-warning">Being re-chunked — these are the current chunks until the new ones are committed.</p>}
-            {viewing?.error && !busy(viewing) && <p className="text-[12px] text-danger">Last re-chunk failed, these chunks were kept: {viewing.error}</p>}
+            {viewing && busy(viewing) && <p className="text-[12px] text-warning">{T.beingRechunked}</p>}
+            {viewing?.error && !busy(viewing) && <p className="text-[12px] text-danger">{T.rechunkFailed(viewing.error)}</p>}
             {chunks.map((c) => (
               <div key={c.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center gap-2 mb-2 flex-wrap text-[10px] text-muted-foreground">
                   <span className="font-mono bg-muted px-1.5 py-0.5 rounded">#{c.index + 1}</span>
-                  <span>{c.content.length.toLocaleString()} chars · ~{c.tokenCount} tokens</span>
-                  {c.assets.length > 0 && <span>{c.assets.length} image{c.assets.length === 1 ? '' : 's'}</span>}
-                  {c.pageStart && <span>page {c.pageStart}{c.pageEnd && c.pageEnd !== c.pageStart ? `–${c.pageEnd}` : ''}</span>}
+                  <span>{T.chunkMeta(c.content.length.toLocaleString(locale), c.tokenCount)}</span>
+                  {c.assets.length > 0 && <span>{T.images(c.assets.length)}</span>}
+                  {c.pageStart && <span>{T.page(`${c.pageStart}${c.pageEnd && c.pageEnd !== c.pageStart ? `–${c.pageEnd}` : ''}`)}</span>}
                   {(c.outlinePath.length > 0 || c.heading) && (
                     <span className="font-600 text-foreground truncate max-w-[420px]" title={c.outlinePath.join(' › ')}>
                       {c.outlinePath.length ? c.outlinePath.join(' › ') : c.heading}
@@ -848,20 +855,18 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                 <Icon name="ExclamationTriangleIcon" size={20} variant="outline" className="text-danger" />
               </div>
               <h3 className="text-[15px] font-600 text-foreground">
-                {deleteTargets.length === 1 ? 'Delete document?' : `Delete ${deleteTargets.length} documents?`}
+                {deleteTargets.length === 1 ? T.deleteOneTitle : T.deleteManyTitle(deleteTargets.length)}
               </h3>
             </div>
             <p className="text-[13px] text-muted-foreground mb-5">
-              {deleteTargets.length === 1 ? `“${deleteTargets[0].title}”` : 'The selected documents'}, the original file
-              {deleteTargets.length === 1 ? '' : 's'} and all chunks will be permanently deleted. To keep a document but stop the AI from using it, switch off
-              “Enabled” instead.
+              {deleteTargets.length === 1 ? T.deleteOneBody(deleteTargets[0].title) : T.deleteManyBody}
             </p>
             <div className="flex items-center justify-end gap-3">
               <button onClick={() => setDeleteTargets(null)} disabled={deleting} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-                Cancel
+                {T.cancel}
               </button>
               <button onClick={confirmDelete} disabled={deleting} className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90 transition-opacity duration-150 active:scale-95 disabled:opacity-60">
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? T.deleting : T.delete}
               </button>
             </div>
           </div>

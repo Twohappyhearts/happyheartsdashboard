@@ -14,6 +14,7 @@ import {
   updateKnowledgeBase,
   type KnowledgeBase,
 } from '@/lib/knowledge';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   open: boolean;
@@ -29,6 +30,7 @@ const labelClass = 'text-[11px] font-600 text-muted-foreground uppercase trackin
 
 export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, onSaved }: Props) {
   const editing = !!knowledgeBase;
+  const T = useStaffT().t.kb.form;
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
@@ -52,9 +54,9 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
 
   const settings = fromDraft(chunk);
   const problem = !name.trim()
-    ? 'Enter a name.'
+    ? T.enterName
     : !editing && !KB_SLUG_RE.test(slug)
-      ? 'ID must start with a letter and use 2–50 lowercase letters, numbers or underscores.'
+      ? T.idInvalid
       : typeof settings === 'string'
         ? settings
         : null;
@@ -76,15 +78,15 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
     try {
       if (knowledgeBase) {
         await updateKnowledgeBase(knowledgeBase.id, { ...input, isActive: active });
-        toast.success('Knowledge base saved');
+        toast.success(T.saved);
         onSaved(knowledgeBase.id);
       } else {
         const { id } = await createKnowledgeBase({ ...input, slug });
-        toast.success(`Created “${input.name}”`);
+        toast.success(T.created(input.name));
         onSaved(id);
       }
     } catch (e) {
-      setError(e instanceof KnowledgeError ? e.message : 'Could not save.');
+      setError(e instanceof KnowledgeError ? e.message : T.saveFailed);
       setSaving(false);
     }
   };
@@ -92,28 +94,28 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
   const footer = (
     <div className="flex items-center justify-end gap-3 w-full">
       <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-        Cancel
+        {T.cancel}
       </button>
       <button
         onClick={save}
         disabled={saving}
         className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 disabled:opacity-60"
       >
-        {saving ? 'Saving…' : editing ? 'Save' : 'Create'}
+        {saving ? T.saving : editing ? T.save : T.create}
       </button>
     </div>
   );
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? 'Knowledge base settings' : 'New knowledge base'} size="md" footer={footer}>
+    <Modal open={open} onClose={onClose} title={editing ? T.editTitle : T.newTitle} size="md" footer={footer}>
       <div className="space-y-4">
         <label className="block">
-          <span className={labelClass}>Name</span>
+          <span className={labelClass}>{T.name}</span>
           <input
             value={name}
             maxLength={100}
             autoFocus
-            placeholder="e.g. Patient Education"
+            placeholder={T.namePlaceholder}
             onChange={(e) => {
               setName(e.target.value);
               if (!editing && !slugTouched) setSlug(suggestSlug(e.target.value));
@@ -122,7 +124,7 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
           />
         </label>
         <label className="block">
-          <span className={labelClass}>ID</span>
+          <span className={labelClass}>{T.id}</span>
           <input
             value={slug}
             maxLength={50}
@@ -135,36 +137,36 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
             className={`${inputClass} font-mono`}
           />
           <span className="text-[11px] text-muted-foreground">
-            {editing ? 'The ID can’t be changed — the AI assistant uses it to find this knowledge base.' : 'Lowercase letters, numbers and underscores. Used by the AI assistant; can’t be changed later.'}
+            {editing ? T.idLocked : T.idHint}
           </span>
         </label>
         <label className="block">
-          <span className={labelClass}>Description</span>
+          <span className={labelClass}>{T.description}</span>
           <textarea
             value={description}
             maxLength={1000}
             rows={2}
-            placeholder="What kind of documents go here?"
+            placeholder={T.descriptionPlaceholder}
             onChange={(e) => setDescription(e.target.value)}
             className={`${inputClass} resize-none`}
           />
         </label>
         <div>
-          <p className={`${labelClass} mb-2`}>Default chunk settings</p>
+          <p className={`${labelClass} mb-2`}>{T.defaultChunk}</p>
           <ChunkSettingsFields value={chunk} onChange={setChunk} />
         </div>
         <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
           <div>
-            <p className="text-[12px] font-600 text-foreground">Embedding model</p>
-            <p className="text-[11px] text-muted-foreground">Not set — added when vector search is switched on.</p>
+            <p className="text-[12px] font-600 text-foreground">{T.embeddingModel}</p>
+            <p className="text-[11px] text-muted-foreground">{T.embeddingNotSet}</p>
           </div>
           <span className="text-[12px] text-muted-foreground font-mono">{knowledgeBase?.embeddingModel ?? '—'}</span>
         </div>
         {editing && (
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
             <div>
-              <p className="text-[12px] font-600 text-foreground">Use in AI</p>
-              <p className="text-[11px] text-muted-foreground">When off, the AI assistant ignores every document in this knowledge base.</p>
+              <p className="text-[12px] font-600 text-foreground">{T.useInAi}</p>
+              <p className="text-[11px] text-muted-foreground">{T.useInAiHint}</p>
             </div>
             <Toggle checked={active} onChange={setActive} />
           </div>

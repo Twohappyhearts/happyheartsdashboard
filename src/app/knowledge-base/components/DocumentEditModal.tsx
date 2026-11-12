@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Modal from '@/components/ui/Modal';
 import { toast } from 'sonner';
 import { KnowledgeError, updateDocument, type KnowledgeDocument } from '@/lib/knowledge';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   doc: KnowledgeDocument | null;
@@ -15,6 +16,7 @@ const inputClass =
   'mt-1 w-full px-3 py-2 border border-border rounded-lg text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 
 export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
+  const T = useStaffT().t.kb.docEdit;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
@@ -31,16 +33,16 @@ export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
   const save = async () => {
     if (!doc) return;
     if (!title.trim()) {
-      setError('Enter a title.');
+      setError(T.enterTitle);
       return;
     }
     setSaving(true);
     try {
       await updateDocument(doc.id, { title: title.trim(), description: description.trim() });
-      toast.success('Document saved');
+      toast.success(T.saved);
       onSaved();
     } catch (e) {
-      setError(e instanceof KnowledgeError ? e.message : 'Could not save.');
+      setError(e instanceof KnowledgeError ? e.message : T.saveFailed);
       setSaving(false);
     }
   };
@@ -49,41 +51,41 @@ export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
     <Modal
       open={!!doc}
       onClose={onClose}
-      title="Edit document"
+      title={T.title}
       size="md"
       footer={
         <div className="flex items-center justify-end gap-3 w-full">
           <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-            Cancel
+            {T.cancel}
           </button>
           <button
             onClick={save}
             disabled={saving}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 disabled:opacity-60"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? T.saving : T.save}
           </button>
         </div>
       }
     >
       <div className="space-y-4">
         <label className="block">
-          <span className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Title</span>
+          <span className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.fieldTitle}</span>
           <input value={title} maxLength={200} autoFocus onChange={(e) => setTitle(e.target.value)} className={inputClass} />
-          <span className="text-[11px] text-muted-foreground">Shown to the AI assistant as the source name when it cites this document.</span>
+          <span className="text-[11px] text-muted-foreground">{T.titleHint}</span>
         </label>
         <label className="block">
-          <span className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Description</span>
+          <span className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.description}</span>
           <textarea
             value={description}
             maxLength={1000}
             rows={3}
-            placeholder="What is this document about?"
+            placeholder={T.descriptionPlaceholder}
             onChange={(e) => setDescription(e.target.value)}
             className={`${inputClass} resize-none`}
           />
         </label>
-        {doc && <p className="text-[11px] text-muted-foreground">File: {doc.fileName}</p>}
+        {doc && <p className="text-[11px] text-muted-foreground">{T.file(doc.fileName)}</p>}
         {error && <p className="text-[12px] text-danger">{error}</p>}
       </div>
     </Modal>
