@@ -19,6 +19,7 @@ import {
   updateWebDomain,
   type WebDomain,
 } from '@/lib/web-domains';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 const inputClass =
   'w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -34,6 +35,7 @@ interface Draft {
 
 export default function TrustedWebsites() {
   const supabase = useMemo(() => createClient(), []);
+  const T = useStaffT().t.websites;
   const [sites, setSites] = useState<WebDomain[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export default function TrustedWebsites() {
       setSites(await listWebDomains(supabase));
       setLoadError(null);
     } catch (e) {
-      setLoadError(message(e, 'Could not load the websites.'));
+      setLoadError(message(e, T.errors.load));
     } finally {
       setLoading(false);
     }
@@ -64,15 +66,15 @@ export default function TrustedWebsites() {
   const save = async () => {
     if (!draft) return;
     if (!cleaned) {
-      setFormError('Enter a website address like cdc.gov.');
+      setFormError(T.errors.enterAddress);
       return;
     }
     if (sites.some((s) => s.domain === cleaned && s.id !== draft.id)) {
-      setFormError('This website is already on the list.');
+      setFormError(T.errors.duplicate);
       return;
     }
     if (!draft.id && activeCount >= MAX_ACTIVE_WEB_DOMAINS) {
-      setFormError(`At most ${MAX_ACTIVE_WEB_DOMAINS} websites can be active. Turn one off or remove it first.`);
+      setFormError(T.tooMany(MAX_ACTIVE_WEB_DOMAINS));
       return;
     }
     setSaving(true);
@@ -80,15 +82,15 @@ export default function TrustedWebsites() {
     try {
       if (draft.id) {
         await updateWebDomain(supabase, draft.id, { domain: cleaned, label: draft.label });
-        toast.success(`${cleaned} saved`);
+        toast.success(T.saved(cleaned));
       } else {
         await createWebDomain(supabase, { domain: cleaned, label: draft.label });
-        toast.success(`${cleaned} added — the assistant can search it now`);
+        toast.success(T.added(cleaned));
       }
       setDraft(null);
       await load();
     } catch (e) {
-      setFormError(message(e, 'Could not save the website.'));
+      setFormError(message(e, T.errors.save));
     } finally {
       setSaving(false);
     }
@@ -97,16 +99,16 @@ export default function TrustedWebsites() {
   const toggle = async (site: WebDomain) => {
     const next = !site.active;
     if (next && activeCount >= MAX_ACTIVE_WEB_DOMAINS) {
-      toast.error(`At most ${MAX_ACTIVE_WEB_DOMAINS} websites can be active.`);
+      toast.error(T.tooManyShort(MAX_ACTIVE_WEB_DOMAINS));
       return;
     }
     setSites((list) => list.map((s) => (s.id === site.id ? { ...s, active: next } : s)));
     try {
       await updateWebDomain(supabase, site.id, { active: next });
-      toast.success(next ? `The assistant can search ${site.domain} again` : `The assistant no longer searches ${site.domain}`);
+      toast.success(next ? T.searchingAgain(site.domain) : T.notSearching(site.domain));
     } catch (e) {
       setSites((list) => list.map((s) => (s.id === site.id ? { ...s, active: site.active } : s)));
-      toast.error(message(e, 'Could not change the website.'));
+      toast.error(message(e, T.changeFailed));
     }
   };
 
@@ -115,11 +117,11 @@ export default function TrustedWebsites() {
     setRemoving(true);
     try {
       await deleteWebDomain(supabase, removeTarget.id);
-      toast.success(`${removeTarget.domain} removed`);
+      toast.success(T.removed(removeTarget.domain));
       setRemoveTarget(null);
       await load();
     } catch (e) {
-      toast.error(message(e, 'Could not remove the website.'));
+      toast.error(message(e, T.errors.remove));
     } finally {
       setRemoving(false);
     }
@@ -133,23 +135,20 @@ export default function TrustedWebsites() {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-[13px] text-secondary-foreground max-w-2xl">
-          When the assistant answers a general health question, it searches the Knowledge Base and these websites, and nothing
-          else on the web. A website also covers its subdomains.
-        </p>
+        <p className="text-[13px] text-secondary-foreground max-w-2xl">{T.intro}</p>
         <button
           onClick={openNew}
           className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
         >
           <Icon name="PlusIcon" size={16} variant="outline" />
-          Add Website
+          {T.add}
         </button>
       </div>
 
       {!loading && !loadError && sites.length > 0 && activeCount === 0 && (
         <div className="flex items-start gap-2 p-3 rounded-lg border border-warning/30 bg-warning/10 text-[13px] text-foreground">
           <Icon name="ExclamationTriangleIcon" size={16} variant="outline" className="text-warning shrink-0 mt-0.5" />
-          No website is active, so web search is off. The assistant answers from the Knowledge Base only.
+          {T.noneActive}
         </div>
       )}
 
@@ -163,10 +162,10 @@ export default function TrustedWebsites() {
         ) : loadError ? (
           <EmptyState
             icon="ExclamationTriangleIcon"
-            title="Could not load the websites"
+            title={T.loadFailedTitle}
             description={loadError}
             action={{
-              label: 'Retry',
+              label: T.retry,
               onClick: () => {
                 setLoading(true);
                 void load();
@@ -176,19 +175,19 @@ export default function TrustedWebsites() {
         ) : sites.length === 0 ? (
           <EmptyState
             icon="GlobeAltIcon"
-            title="No websites yet"
-            description="Web search is off until you add a website. The assistant answers from the Knowledge Base only."
-            action={{ label: 'Add Website', onClick: openNew }}
+            title={T.emptyTitle}
+            description={T.emptyBody}
+            action={{ label: T.add, onClick: openNew }}
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground">
-                  <th className="px-5 py-3">Website</th>
-                  <th className="px-5 py-3">Name shown on sources</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3 w-[150px] text-right">Actions</th>
+                  <th className="px-5 py-3">{T.columns.website}</th>
+                  <th className="px-5 py-3">{T.columns.label}</th>
+                  <th className="px-5 py-3">{T.columns.status}</th>
+                  <th className="px-5 py-3 w-[150px] text-right">{T.columns.actions}</th>
                 </tr>
               </thead>
               <tbody>
@@ -206,10 +205,10 @@ export default function TrustedWebsites() {
                       </a>
                     </td>
                     <td className="px-5 py-3 text-secondary-foreground">
-                      {site.label || <span className="text-muted-foreground">— (the address is shown)</span>}
+                      {site.label || <span className="text-muted-foreground">{T.addressShown}</span>}
                     </td>
                     <td className="px-5 py-3">
-                      <Badge variant={site.active ? 'active' : 'inactive'} label={site.active ? 'Active' : 'Off'} size="sm" />
+                      <Badge variant={site.active ? 'active' : 'inactive'} label={site.active ? T.active : T.off} size="sm" />
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-2">
@@ -220,16 +219,16 @@ export default function TrustedWebsites() {
                             setDraft({ id: site.id, domain: site.domain, label: site.label });
                           }}
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                          title="Edit"
-                          aria-label={`Edit ${site.domain}`}
+                          title={T.edit}
+                          aria-label={T.editSite(site.domain)}
                         >
                           <Icon name="PencilSquareIcon" size={16} variant="outline" />
                         </button>
                         <button
                           onClick={() => setRemoveTarget(site)}
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-danger"
-                          title="Remove"
-                          aria-label={`Remove ${site.domain}`}
+                          title={T.remove}
+                          aria-label={T.removeSite(site.domain)}
                         >
                           <Icon name="TrashIcon" size={16} variant="outline" />
                         </button>
@@ -246,7 +245,7 @@ export default function TrustedWebsites() {
       <Modal
         open={draft !== null}
         onClose={() => !saving && setDraft(null)}
-        title={draft?.id ? 'Edit Website' : 'Add Website'}
+        title={draft?.id ? T.editTitle : T.add}
         size="md"
         footer={
           <>
@@ -255,14 +254,14 @@ export default function TrustedWebsites() {
               disabled={saving}
               className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
             >
-              Cancel
+              {T.cancel}
             </button>
             <button
               onClick={() => void save()}
               disabled={saving}
               className="px-5 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 disabled:opacity-60"
             >
-              {saving ? 'Saving…' : draft?.id ? 'Save Changes' : 'Add Website'}
+              {saving ? T.saving : draft?.id ? T.saveChanges : T.add}
             </button>
           </>
         }
@@ -277,7 +276,7 @@ export default function TrustedWebsites() {
           >
             <div>
               <label htmlFor="web-domain" className="block text-[13px] font-500 text-foreground mb-1">
-                Website address <span className="text-danger">*</span>
+                {T.address} <span className="text-danger">*</span>
               </label>
               <input
                 id="web-domain"
@@ -292,25 +291,23 @@ export default function TrustedWebsites() {
               />
               <p className="text-[11px] text-muted-foreground mt-1">
                 {draft.domain.trim() && cleaned && cleaned !== draft.domain.trim()
-                  ? `Will be saved as ${cleaned} (the whole site, subdomains included).`
-                  : 'The site’s address without https:// or a page path. You can paste a full link.'}
+                  ? T.willBeSaved(cleaned)
+                  : T.addressHint}
               </p>
             </div>
             <div>
               <label htmlFor="web-label" className="block text-[13px] font-500 text-foreground mb-1">
-                Name shown on sources
+                {T.label}
               </label>
               <input
                 id="web-label"
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
                 maxLength={120}
-                placeholder="Centers for Disease Control and Prevention"
+                placeholder={T.labelPlaceholder}
                 className={inputClass}
               />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Patients see this name next to an answer that used the site. Leave empty to show the address.
-              </p>
+              <p className="text-[11px] text-muted-foreground mt-1">{T.labelHint}</p>
             </div>
             {formError && <p className="text-[12px] text-danger">{formError}</p>}
           </form>
@@ -320,7 +317,7 @@ export default function TrustedWebsites() {
       <Modal
         open={removeTarget !== null}
         onClose={() => !removing && setRemoveTarget(null)}
-        title="Remove this website?"
+        title={T.removeTitle}
         size="sm"
         footer={
           <>
@@ -329,21 +326,22 @@ export default function TrustedWebsites() {
               disabled={removing}
               className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
             >
-              Cancel
+              {T.cancel}
             </button>
             <button
               onClick={() => void remove()}
               disabled={removing}
               className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90 disabled:opacity-60"
             >
-              {removing ? 'Removing…' : 'Remove'}
+              {removing ? T.removing : T.remove}
             </button>
           </>
         }
       >
         <p className="text-[13px] text-secondary-foreground">
-          The assistant will stop searching <span className="font-mono text-foreground">{removeTarget?.domain}</span>. Answers
-          already given keep their sources. To pause a site without removing it, turn it off instead.
+          {T.removeBefore}
+          <span className="font-mono text-foreground">{removeTarget?.domain}</span>
+          {T.removeAfter}
         </p>
       </Modal>
     </div>
