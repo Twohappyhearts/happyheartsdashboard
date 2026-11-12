@@ -20,12 +20,13 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
-  canCreateAdmin: boolean;
+  /** Careteam accounts create Patient accounts only. */
+  callerIsAdmin: boolean;
 }
 
 const EMPTY = { username: '', email: '', phone: '', password: '', confirm: '', role: 'patient' as AccountRole, displayId: '' };
 
-export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin }: Props) {
+export default function AddUserModal({ open, onClose, onCreated, callerIsAdmin }: Props) {
   const { t } = useStaffT();
   const T = t.users.addForm;
   const [form, setForm] = useState(EMPTY);
@@ -48,6 +49,8 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
     displayId: form.displayId.length > 50 ? T.maxChars(50) : null,
   };
   const valid = Object.values(errors).every((e) => !e);
+  // Typed into the form and not created yet: closing asks before discarding it.
+  const dirty = !created && JSON.stringify(form) !== JSON.stringify(EMPTY);
 
   const close = () => {
     setForm(EMPTY);
@@ -127,9 +130,10 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
       onClose={close}
       title={T.title}
       size="md"
-      footer={
+      dirty={dirty}
+      footer={(requestClose) => (
         <>
-          <button onClick={close} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+          <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
             {T.cancel}
           </button>
           <button
@@ -141,7 +145,7 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
             {T.create}
           </button>
         </>
-      }
+      )}
     >
       <form
         className="space-y-4"
@@ -226,10 +230,13 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
                 className={`${inputClass} appearance-none pr-8`}
               >
                 <option value="patient">{t.users.roleNames.patient}</option>
-                <option value="staff">{t.users.roleNames.staff}</option>
-                <option value="admin" disabled={!canCreateAdmin}>
+                <option value="staff" disabled={!callerIsAdmin}>
+                  {t.users.roleNames.staff}
+                  {callerIsAdmin ? '' : T.adminsOnly}
+                </option>
+                <option value="admin" disabled={!callerIsAdmin}>
                   {t.users.roleNames.admin}
-                  {canCreateAdmin ? '' : T.adminsOnly}
+                  {callerIsAdmin ? '' : T.adminsOnly}
                 </option>
               </select>
               <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -247,6 +254,10 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
             />
             <Err msg={errors.displayId} />
           </div>
+        </div>
+        <div className="-mt-2 space-y-1">
+          {!callerIsAdmin && <p className="text-[11px] text-muted-foreground">{T.patientsOnly}</p>}
+          <p className="text-[12px] text-muted-foreground">{t.users.roleAbilities[form.role]}</p>
         </div>
 
         <div className="flex items-start gap-2 p-3 rounded-lg bg-info/5 border border-info/20">

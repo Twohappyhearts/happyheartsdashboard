@@ -72,8 +72,11 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
     }
   };
 
+  // A typed search: closing asks before discarding it (opening a conversation closes directly).
+  const dirty = query.trim() !== '';
+
   return (
-    <Modal open={open} onClose={onClose} title={T.newConversation} size="md">
+    <Modal open={open} onClose={onClose} title={T.newConversation} size="md" dirty={dirty}>
       {error ? (
         <div className="p-4 rounded-lg border border-danger/30 bg-danger/5 text-[13px] text-foreground space-y-2">
           <p className="font-600 text-danger">{error.migration ? T.setupNeeded : T.failed}</p>

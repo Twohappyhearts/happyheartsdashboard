@@ -166,7 +166,7 @@ export default function ContentForm({
           videoDuration: '',
           audioDuration: '',
           groupName: nextGroupName,
-          active: true,
+          active: false,
         },
   });
 

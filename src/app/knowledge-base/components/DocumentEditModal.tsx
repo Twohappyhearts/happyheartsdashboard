@@ -30,6 +30,9 @@ export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
     setError(null);
   }, [doc]);
 
+  // Changed title or description: closing asks before discarding it.
+  const dirty = !!doc && (title !== doc.title || description !== doc.description);
+
   const save = async () => {
     if (!doc) return;
     if (!title.trim()) {
@@ -53,9 +56,10 @@ export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
       onClose={onClose}
       title={T.title}
       size="md"
-      footer={
+      dirty={dirty}
+      footer={(requestClose) => (
         <div className="flex items-center justify-end gap-3 w-full">
-          <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+          <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
             {T.cancel}
           </button>
           <button
@@ -66,7 +70,7 @@ export default function DocumentEditModal({ doc, onClose, onSaved }: Props) {
             {saving ? T.saving : T.save}
           </button>
         </div>
-      }
+      )}
     >
       <div className="space-y-4">
         <label className="block">

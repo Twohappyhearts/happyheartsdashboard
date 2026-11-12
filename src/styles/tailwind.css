@@ -64,6 +64,25 @@
     transition: margin-left 300ms ease;
   }
 
+  /*
+   * Row actions, the last column of a wide table: pinned to the right edge while the table
+   * scrolls sideways on narrower screens. Opaque, so scrolled cells pass under it; a row with
+   * its own tint sets --sticky-bg / --sticky-hover-bg to match.
+   */
+  .sticky-actions {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background-color: var(--sticky-bg, var(--card));
+    box-shadow: inset 1px 0 0 var(--border);
+  }
+  tbody tr:hover > .sticky-actions {
+    background-color: var(--sticky-hover-bg, color-mix(in srgb, var(--muted) 25%, var(--card)));
+  }
+  thead .sticky-actions {
+    background-color: var(--sticky-bg, color-mix(in srgb, var(--muted) 40%, var(--card)));
+  }
+
   .fade-in {
     animation: fadeIn 200ms ease forwards;
   }

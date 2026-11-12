@@ -37,6 +37,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .maybeSingle();
     if (curErr) throw curErr;
     if (!current) throw new ApiError(404, 'User not found.');
+    // Careteam accounts may change Patient accounts only, in any way; Admins any account.
+    assertCanManageRole(caller, current.role as AccountRole);
 
     const roleUpdate: { role?: AccountRole; is_active?: boolean } = {};
     if (body.role !== undefined) {
@@ -52,7 +54,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const isActive = Boolean(body.isActive);
       if (isActive !== current.is_active) {
         if (id === caller.userId) throw new ApiError(400, 'You cannot disable your own account.');
-        assertCanManageRole(caller, current.role as AccountRole);
         roleUpdate.is_active = isActive;
       }
     }
@@ -67,9 +68,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const profileUpdate: { display_id?: string | null; phone?: string | null } = {};
     if (displayId !== undefined) profileUpdate.display_id = displayId;
     if (body.phone !== undefined) profileUpdate.phone = cleanPhone(body.phone);
-    if (Object.keys(profileUpdate).length > 0 && current.role === 'admin') {
-      assertCanManageRole(caller, 'admin');
-    }
 
     if (roleUpdate.is_active !== undefined) {
       const { error } = await admin.auth.admin.updateUserById(id, {
