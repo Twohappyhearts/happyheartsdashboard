@@ -38,7 +38,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (curErr) throw curErr;
     if (!current) throw new ApiError(404, 'User not found.');
     // Careteam accounts may change Patient accounts only, in any way; Admins any account.
-    assertCanManageRole(caller, current.role as AccountRole);
+    // Anyone may edit their own display ID and phone (role and status changes on your own
+    // account are refused below).
+    if (id !== caller.userId) assertCanManageRole(caller, current.role as AccountRole);
 
     const roleUpdate: { role?: AccountRole; is_active?: boolean } = {};
     if (body.role !== undefined) {
