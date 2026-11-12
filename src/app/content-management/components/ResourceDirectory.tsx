@@ -28,6 +28,7 @@ import { useStaffT } from '@/lib/i18n/staff/context';
 import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 import ResourceForm from './ResourceForm';
 import ResourceAiBadge from './ResourceAiBadge';
+import ResourceArticlePanel from './ResourceArticlePanel';
 
 const POLL_MS = 3000;
 
@@ -108,6 +109,14 @@ export default function ResourceDirectory({ onCountChange }: { onCountChange?: (
       }
     }
   }, [runs, t, lang]);
+
+  const onStarted = useCallback(
+    (runId: string | null) => {
+      if (runId) watched.current.add(runId);
+      void load();
+    },
+    [load],
+  );
 
   const items = resources ?? [];
   const q = search.trim().toLowerCase();
@@ -356,6 +365,8 @@ export default function ResourceDirectory({ onCountChange }: { onCountChange?: (
           </table>
         </div>
       </div>
+
+      <ResourceArticlePanel resources={resources} runs={runs} onStarted={onStarted} />
 
       <SlideOver
         open={panelOpen}

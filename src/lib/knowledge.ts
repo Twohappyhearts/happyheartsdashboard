@@ -204,7 +204,8 @@ export async function listDocuments(supabase: SupabaseClient, knowledgeBaseId: s
     .from('knowledge_documents')
     .select('id, title, description, file_name, mime_type, size_bytes, status, error, page_count, char_count, chunk_count, is_active, created_at, updated_at, uploaded_by, chunk_settings, processed_at, parser, parse_progress, parsed_path, parsed_at, job_progress, chunk_generation, embedding_model')
     .eq('knowledge_base_id', knowledgeBaseId)
-    .eq('source_type', 'upload')
+    // Uploaded files and the generated community resource directory (lesson copies are not listed).
+    .in('source_type', ['upload', 'resources'])
     .order('created_at', { ascending: false });
   if (error) {
     if (error.code === '42P01' || error.code === 'PGRST205') throw new KnowledgeError(staffText().kb.lib.runDocMigration);
