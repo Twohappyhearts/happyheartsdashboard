@@ -33,11 +33,31 @@ interface RenderEnv {
   linkableHosts: string[];
 }
 
-// Phone numbers in answers become tel: links: 911, 988 and 1-800-style numbers (also in Persian /
-// Arabic-Indic digits). No lookbehind: older iOS WebViews do not support it.
+// Phone numbers in answers become tel: links (also in Persian / Arabic-Indic digits):
+// - US numbers: 714-479-8868, (714) 479-8868, 714.479.8868, 714 479 8868, optionally after "1-"
+//   or "+1"; dialed as tel:+1 and the 10 digits;
+// - the short numbers 911, 988 and 211, dialed as written.
+// Not blood pressure (162/112), dates (11/12/2026), ranges (25-35), ZIP codes, years, digits in
+// links, or a street number such as "211 W Chestnut Ave". No lookbehind: older iOS WebViews do
+// not support it, so the character before a number is matched (group 1) instead.
 const DIGIT = '0-9\\u06F0-\\u06F9\\u0660-\\u0669';
-const PHONE = new RegExp(`(^|[^${DIGIT}-])([${DIGIT}]-[${DIGIT}]{3}-[${DIGIT}]{3}-[${DIGIT}]{4}|[${DIGIT}]{3})(?![${DIGIT}-])`, 'g');
-const SHORT_NUMBERS = new Set(['911', '988']);
+const D = `[${DIGIT}]`;
+const D2_9 = '[2-9\\u06F2-\\u06F9\\u0662-\\u0669]';
+const ONE = '[1\\u06F1\\u0661]';
+const US_NUMBER =
+  `(?:\\+?${ONE}(?:[-. ]|(?=\\()))?(?:\\(${D2_9}${D}{2}\\) ?|${D2_9}${D}{2}[-. ])${D2_9}${D}{2}[-. ]${D}{4}` +
+  `(?![${DIGIT}\\w]|[-.][${DIGIT}])`;
+const STREET = `\\s+(?:[NSEW]\\.?\\s|[A-Z][a-z]+\\s+(?:St|Ave|Blvd|Rd|Dr|Way|Ln)\\b)`;
+const SHORT_NUMBER = `${D}{3}(?![${DIGIT}\\w]|[-/.,:][${DIGIT}]|${STREET})`;
+const PHONE = new RegExp(`(^|[^${DIGIT}\\w#+\\-./,:])(${US_NUMBER}|${SHORT_NUMBER})`, 'g');
+const SHORT_NUMBERS = new Set(['911', '988', '211']);
+
+/** The tel: link of a matched number, or null for a 3-digit number that is not a short number. */
+function telHref(raw: string): string | null {
+  const digits = asciiDigits(raw).replace(/[^0-9]/g, '');
+  if (digits.length === 3) return SHORT_NUMBERS.has(digits) ? `tel:${digits}` : null;
+  return `tel:+1${digits.slice(-10)}`;
+}
 
 function textToken(state: StateCore, content: string): Token {
   const t = new state.Token('text', '', 0);
@@ -63,12 +83,12 @@ function telLinks(state: StateCore) {
       for (let m = PHONE.exec(text); m; m = PHONE.exec(text)) {
         const start = m.index + m[1].length;
         const raw = m[2];
-        const digits = asciiDigits(raw).replace(/-/g, '');
-        if (raw.length === 3 ? !SHORT_NUMBERS.has(digits) : !digits.startsWith('1')) continue;
+        const href = telHref(raw);
+        if (!href) continue;
         if (start > last) out.push(textToken(state, text.slice(last, start)));
         const open = new state.Token('link_open', 'a', 1);
         open.attrs = [
-          ['href', `tel:${digits}`],
+          ['href', href],
           ['dir', 'ltr'],
           ['class', 'font-700 underline underline-offset-2 whitespace-nowrap'],
         ];
