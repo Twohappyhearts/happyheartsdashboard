@@ -54,8 +54,9 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
   if (!user) return null;
 
   const isSelf = user.id === callerId;
-  // Careteam can manage patient accounts only; admins manage every account.
-  const locked = !callerIsAdmin && user.role !== 'patient';
+  // Careteam can manage patient accounts only (and edit their own display ID and phone);
+  // admins manage every account.
+  const locked = !callerIsAdmin && user.role !== 'patient' && !isSelf;
   const roleDisabled = isSelf || locked;
 
   const pendingChanges = () => {

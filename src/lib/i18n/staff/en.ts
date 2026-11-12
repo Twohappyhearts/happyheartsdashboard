@@ -1463,7 +1463,7 @@ export const en = {
     roleAbilities: {
       patient: 'Uses the Happy Hearts mobile app only. Cannot sign in to this dashboard.',
       staff:
-        'Uses every dashboard page except Legal Documents. Can create and manage Patient accounts, but not Careteam or Admin accounts.',
+        'Uses every dashboard page except Legal Documents. Can create and manage Patient accounts and edit their own Display ID and phone, but cannot manage other Careteam or Admin accounts.',
       admin:
         'Everything Careteam can do, plus managing Careteam and Admin accounts and uploading the Terms of Use and Privacy Policy (Legal Documents).',
     },
