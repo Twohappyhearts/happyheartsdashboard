@@ -29,9 +29,15 @@ import {
 } from '@/lib/content';
 import { releaseLessonFiles } from '@/lib/uploads';
 import { useStaffT } from '@/lib/i18n/staff/context';
+import ResourceDirectory from './ResourceDirectory';
 
+/**
+ * Sessions are content_items (kind 'session'). The Community Resources tab is the resource
+ * directory (public.community_resources, ResourceDirectory); the old content_items rows of kind
+ * 'resource' are kept in the database but no longer listed.
+ */
 type Tab = 'sessions' | 'resources';
-const kindOf = (tab: Tab): ContentKind => (tab === 'sessions' ? 'session' : 'resource');
+const SESSION: ContentKind = 'session';
 
 function formatEdited(iso: string, locale: string) {
   if (!iso) return '—';
@@ -44,7 +50,7 @@ export default function ContentManagementClient() {
   const T = t.content.page;
   const [activeTab, setActiveTab] = useState<Tab>('sessions');
   const [sessions, setSessions] = useState<ContentItem[] | null>(null);
-  const [resources, setResources] = useState<ContentItem[] | null>(null);
+  const [resourceCount, setResourceCount] = useState<number | null>(null);
   const [categories, setCategories] = useState<ContentCategory[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -67,15 +73,13 @@ export default function ContentManagementClient() {
 
   const load = useCallback(async () => {
     try {
-      const [s, r, c] = await Promise.all([
-        listContent(supabase, 'session'),
-        listContent(supabase, 'resource'),
-        listCategories(supabase),
-      ]);
+      const [s, c] = await Promise.all([listContent(supabase, SESSION), listCategories(supabase)]);
       setSessions(s);
-      setResources(r);
       setCategories(c);
       setLoadError(null);
+      // Only the tab label; the directory loads itself when its tab opens.
+      const { count } = await supabase.from('community_resources').select('id', { count: 'exact', head: true });
+      if (count != null) setResourceCount(count);
     } catch (e) {
       setLoadError(e instanceof ContentError ? e.message : T.loadFailed);
     }
@@ -85,9 +89,9 @@ export default function ContentManagementClient() {
     void load();
   }, [load]);
 
-  const items = (activeTab === 'sessions' ? sessions : resources) ?? [];
-  const setItems = activeTab === 'sessions' ? setSessions : setResources;
-  const loading = (activeTab === 'sessions' ? sessions : resources) === null && !loadError;
+  const items = sessions ?? [];
+  const setItems = setSessions;
+  const loading = sessions === null && !loadError;
 
   const filtered = items.filter((item) => {
     const q = search.toLowerCase();
@@ -143,7 +147,7 @@ export default function ContentManagementClient() {
       setItems((prev) => prev && prev.map((i) => (i.id === saved.id ? saved : i)));
       toast.success(T.updated);
     } else {
-      const saved = await createContent(supabase, kindOf(activeTab), input);
+      const saved = await createContent(supabase, SESSION, input);
       setItems((prev) => [...(prev ?? []), saved]);
       toast.success(T.created(saved.groupName || saved.groupId));
     }
@@ -167,10 +171,10 @@ export default function ContentManagementClient() {
     }
   };
 
-  const nextGroup = previewNextGroupId(kindOf(activeTab), items);
+  const nextGroup = previewNextGroupId(SESSION, items);
   const deleteTarget = items.find((i) => i.id === deleteConfirmId) ?? null;
   const isSessions = activeTab === 'sessions';
-  const colCount = isSessions ? 10 : 9;
+  const colCount = 10;
 
   return (
     <div className="space-y-5">
@@ -180,25 +184,25 @@ export default function ContentManagementClient() {
           <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
           <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
+        {isSessions && (
         <div className="flex items-center gap-2">
-          {isSessions && (
-            <button
-              onClick={() => setCategoriesOpen(true)}
-              className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
-            >
-              <Icon name="TagIcon" size={16} variant="outline" />
-              {T.categories}
-            </button>
-          )}
+          <button
+            onClick={() => setCategoriesOpen(true)}
+            className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
+          >
+            <Icon name="TagIcon" size={16} variant="outline" />
+            {T.categories}
+          </button>
           <button
             onClick={handleNew}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm disabled:opacity-60"
           >
             <Icon name="PlusIcon" size={16} variant="outline" />
-            {isSessions ? T.newSession : T.newResource}
+            {T.newSession}
           </button>
         </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -214,11 +218,15 @@ export default function ContentManagementClient() {
           >
             {tab === 'sessions'
               ? T.tabSessions(String(sessions?.length ?? '…'))
-              : T.tabResources(String(resources?.length ?? '…'))}
+              : T.tabResources(String(resourceCount ?? '…'))}
           </button>
         ))}
       </div>
 
+      {!isSessions && <ResourceDirectory onCountChange={setResourceCount} />}
+
+      {isSessions && (
+      <>
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative">
@@ -441,6 +449,9 @@ export default function ContentManagementClient() {
           </table>
         </div>
       </div>
+
+      </>
+      )}
 
       {/* Delete Confirm */}
       {deleteConfirmId && (

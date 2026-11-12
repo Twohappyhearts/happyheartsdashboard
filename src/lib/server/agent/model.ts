@@ -52,6 +52,9 @@ export const chatModel = (cfg: AgentConfig) => factory(cfg)(cfg.model);
 /** Model used to write context summaries. */
 export const summaryModel = (cfg: AgentConfig) => factory(cfg)(cfg.summaryModel);
 
+/** Any model of the configured provider, by id. */
+export const modelById = (cfg: AgentConfig, id: string) => factory(cfg)(id);
+
 /** providerOptions that turn the model's thinking up or down (OpenAI reasoning effort, DeepSeek thinking mode). */
 export function thinkingOptions(cfg: AgentConfig, enabled: boolean): ProviderOptions {
   if (cfg.provider === 'openai') return { openai: { reasoningEffort: enabled ? 'medium' : 'low' } };

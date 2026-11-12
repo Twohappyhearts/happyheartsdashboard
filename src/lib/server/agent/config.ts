@@ -81,7 +81,8 @@ const BASE_URL_VAR: Record<AgentProvider, string> = {
   dashscope: 'DASHSCOPE_BASE_URL',
   deepseek: 'DEEPSEEK_BASE_URL',
 };
-const DEFAULT_MODEL: Record<AgentProvider, string> = {
+/** The provider's default (and cheap) model; also used for community resource summaries (community-resources/summarize.ts). */
+export const DEFAULT_MODEL: Record<AgentProvider, string> = {
   openai: 'gpt-6-luna',
   dashscope: 'deepseek-v4.1-flash-1017',
   deepseek: 'deepseek-v4.1-flash-1017',

@@ -27,6 +27,12 @@ export interface RetrievalOptions {
   topK?: number;
   /** At most this many chunks from one document, so other documents get a place in the top K. */
   maxPerDocument?: number;
+  /**
+   * A different cap for documents of these knowledge_documents.source_type values, e.g.
+   * { resources: 8 } for the generated community resource directory (one document holding many
+   * separate entries). Used together with maxPerDocument.
+   */
+  maxPerDocumentBySourceType?: Record<string, number>;
   rerank?: boolean;
 }
 
@@ -118,7 +124,8 @@ export async function retrieve(admin: SupabaseClient, opts: RetrievalOptions): P
   });
 
   // 3. Rerank the fused candidates, keep top K (capped per document).
-  const keep = (ordered: RetrievedChunk[]) => capPerDocument(ordered, opts.maxPerDocument).slice(0, topK);
+  const limitFor = await perDocumentLimits(admin, fused, opts, warnings);
+  const keep = (ordered: RetrievedChunk[]) => capPerDocument(ordered, limitFor).slice(0, topK);
   let results = keep(fused);
   let reranked = false;
   const tRerank = Date.now();
@@ -143,12 +150,37 @@ export async function retrieve(admin: SupabaseClient, opts: RetrievalOptions): P
   };
 }
 
-function capPerDocument(ordered: RetrievedChunk[], max: number | undefined): RetrievedChunk[] {
-  if (!max) return ordered;
+/** The per-document cap for each candidate's document (null = no cap). */
+async function perDocumentLimits(
+  admin: SupabaseClient,
+  fused: RetrievedChunk[],
+  opts: RetrievalOptions,
+  warnings: string[],
+): Promise<((documentId: string) => number) | null> {
+  const base = opts.maxPerDocument;
+  if (!base) return null;
+  const special = opts.maxPerDocumentBySourceType ?? {};
+  if (!Object.keys(special).length || !fused.length) return () => base;
+  const ids = Array.from(new Set(fused.map((c) => c.documentId)));
+  const { data, error } = await admin.from('knowledge_documents').select('id, source_type').in('id', ids);
+  if (error) {
+    warnings.push(`Per-document limits by source type skipped — ${error.message}`);
+    return () => base;
+  }
+  const byDocument = new Map<string, number>();
+  for (const d of (data as Row[] | null) ?? []) {
+    const limit = special[String(d.source_type)];
+    if (limit) byDocument.set(String(d.id), limit);
+  }
+  return (documentId) => byDocument.get(documentId) ?? base;
+}
+
+function capPerDocument(ordered: RetrievedChunk[], limitFor: ((documentId: string) => number) | null): RetrievedChunk[] {
+  if (!limitFor) return ordered;
   const seen = new Map<string, number>();
   return ordered.filter((c) => {
     const n = (seen.get(c.documentId) ?? 0) + 1;
     seen.set(c.documentId, n);
-    return n <= max;
+    return n <= limitFor(c.documentId);
   });
 }

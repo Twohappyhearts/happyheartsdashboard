@@ -18,6 +18,11 @@ const MAX_CHUNK_CHARS = 2000;
 const MAX_CHUNKS_PER_DOCUMENT = 2;
 /** Eight results: a section that answers "when / how much" often ranks 6th to 8th behind overview sections. */
 const DEFAULT_TOP_K = 8;
+/**
+ * The community resource directory is one generated document (source_type 'resources') of many
+ * separate entries, so it may fill the whole top K (Bo, 2026-11-11).
+ */
+const MAX_CHUNKS_BY_SOURCE_TYPE = { resources: DEFAULT_TOP_K };
 
 export interface SearchResultItem {
   /** Number the model cites in its "[sources: …]" line; unique within one reply. */
@@ -104,7 +109,12 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
         topK: z.number().int().min(1).max(8).optional().describe(`How many passages to return (default ${DEFAULT_TOP_K}).`),
       }),
       execute: async ({ query, topK }): Promise<SearchToolOutput> => {
-        const r = await retrieve(caller.admin, { query, topK: topK ?? DEFAULT_TOP_K, maxPerDocument: MAX_CHUNKS_PER_DOCUMENT });
+        const r = await retrieve(caller.admin, {
+          query,
+          topK: topK ?? DEFAULT_TOP_K,
+          maxPerDocument: MAX_CHUNKS_PER_DOCUMENT,
+          maxPerDocumentBySourceType: MAX_CHUNKS_BY_SOURCE_TYPE,
+        });
         const sources = await documentSources(caller, r.results.map((c) => c.documentId));
         return {
           results: r.results.map((c) => ({
