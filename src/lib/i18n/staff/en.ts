@@ -1458,7 +1458,15 @@ export const en = {
     disabledToast: (username: string) => `@${username} disabled — they can no longer sign in`,
     statusFailed: 'Could not change the account status.',
     cantDisableSelf: 'You can’t disable your own account.',
-    adminOnly: 'Only an Admin can change Admin accounts.',
+    adminOnly: 'Only an Admin can manage Careteam and Admin accounts.',
+    /** Under the role choice in Add User and Edit User: what the chosen role can do. */
+    roleAbilities: {
+      patient: 'Uses the Happy Hearts mobile app only. Cannot sign in to this dashboard.',
+      staff:
+        'Uses every dashboard page except Legal Documents. Can create and manage Patient accounts, but not Careteam or Admin accounts.',
+      admin:
+        'Everything Careteam can do, plus managing Careteam and Admin accounts and uploading the Terms of Use and Privacy Policy (Legal Documents).',
+    },
     reenableFirst: 'Re-enable this account before messaging.',
     openChatFailed: 'Could not open the conversation.',
 
@@ -1488,6 +1496,7 @@ export const en = {
       confirm: 'Confirm Password',
       role: 'Role',
       adminsOnly: ' (admins only)',
+      patientsOnly: 'Only an Admin can create Careteam and Admin accounts.',
       displayId: 'Display ID',
       displayIdPlaceholder: 'Friendly name for display',
       mustChangeBefore: 'The user will be required to change this password on first login. Role: ',
@@ -1507,7 +1516,7 @@ export const en = {
       title: 'Edit User',
       cancel: 'Cancel',
       update: 'Update User',
-      adminOnly: 'Only an Admin can change Admin accounts.',
+      adminOnly: 'Only an Admin can manage Careteam and Admin accounts.',
       userId: 'User ID',
       username: 'Username',
       usernameLocked: 'Usernames can’t be changed — they link the account to REDCap survey responses.',
@@ -1822,7 +1831,7 @@ export const en = {
     staffOnlyFiles: 'Only active Careteam or Admin accounts can manage lesson files.',
     adminOnly: 'Only an active Admin account can do this.',
     adminOnlyLegal: 'Only an active Admin account can upload legal documents.',
-    adminOnlyAdmins: 'Only an Admin can create or change Admin accounts.',
+    adminOnlyCareteam: 'Only an Admin can manage Careteam and Admin accounts.',
     invalidRequest: 'Invalid request.',
     passwordShort: 'Password must be at least 8 characters.',
     passwordLong: 'Password must be at most 72 characters.',

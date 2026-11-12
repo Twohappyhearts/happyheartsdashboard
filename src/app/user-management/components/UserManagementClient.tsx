@@ -142,7 +142,9 @@ export default function UserManagementClient() {
     else { setSortKey(key); setSortDir('desc'); }
   };
 
-  const canManage = (u: ManagedUser) => u.id !== profile?.id && (callerIsAdmin || u.role !== 'admin');
+  // Careteam accounts manage patient accounts only; admins manage every account but their own status.
+  const canManage = (u: ManagedUser) => u.id !== profile?.id && (callerIsAdmin || u.role === 'patient');
+  const whyNotManage = (u: ManagedUser) => (u.id === profile?.id ? T.cantDisableSelf : T.adminOnly);
 
   const setActive = async (u: ManagedUser, active: boolean) => {
     setBusyId(u.id);
@@ -160,7 +162,7 @@ export default function UserManagementClient() {
 
   const requestToggle = (u: ManagedUser) => {
     if (!canManage(u)) {
-      toast.error(u.id === profile?.id ? T.cantDisableSelf : T.adminOnly);
+      toast.error(whyNotManage(u));
       return;
     }
     if (u.active) setActive(u, false);
@@ -378,7 +380,7 @@ export default function UserManagementClient() {
                           <button
                             onClick={() => requestToggle(user)}
                             disabled={!manageable || busyId === user.id}
-                            title={manageable ? T.disableAccount : T.cantDisable}
+                            title={manageable ? T.disableAccount : whyNotManage(user)}
                             className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-colors duration-100 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                           >
                             <Icon name="NoSymbolIcon" size={14} variant="outline" />
@@ -387,7 +389,7 @@ export default function UserManagementClient() {
                           <button
                             onClick={() => requestToggle(user)}
                             disabled={!manageable || busyId === user.id}
-                            title={T.reenableAccount}
+                            title={manageable ? T.reenableAccount : whyNotManage(user)}
                             className="p-1.5 rounded-md hover:bg-success/10 text-muted-foreground hover:text-success transition-colors duration-100 disabled:opacity-40"
                           >
                             <Icon name="CheckCircleIcon" size={14} variant="outline" />
@@ -507,6 +509,9 @@ export default function UserManagementClient() {
                   {T.edit}
                 </button>
               </div>
+              {!canManage(selectedPatient) && selectedPatient.id !== profile?.id && (
+                <p className="text-[11px] text-muted-foreground mt-2">{T.adminOnly}</p>
+              )}
               {selectedPatient.mustChangePassword && (
                 <p className="text-[11px] text-muted-foreground mt-2">{T.hasTempPassword}</p>
               )}
@@ -578,7 +583,7 @@ export default function UserManagementClient() {
         )}
       </SlideOver>
 
-      <AddUserModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={load} canCreateAdmin={callerIsAdmin} />
+      <AddUserModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={load} callerIsAdmin={callerIsAdmin} />
       <EditUserModal
         user={editing}
         callerId={profile?.id ?? null}

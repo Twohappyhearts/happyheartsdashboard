@@ -95,9 +95,12 @@ export function cleanPhone(phone: unknown): string | null {
   return (t.startsWith('+') ? '+' : '') + digits;
 }
 
-/** Only admins may create, change, or manage admin accounts. */
+/**
+ * Careteam (staff) accounts create and manage Patient accounts only; Admins manage every account.
+ * Pass every role involved: the account's current role and, for a role change, the new one.
+ */
 export function assertCanManageRole(caller: StaffCaller, ...roles: (AccountRole | null | undefined)[]) {
-  if (caller.role !== 'admin' && roles.some((r) => r === 'admin')) {
-    throw new ApiError(403, 'Only an Admin can create or change Admin accounts.');
+  if (caller.role !== 'admin' && roles.some((r) => r != null && r !== 'patient')) {
+    throw new ApiError(403, 'Only an Admin can manage Careteam and Admin accounts.');
   }
 }

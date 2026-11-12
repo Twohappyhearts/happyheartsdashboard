@@ -1445,7 +1445,14 @@ export const es: StaffText = {
     disabledToast: (username) => `Se desactivó @${username}: ya no puede iniciar sesión`,
     statusFailed: 'No se pudo cambiar el estado de la cuenta.',
     cantDisableSelf: 'No puede desactivar su propia cuenta.',
-    adminOnly: 'Solo un administrador puede cambiar cuentas de administrador.',
+    adminOnly: 'Solo un administrador puede administrar cuentas del equipo de atención y de administrador.',
+    roleAbilities: {
+      patient: 'Solo usa la app móvil de Happy Hearts. No puede iniciar sesión en este panel.',
+      staff:
+        'Usa todas las páginas del panel excepto Documentos legales. Puede crear y administrar cuentas de pacientes, pero no cuentas del equipo de atención ni de administrador.',
+      admin:
+        'Todo lo que puede hacer el equipo de atención, y además administrar cuentas del equipo de atención y de administrador y subir los Términos de uso y la Política de privacidad (Documentos legales).',
+    },
     reenableFirst: 'Vuelva a activar esta cuenta antes de enviarle mensajes.',
     openChatFailed: 'No se pudo abrir la conversación.',
 
@@ -1475,6 +1482,7 @@ export const es: StaffText = {
       confirm: 'Confirme la contraseña',
       role: 'Rol',
       adminsOnly: ' (solo administradores)',
+      patientsOnly: 'Solo un administrador puede crear cuentas del equipo de atención y de administrador.',
       displayId: 'ID visible',
       displayIdPlaceholder: 'Nombre amigable para mostrar',
       mustChangeBefore: 'El usuario tendrá que cambiar esta contraseña la primera vez que inicie sesión. Rol: ',
@@ -1493,7 +1501,7 @@ export const es: StaffText = {
       title: 'Editar usuario',
       cancel: 'Cancelar',
       update: 'Actualizar usuario',
-      adminOnly: 'Solo un administrador puede cambiar cuentas de administrador.',
+      adminOnly: 'Solo un administrador puede administrar cuentas del equipo de atención y de administrador.',
       userId: 'ID de usuario',
       username: 'Nombre de usuario',
       usernameLocked:
@@ -1794,7 +1802,7 @@ export const es: StaffText = {
     staffOnlyFiles: 'Solo las cuentas activas del equipo de atención o de administrador pueden administrar archivos de lecciones.',
     adminOnly: 'Solo una cuenta de administrador activa puede hacer esto.',
     adminOnlyLegal: 'Solo una cuenta de administrador activa puede subir documentos legales.',
-    adminOnlyAdmins: 'Solo un administrador puede crear o cambiar cuentas de administrador.',
+    adminOnlyCareteam: 'Solo un administrador puede administrar cuentas del equipo de atención y de administrador.',
     invalidRequest: 'Solicitud no válida.',
     passwordShort: 'La contraseña debe tener al menos 8 caracteres.',
     passwordLong: 'La contraseña debe tener como máximo 72 caracteres.',
