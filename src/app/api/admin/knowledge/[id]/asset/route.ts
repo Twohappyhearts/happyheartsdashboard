@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { KNOWLEDGE_BUCKET } from '@/lib/server/knowledge';
 import { UUID_RE } from '../../claim';
 
@@ -17,6 +17,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (error || !data) throw new ApiError(404, 'Image not found.');
     return NextResponse.redirect(data.signedUrl);
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

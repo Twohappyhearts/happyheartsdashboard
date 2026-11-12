@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { parseBudget } from '@/lib/server/rag/budget';
 import { budgetToSettings, chunkAndEmbed, parseThenChunk } from '../../process';
 import { UUID_RE, claimDocument } from '../../claim';
@@ -39,6 +39,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const result = needParse ? await parseThenChunk(admin, id, budget) : await chunkAndEmbed(admin, id, budget);
     return NextResponse.json(result);
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

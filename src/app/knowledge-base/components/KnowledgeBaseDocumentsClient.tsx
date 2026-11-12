@@ -36,6 +36,7 @@ import ChunkContent from './ChunkContent';
 import SearchTestPanel from './SearchTestPanel';
 import { useStaffT } from '@/lib/i18n/staff/context';
 import { staffText, type StaffText } from '@/lib/i18n/staff';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
 type DocsText = StaffText['kb']['docs'];
 
@@ -171,8 +172,10 @@ const actionBtn =
 
 export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { knowledgeBaseId: string }) {
   const supabase = useMemo(() => createClient(), []);
-  const { t, locale } = useStaffT();
+  const { t, lang, locale } = useStaffT();
   const T = t.kb.docs;
+  /** Processing errors are stored in English; show them in the dashboard language. */
+  const tr = (message: string) => translateServerMessage(message, lang);
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
   const [kbMissing, setKbMissing] = useState(false);
   const [editingKb, setEditingKb] = useState(false);
@@ -610,14 +613,14 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 text-[12px] text-foreground whitespace-nowrap" title={doc.error ?? undefined}>
+                        <span className="inline-flex items-center gap-1.5 text-[12px] text-foreground whitespace-nowrap" title={doc.error ? tr(doc.error) : undefined}>
                           <span className={`w-2 h-2 rounded-full ${st.dot}`} />
                           {T.status[st.label]}
                         </span>
                         {detail && (
                           <p
                             className={`text-[10px] mt-0.5 max-w-[220px] truncate ${detail.tone === 'danger' ? 'text-danger' : 'text-muted-foreground'}`}
-                            title={doc.error ?? detail.text}
+                            title={doc.error ? tr(doc.error) : detail.text}
                           >
                             {detail.text}
                           </p>
@@ -768,7 +771,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
             <p className="text-[13px] text-muted-foreground">
               {busy(viewing) ? T.beingChunked : T.notChunkedYet}
             </p>
-            {viewing.error && <p className="text-[12px] text-danger">{T.lastFailed(viewing.error)}</p>}
+            {viewing.error && <p className="text-[12px] text-danger">{T.lastFailed(tr(viewing.error))}</p>}
             {!busy(viewing) && (
               <button
                 onClick={() => setChunkTargets([viewing])}
@@ -787,7 +790,7 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
               {T.showSearchText}
             </label>
             {viewing && busy(viewing) && <p className="text-[12px] text-warning">{T.beingRechunked}</p>}
-            {viewing?.error && !busy(viewing) && <p className="text-[12px] text-danger">{T.rechunkFailed(viewing.error)}</p>}
+            {viewing?.error && !busy(viewing) && <p className="text-[12px] text-danger">{T.rechunkFailed(tr(viewing.error))}</p>}
             {chunks.map((c) => (
               <div key={c.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center gap-2 mb-2 flex-wrap text-[10px] text-muted-foreground">

@@ -13,6 +13,7 @@ import {
 } from '@/lib/knowledge';
 import { useStaffT } from '@/lib/i18n/staff/context';
 import type { StaffText } from '@/lib/i18n/staff';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
 const PRESETS: { label: keyof StaffText['kb']['chunkModal']['presets']; hint: string; settings: ChunkSettings }[] = [
   { label: 'fine', hint: '512 · ×2', settings: { targetChars: 512, overlapChars: 64, toleranceFactor: 2 } },
@@ -34,7 +35,8 @@ interface Props {
 }
 
 export default function ChunkModal({ open, docs, onClose, onProgress, defaults }: Props) {
-  const T = useStaffT().t.kb.chunkModal;
+  const { t, lang } = useStaffT();
+  const T = t.kb.chunkModal;
   const [draft, setDraft] = useState<ChunkSettingsDraft>(toDraft(DEFAULT_CHUNK_SETTINGS));
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
@@ -81,7 +83,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
           [doc.id]: !res.ok
             ? {
                 state: 'failed',
-                message: `${res.error ?? T.failed}${doc.chunkGeneration ? T.keptPrevious : ''}`,
+                message: `${res.error ? translateServerMessage(res.error, lang) : T.failed}${doc.chunkGeneration ? T.keptPrevious : ''}`,
               }
             : res.status === 'parsing'
               ? { state: 'background', message: T.background }

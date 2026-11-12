@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { refreshParse } from '../process';
 import { UUID_RE } from '../claim';
 
@@ -23,6 +23,6 @@ export async function POST(request: Request) {
     for (const id of valid) await refreshParse(admin, id);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

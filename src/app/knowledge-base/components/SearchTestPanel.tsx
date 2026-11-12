@@ -5,6 +5,7 @@ import Icon from '@/components/ui/AppIcon';
 import { KnowledgeError, hybridSearch, type SearchHit, type SearchResult } from '@/lib/knowledge';
 import ChunkContent from './ChunkContent';
 import { useStaffT } from '@/lib/i18n/staff/context';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
 const fieldClass =
   'w-full px-2.5 py-1.5 border border-border rounded-lg text-[12px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -72,7 +73,8 @@ function HitCard({ hit, position }: { hit: SearchHit; position: number }) {
 /** Hybrid search tester: keyword top N + vector top N → RRF → rerank → top K. */
 export default function SearchTestPanel({ knowledgeBaseId }: { knowledgeBaseId: string }) {
   const [open, setOpen] = useState(false);
-  const T = useStaffT().t.kb.searchTest;
+  const { t, lang } = useStaffT();
+  const T = t.kb.searchTest;
   const [query, setQuery] = useState('');
   const [keywordK, setKeywordK] = useState('20');
   const [vectorK, setVectorK] = useState('20');
@@ -172,7 +174,7 @@ export default function SearchTestPanel({ knowledgeBaseId }: { knowledgeBaseId: 
               </p>
               {result.warnings.map((w) => (
                 <p key={w} className="text-[12px] text-warning">
-                  {w}
+                  {translateServerMessage(w, lang)}
                 </p>
               ))}
               {result.results.length === 0 ? (

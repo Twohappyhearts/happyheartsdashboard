@@ -5,7 +5,7 @@ import {
   ROLES,
   assertCanManageRole,
   cleanPhone,
-  jsonError,
+  staffJsonError,
   requireStaffCaller,
   type AccountRole,
 } from '@/lib/server/staff-auth';
@@ -87,6 +87,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }
