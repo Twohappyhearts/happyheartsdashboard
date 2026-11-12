@@ -40,7 +40,7 @@ export default function SessionPerformanceTable({ rows: sessionData }: { rows: S
   if (sessionData.length === 0) {
     return (
       <p className="px-5 py-10 text-center text-[13px] text-muted-foreground">
-        No sessions yet. Add one in Content Management.
+        {T.empty}
       </p>
     );
   }

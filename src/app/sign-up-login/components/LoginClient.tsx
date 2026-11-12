@@ -8,6 +8,7 @@ import Icon from '@/components/ui/AppIcon';
 import { toast } from 'sonner';
 import { AuthError, useAuth } from '@/contexts/AuthContext';
 import { useStaffT } from '@/lib/i18n/staff/context';
+import LanguageSwitch from '@/components/LanguageSwitch';
 
 interface LoginFormData {
   email: string;
@@ -122,7 +123,10 @@ export default function LoginClient() {
       </div>
 
       {/* Right form panel */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 relative">
+        <div className="absolute top-4 right-4 lg:top-6 lg:right-6">
+          <LanguageSwitch />
+        </div>
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex items-center gap-2 mb-8 lg:hidden">

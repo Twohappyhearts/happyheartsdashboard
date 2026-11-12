@@ -6,7 +6,7 @@ import Icon from '@/components/ui/AppIcon';
 import { displayName, initials, useAuth } from '@/contexts/AuthContext';
 import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
 import { useStaffT } from '@/lib/i18n/staff/context';
-import { STAFF_LANGS, STAFF_LANG_NAMES } from '@/lib/i18n/staff';
+import LanguageSwitch from '@/components/LanguageSwitch';
 
 interface TopbarProps {
   sidebarCollapsed: boolean;
@@ -16,7 +16,7 @@ export default function Topbar({ sidebarCollapsed }: TopbarProps) {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const { profile, user } = useAuth();
   const { openCount: alertCount } = useOpenAlerts();
-  const { t, lang, setLang } = useStaffT();
+  const { t } = useStaffT();
   const name = profile?.fullName?.trim() || user?.email || displayName(profile);
   const roleLabel = profile?.role === 'admin' ? t.topbar.roleAdmin : t.topbar.roleStaff;
 
@@ -41,28 +41,7 @@ export default function Topbar({ sidebarCollapsed }: TopbarProps) {
       {/* Right actions */}
       <div className="flex items-center gap-2">
         {/* Dashboard language: English / Español (cookie hh_staff_lang) */}
-        <div
-          role="group"
-          aria-label={t.language.label}
-          title={lang === 'es' ? t.language.note : t.language.label}
-          className="flex items-center gap-0.5 p-0.5 bg-muted rounded-lg"
-        >
-          <Icon name="LanguageIcon" size={15} variant="outline" className="text-muted-foreground mx-1" />
-          {STAFF_LANGS.map((l) => (
-            <button
-              key={l}
-              type="button"
-              lang={l}
-              aria-pressed={lang === l}
-              onClick={() => lang !== l && setLang(l)}
-              className={`px-2 py-1 rounded-md text-[12px] font-600 transition-colors duration-150 ${
-                lang === l ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {STAFF_LANG_NAMES[l]}
-            </button>
-          ))}
-        </div>
+        <LanguageSwitch />
 
         {/* Alerts bell */}
         <Link

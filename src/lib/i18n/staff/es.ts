@@ -1431,6 +1431,7 @@ export const es: StaffText = {
       completions: 'Finalizaciones',
       completionRate: 'Tasa',
       hidden: '· oculta',
+      empty: 'Todavía no hay sesiones. Agregue una en Administración de contenido.',
     },
     individual: {
       loadFailed: 'No se pudieron cargar los pacientes.',

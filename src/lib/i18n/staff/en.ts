@@ -1440,6 +1440,7 @@ export const en = {
       completions: 'Completions',
       completionRate: 'Rate',
       hidden: '· hidden',
+      empty: 'No sessions yet. Add one in Content Management.',
     },
     individual: {
       loadFailed: 'Could not load patients.',
