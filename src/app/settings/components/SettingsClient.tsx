@@ -14,10 +14,10 @@ import {
   saveMessageLanguages,
   type MessageLanguagesSetting,
 } from '@/lib/app-settings';
-import { SETTINGS_TEXT as T } from '../text';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
-const formatWhen = (iso: string) =>
-  new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const formatWhen = (iso: string, locale: string) =>
+  new Date(iso).toLocaleString(locale, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** The stored order: the chosen language first, then the rest in the usual order. */
 const ordered = (checked: ReadonlySet<Language>, primary: Language): Language[] => [
@@ -29,6 +29,8 @@ const ordered = (checked: ReadonlySet<Language>, primary: Language): Language[] 
 export default function SettingsClient() {
   const supabase = useMemo(() => createClient(), []);
   const { user } = useAuth();
+  const { t, locale } = useStaffT();
+  const T = t.settings;
   const [saved, setSaved] = useState<MessageLanguagesSetting | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<Language>>(new Set());
@@ -123,7 +125,7 @@ export default function SettingsClient() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {LANGUAGES.map((lang) => {
                   const on = checked.has(lang);
-                  const name = LANGUAGE_NAMES[lang];
+                  const name = { label: t.languageNames[lang], native: LANGUAGE_NAMES[lang].native };
                   return (
                     <label
                       key={lang}
@@ -138,8 +140,8 @@ export default function SettingsClient() {
                         className="rounded border-border text-primary focus:ring-ring"
                       />
                       <span className="min-w-0">
-                        <span className="block text-[13px] font-500 text-foreground">{name.english}</span>
-                        {name.native !== name.english && (
+                        <span className="block text-[13px] font-500 text-foreground">{name.label}</span>
+                        {name.native !== name.label && (
                           <span className="block text-[11.5px] text-muted-foreground" lang={lang} dir="auto">
                             {name.native}
                           </span>
@@ -166,7 +168,7 @@ export default function SettingsClient() {
                 >
                   {LANGUAGES.filter((l) => checked.has(l)).map((l) => (
                     <option key={l} value={l}>
-                      {LANGUAGE_NAMES[l].english}
+                      {t.languageNames[l]}
                     </option>
                   ))}
                 </select>
@@ -182,7 +184,7 @@ export default function SettingsClient() {
             <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">
               <p className="text-[11.5px] text-muted-foreground">
                 {saved.updatedBy && saved.updatedAt
-                  ? T.lastChanged(formatWhen(saved.updatedAt), savedByName || T.someone)
+                  ? T.lastChanged(formatWhen(saved.updatedAt, locale), savedByName || T.someone)
                   : T.notChangedYet}
               </p>
               <div className="flex items-center gap-2">

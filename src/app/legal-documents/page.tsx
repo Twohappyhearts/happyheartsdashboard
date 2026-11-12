@@ -1,10 +1,11 @@
 import React from 'react';
 import AppLayout from '@/components/AppLayout';
 import LegalDocumentsClient from './components/LegalDocumentsClient';
-import { LEGAL_TEXT as T } from './text';
+import { getStaffText } from '@/lib/i18n/staff/server';
 
 /** Admins upload the Terms of Use and the Privacy Policy (PDF) here. */
-export default function LegalDocumentsPage() {
+export default async function LegalDocumentsPage() {
+  const T = (await getStaffText()).legal;
   return (
     <AppLayout>
       <div className="space-y-5">

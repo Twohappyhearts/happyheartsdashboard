@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LANGUAGES, isLanguage, type Language } from '@/lib/languages';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Settings the research team controls from the dashboard (public.app_settings, key → JSON).
@@ -46,11 +47,12 @@ export function readLanguageList(value: unknown): Language[] {
 }
 
 function fail(e: { code?: string; message?: string }, fallback: string): SettingsError {
-  if (e.code === '42501') return new SettingsError('Your account does not have staff permission for this.', e.code);
+  const E = staffText().settings.errors;
+  if (e.code === '42501') return new SettingsError(staffText().common.noStaffPermission, e.code);
   if (e.code === '42P01' || e.code === 'PGRST205') {
-    return new SettingsError('The settings table is missing. Run the latest database migration first.', e.code);
+    return new SettingsError(E.missingTable, e.code);
   }
-  if (e.code === '23514') return new SettingsError('Choose at least one language from the list.', e.code);
+  if (e.code === '23514') return new SettingsError(E.chooseFromList, e.code);
   return new SettingsError(`${fallback}${e.message ? `: ${e.message}` : ''}`, e.code);
 }
 
@@ -60,7 +62,7 @@ export async function getMessageLanguages(supabase: SupabaseClient): Promise<Mes
     .select('value, updated_at, updated_by')
     .eq('key', MESSAGE_LANGUAGES_KEY)
     .maybeSingle();
-  if (error) throw fail(error, 'Could not load the settings');
+  if (error) throw fail(error, staffText().settings.errors.load);
   return {
     languages: readLanguageList(data?.value),
     updatedAt: (data?.updated_at as string | null | undefined) ?? null,
@@ -74,13 +76,13 @@ export async function saveMessageLanguages(
   userId: string
 ): Promise<MessageLanguagesSetting> {
   const value = parseLanguageList(languages);
-  if (!value) throw new SettingsError('Choose at least one language.');
+  if (!value) throw new SettingsError(staffText().settings.errors.chooseOne);
   const { data, error } = await supabase
     .from('app_settings')
     .upsert({ key: MESSAGE_LANGUAGES_KEY, value, updated_by: userId }, { onConflict: 'key' })
     .select('value, updated_at, updated_by')
     .single();
-  if (error) throw fail(error, 'Could not save the settings');
+  if (error) throw fail(error, staffText().settings.errors.save);
   return {
     languages: parseLanguageList(data.value) ?? value,
     updatedAt: (data.updated_at as string | null) ?? null,

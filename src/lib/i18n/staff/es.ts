@@ -1512,4 +1512,101 @@ export const es: StaffText = {
       count: 'No se pudieron contar las lecciones.',
     },
   },
+
+  legal: {
+    pageTitle: 'Documentos legales',
+    pageSubtitle: 'Los Términos de uso y la Política de privacidad que los pacientes abren desde la app y el aviso de IA.',
+    intro:
+      'Suba cada versión nueva como PDF (10 MB o menos). Los pacientes ven la versión más reciente; las versiones anteriores siguen en la lista de abajo.',
+    adminOnlyTitle: 'Solo administradores',
+    adminOnlyBody: 'Solo una cuenta de administrador puede subir los Términos de uso y la Política de privacidad.',
+
+    kinds: {
+      terms: {
+        title: 'Términos de uso',
+        description: 'Enlazados desde el aviso de IA, la página Perfil de la app y la página de registro.',
+      },
+      privacy: {
+        title: 'Política de privacidad',
+        description: 'Enlazada desde la página Perfil de la app y la página de registro.',
+      },
+    },
+
+    currentVersion: (n) => `Versión ${n}`,
+    sampleBadge: 'Muestra',
+    noneUploaded:
+      'Todavía no se ha subido nada. Los pacientes ven la muestra incluida, marcada “SAMPLE – not reviewed” en cada página.',
+    openSample: 'Abrir la muestra',
+    openFile: 'Abrir el PDF',
+    uploadedOn: (when, who) => `Subido el ${when} por ${who}`,
+    someone: 'un miembro del equipo',
+    publicLink: 'Enlace que usa la app',
+    publicLinkHint: 'Siempre abre la versión actual. Funciona sin iniciar sesión.',
+    copy: 'Copiar el enlace',
+    copied: 'Enlace copiado',
+    copyFailed: 'No se pudo copiar. Seleccione el enlace y cópielo a mano.',
+    upload: 'Subir versión nueva',
+    uploading: 'Subiendo…',
+    history: 'Historial de versiones',
+    noHistory: 'Todavía no se han subido versiones.',
+    historyColumns: { version: 'Versión', file: 'Archivo', uploaded: 'Subido' },
+
+    termsConfirmTitle: '¿Subir nuevos Términos de uso?',
+    termsConfirmBody:
+      'A todos los pacientes se les pedirá que lean y acepten de nuevo el aviso de IA la próxima vez que abran el asistente de IA.',
+    termsConfirmFile: (name) => `Archivo: ${name}`,
+    termsConfirmButton: 'Subir y volver a pedir a todos',
+    cancel: 'Cancelar',
+
+    uploadedToast: (title, n) => `${title}: la versión ${n} ya está publicada`,
+    uploadedTermsToast: 'Se pedirá a los pacientes que acepten de nuevo el aviso de IA.',
+
+    errors: {
+      load: 'No se pudieron cargar los documentos legales.',
+      retry: 'Intentar de nuevo',
+      notPdf: 'Elija un archivo PDF.',
+      tooLarge: 'El PDF debe pesar 10 MB o menos.',
+      empty: 'El archivo está vacío.',
+      upload: 'No se pudo subir el archivo. Revise su conexión e intente de nuevo.',
+      missingTable: 'Falta la tabla de documentos legales. Ejecute primero la migración más reciente de la base de datos.',
+      loadDocs: 'No se pudieron cargar los documentos legales',
+      readVersion: 'No se pudo leer la versión actual',
+    },
+  },
+
+  settings: {
+    pageTitle: 'Configuración',
+    pageSubtitle: 'Decisiones que el equipo de investigación toma para todo el estudio.',
+
+    languages: {
+      title: 'Idiomas que el equipo de investigación lee en los mensajes de los pacientes',
+      body:
+        'Cuando un paciente escribe al equipo de investigación (chat del Equipo de investigación o Necesito ayuda) en un idioma que no está marcado aquí, la app muestra un aviso de que el equipo solo lee estos idiomas. El paciente puede enviar el mensaje igualmente o cambiarlo primero.',
+      aiBody:
+        'Los mensajes que el asistente de IA redacta para que un paciente los envíe al equipo de atención se escriben en el idioma elegido abajo (el primer idioma de esta lista).',
+      note: 'Esto no cambia el idioma en el que responde el asistente de IA.',
+      checkboxesLabel: 'Idiomas aceptados',
+      primaryLabel: 'Los mensajes redactados por la IA se escriben en',
+      atLeastOne: 'Elija al menos un idioma.',
+    },
+
+    save: 'Guardar',
+    saving: 'Guardando…',
+    reset: 'Deshacer los cambios',
+    saved: 'Configuración guardada',
+    lastChanged: (when, who) => `Último cambio: ${when}, por ${who}`,
+    notChangedYet: 'Todavía no se ha cambiado en el panel.',
+    someone: 'un miembro del equipo',
+    loadError: 'No se pudo cargar la configuración.',
+    saveError: 'No se pudo guardar la configuración. Revise su conexión e intente de nuevo.',
+    retry: 'Intentar de nuevo',
+
+    errors: {
+      missingTable: 'Falta la tabla de configuración. Ejecute primero la migración más reciente de la base de datos.',
+      chooseFromList: 'Elija al menos un idioma de la lista.',
+      chooseOne: 'Elija al menos un idioma.',
+      load: 'No se pudo cargar la configuración',
+      save: 'No se pudo guardar la configuración',
+    },
+  },
 };
