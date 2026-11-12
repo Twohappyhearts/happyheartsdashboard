@@ -14,6 +14,7 @@ import {
   type PatientListItem,
 } from '@/lib/chat';
 import { formatListTime } from './format';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   open: boolean;
@@ -23,6 +24,7 @@ interface Props {
 
 export default function NewChatModal({ open, onClose, onOpened }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const T = useStaffT().t.messages;
   const [patients, setPatients] = useState<PatientListItem[] | null>(null);
   const [error, setError] = useState<{ message: string; migration: boolean } | null>(null);
   const [query, setQuery] = useState('');
@@ -38,7 +40,7 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
       .catch((e) => {
         if (cancelled) return;
         setError({
-          message: e instanceof ChatError ? e.message : 'Could not load patients.',
+          message: e instanceof ChatError ? e.message : T.loadPatientsFailed,
           migration: e instanceof MissingMigrationError,
         });
       });
@@ -62,7 +64,7 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
       onOpened(id);
     } catch (e) {
       setError({
-        message: e instanceof ChatError ? e.message : 'Could not open conversation.',
+        message: e instanceof ChatError ? e.message : T.openFailed,
         migration: e instanceof MissingMigrationError,
       });
     } finally {
@@ -71,15 +73,13 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New conversation" size="md">
+    <Modal open={open} onClose={onClose} title={T.newConversation} size="md">
       {error ? (
         <div className="p-4 rounded-lg border border-danger/30 bg-danger/5 text-[13px] text-foreground space-y-2">
-          <p className="font-600 text-danger">{error.migration ? 'One-time database setup needed' : 'Something went wrong'}</p>
+          <p className="font-600 text-danger">{error.migration ? T.setupNeeded : T.failed}</p>
           <p>{error.message}</p>
           {error.migration && (
-            <p className="text-muted-foreground">
-              Existing conversations still work — this is only needed to message patients who haven&apos;t opened chat in the app yet.
-            </p>
+            <p className="text-muted-foreground">{T.setupHint}</p>
           )}
         </div>
       ) : patients === null ? (
@@ -99,13 +99,13 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by name or username"
+              placeholder={T.searchPlaceholder}
               className="w-full pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
           {visible.length === 0 ? (
             <p className="text-center text-[13px] text-muted-foreground py-6">
-              {patients.length === 0 ? 'No active patient accounts yet.' : 'No patients match your search.'}
+              {patients.length === 0 ? T.noPatients : T.noMatch}
             </p>
           ) : (
             <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
@@ -129,9 +129,9 @@ export default function NewChatModal({ open, onClose, onOpened }: Props) {
                         {opening === p.id ? (
                           <Icon name="ArrowPathIcon" size={14} variant="outline" className="animate-spin" />
                         ) : p.conversationId ? (
-                          p.lastMessageAt ? formatListTime(p.lastMessageAt) : 'Open'
+                          p.lastMessageAt ? formatListTime(p.lastMessageAt) : T.open
                         ) : (
-                          'Start'
+                          T.start
                         )}
                       </span>
                     </button>

@@ -1,4 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Staff-side chat data access. Mirrors happyhearts/lib/services/chat_service.dart.
@@ -70,17 +71,17 @@ export function compareMessages(a: ChatMessage, b: ChatMessage) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/** Error messages in the dashboard's language (src/lib/i18n/staff). */
+const E = () => staffText().messages.errors;
+
 function pgError(e: { code?: string; message?: string } | null, fallback: string): ChatError {
   if (!e) return new ChatError(fallback);
   if (e.code === 'PGRST202' || e.code === '42883') {
-    return new MissingMigrationError(
-      'Database function missing. Run supabase/migrations/20261019000600_staff_chat_helpers.sql in the Supabase SQL Editor.',
-      e.code
-    );
+    return new MissingMigrationError(E().missingFunction, e.code);
   }
-  if (e.code === '42501') return new ChatError('Your account does not have staff permission for this.', e.code);
-  if (e.code === '23514') return new ChatError(`Messages must be 1–${MAX_MESSAGE_LENGTH} characters.`, e.code);
-  return new ChatError(`${fallback}: ${e.message ?? 'unknown error'}`, e.code);
+  if (e.code === '42501') return new ChatError(staffText().common.noStaffPermission, e.code);
+  if (e.code === '23514') return new ChatError(E().tooLong(MAX_MESSAGE_LENGTH), e.code);
+  return new ChatError(`${fallback}: ${e.message ?? E().unknown}`, e.code);
 }
 
 function toPatient(raw: unknown, fallbackId: string): Patient {
@@ -98,7 +99,7 @@ export async function listConversations(supabase: SupabaseClient): Promise<Conve
     .select('id, patient_id, last_message_at, patient:profiles(id, full_name, username)')
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(500);
-  if (error) throw pgError(error, 'Could not load conversations');
+  if (error) throw pgError(error, E().loadConversations);
 
   const rows = (data ?? []) as Row[];
   const previews = await Promise.all(
@@ -132,7 +133,7 @@ export async function getConversation(
     .select('id, patient_id, last_message_at, patient:profiles(id, full_name, username)')
     .eq('id', conversationId)
     .maybeSingle();
-  if (error) throw pgError(error, 'Could not load conversation');
+  if (error) throw pgError(error, E().loadConversation);
   if (!data) return null;
   const r = data as Row;
   return {
@@ -158,7 +159,7 @@ export async function fetchPage(
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(PAGE_SIZE);
-  if (error) throw pgError(error, 'Could not load messages');
+  if (error) throw pgError(error, E().loadMessages);
   const rows = (data ?? []) as Row[];
   return { messages: rows.map((r) => toMessage(r)).reverse(), hasMore: rows.length >= PAGE_SIZE };
 }
@@ -177,7 +178,7 @@ export async function fetchSince(
     .order('created_at', { ascending: true })
     .order('id', { ascending: true })
     .limit(200);
-  if (error) throw pgError(error, 'Could not load messages');
+  if (error) throw pgError(error, E().loadMessages);
   return ((data ?? []) as Row[]).map((r) => toMessage(r));
 }
 
@@ -206,12 +207,12 @@ export async function sendMessage(
       .maybeSingle();
     if (existing) return toMessage(existing as Row);
   }
-  throw pgError(error, 'Message not sent');
+  throw pgError(error, E().notSent);
 }
 
 export async function listPatients(supabase: SupabaseClient): Promise<PatientListItem[]> {
   const { data, error } = await supabase.rpc('staff_list_patients');
-  if (error) throw pgError(error, 'Could not load patients');
+  if (error) throw pgError(error, E().loadPatients);
   return ((data ?? []) as Row[]).map((r) => ({
     id: String(r.id),
     fullName: ((r.full_name as string) ?? '').trim(),
@@ -228,9 +229,9 @@ export async function openConversationForPatient(
   const { data, error } = await supabase.rpc('staff_get_or_create_conversation', {
     p_patient_id: patientId,
   });
-  if (error) throw pgError(error, 'Could not open conversation');
+  if (error) throw pgError(error, E().open);
   const row = (Array.isArray(data) ? data[0] : data) as Row | null;
-  if (!row?.id) throw new ChatError('Could not open conversation.');
+  if (!row?.id) throw new ChatError(E().openDot);
   return String(row.id);
 }
 
@@ -282,5 +283,5 @@ export function newMessageId(): string {
 }
 
 export function patientName(p: Patient) {
-  return p.fullName || (p.username ? `@${p.username}` : 'Unknown patient');
+  return p.fullName || (p.username ? `@${p.username}` : E().unknownPatient);
 }
