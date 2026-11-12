@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 
 import type { ContentPerformance } from '@/lib/analytics';
 import { fmtDuration } from '@/lib/analytics';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 type SessionMetrics = ContentPerformance;
 
@@ -16,6 +17,7 @@ function fmtTime(sec: number): string {
 type SortKey = keyof SessionMetrics;
 
 export default function SessionPerformanceTable({ rows: sessionData }: { rows: SessionMetrics[] }) {
+  const T = useStaffT().t.analytics.table;
   const [sortKey, setSortKey] = useState<SortKey>('completionRate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -38,7 +40,7 @@ export default function SessionPerformanceTable({ rows: sessionData }: { rows: S
   if (sessionData.length === 0) {
     return (
       <p className="px-5 py-10 text-center text-[13px] text-muted-foreground">
-        No sessions yet. Add one in Content Management.
+        {T.empty}
       </p>
     );
   }
@@ -55,21 +57,21 @@ export default function SessionPerformanceTable({ rows: sessionData }: { rows: S
         <thead>
           <tr className="border-b border-border bg-muted/30">
             {[
-              { key: 'title', label: 'Session', sortable: false },
-              { key: 'opens', label: 'Opens', sortable: true },
-              { key: 'uniqueViewers', label: 'Unique', sortable: true },
-              { key: 'avgTimeSec', label: 'Avg Time', sortable: true },
-              { key: 'videoTaps', label: '▶ Video', sortable: true },
-              { key: 'videoSec', label: 'Watch Time', sortable: true },
-              { key: 'audioTaps', label: '♪ Audio', sortable: true },
-              { key: 'audioSec', label: 'Listen Time', sortable: true },
-              { key: 'infographicOpens', label: '🖼 Infographic', sortable: true },
-              { key: 'avgInfographicSec', label: 'Infographic Time', sortable: true },
-              { key: 'scriptSec', label: 'Notes Time', sortable: true },
-              { key: 'quizTaps', label: 'Quiz Taps', sortable: true },
-              { key: 'quizCompletions', label: 'Quiz Done', sortable: true },
-              { key: 'completions', label: 'Completions', sortable: true },
-              { key: 'completionRate', label: 'Rate', sortable: true },
+              { key: 'title', label: T.title, sortable: false },
+              { key: 'opens', label: T.opens, sortable: true },
+              { key: 'uniqueViewers', label: T.uniqueViewers, sortable: true },
+              { key: 'avgTimeSec', label: T.avgTimeSec, sortable: true },
+              { key: 'videoTaps', label: T.videoTaps, sortable: true },
+              { key: 'videoSec', label: T.videoSec, sortable: true },
+              { key: 'audioTaps', label: T.audioTaps, sortable: true },
+              { key: 'audioSec', label: T.audioSec, sortable: true },
+              { key: 'infographicOpens', label: T.infographicOpens, sortable: true },
+              { key: 'avgInfographicSec', label: T.avgInfographicSec, sortable: true },
+              { key: 'scriptSec', label: T.scriptSec, sortable: true },
+              { key: 'quizTaps', label: T.quizTaps, sortable: true },
+              { key: 'quizCompletions', label: T.quizCompletions, sortable: true },
+              { key: 'completions', label: T.completions, sortable: true },
+              { key: 'completionRate', label: T.completionRate, sortable: true },
             ].map((col) => (
               <th
                 key={`th-${col.key}`}
@@ -93,7 +95,7 @@ export default function SessionPerformanceTable({ rows: sessionData }: { rows: S
                 <p className="text-[13px] font-500 text-foreground truncate" title={row.title}>{row.title}</p>
                 <p className="text-[10px] text-muted-foreground font-mono">
                   {row.groupId}
-                  {!row.active && <span className="ml-1.5 font-sans text-warning">· hidden</span>}
+                  {!row.active && <span className="ml-1.5 font-sans text-warning">{T.hidden}</span>}
                 </p>
               </td>
               <td className="px-4 py-3 text-[13px] tabular-nums text-foreground">{row.opens}</td>

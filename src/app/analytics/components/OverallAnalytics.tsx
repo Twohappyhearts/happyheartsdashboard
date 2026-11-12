@@ -18,6 +18,10 @@ import {
   type WeeklyPoint,
 } from '@/lib/analytics';
 import type { ExportFn } from './AnalyticsClient';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import type { StaffText } from '@/lib/i18n/staff';
+
+type AnalyticsText = StaffText['analytics'];
 
 const WeeklyCompletionsChart = dynamic(() => import('./WeeklyCompletionsChart'), {
   ssr: false,
@@ -56,52 +60,54 @@ interface Kpi {
 const DAY = 24 * 60 * 60 * 1000;
 
 /** "+18% vs last week" for counts, falling back to "+3 this week". */
-function countChange(cur: number, prev: number): { change: string; trend: Trend } {
+function countChange(T: AnalyticsText, cur: number, prev: number): { change: string; trend: Trend } {
   if (prev > 0) {
     const pct = Math.round(((cur - prev) / prev) * 100);
-    return { change: `${pct >= 0 ? '+' : ''}${pct}% vs last week`, trend: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat' };
+    return { change: T.vsLastWeek(pct), trend: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat' };
   }
-  return cur > 0 ? { change: `+${cur} this week`, trend: 'up' } : { change: 'None this week', trend: 'flat' };
+  return cur > 0 ? { change: T.thisWeekCount(cur), trend: 'up' } : { change: T.noneThisWeek, trend: 'flat' };
 }
 
-function buildKpis(d: Data): Kpi[] {
+function buildKpis(d: Data, T: AnalyticsText, locale: string): Kpi[] {
   const { all, thisWeek: tw, lastWeek: lw } = d;
 
   const timeDiff = tw.avgTimeSec - lw.avgTimeSec;
   const timeTrend: Trend = tw.sessionOpens === 0 || lw.sessionOpens === 0 || timeDiff === 0 ? 'flat' : timeDiff > 0 ? 'up' : 'down';
   const timeChange =
     tw.sessionOpens === 0
-      ? 'No visits this week'
+      ? T.noVisitsThisWeek
       : lw.sessionOpens === 0
-        ? `${fmtDuration(tw.avgTimeSec)} this week`
-        : `${timeDiff >= 0 ? '+' : '-'}${fmtDuration(Math.abs(timeDiff))} vs last week`;
+        ? T.thisWeek(fmtDuration(tw.avgTimeSec))
+        : T.timeVsLastWeek(timeDiff >= 0 ? '+' : '-', fmtDuration(Math.abs(timeDiff)));
 
   const rateDiff = Math.round((tw.completionRate - lw.completionRate) * 10) / 10;
   const rateTrend: Trend = tw.sessionOpens === 0 || lw.sessionOpens === 0 || rateDiff === 0 ? 'flat' : rateDiff > 0 ? 'up' : 'down';
   const rateChange =
     tw.sessionOpens === 0
-      ? 'No visits this week'
+      ? T.noVisitsThisWeek
       : lw.sessionOpens === 0
-        ? `${tw.completionRate.toFixed(1)}% this week`
-        : `${rateDiff >= 0 ? '+' : ''}${rateDiff.toFixed(1)} pts vs last week`;
+        ? T.thisWeek(`${tw.completionRate.toFixed(1)}%`)
+        : T.ptsVsLastWeek(`${rateDiff >= 0 ? '+' : ''}${rateDiff.toFixed(1)}`);
 
   return [
-    { label: 'Total Session Opens', value: all.sessionOpens.toLocaleString(), ...countChange(tw.sessionOpens, lw.sessionOpens), icon: 'EyeIcon' },
+    { label: T.kpis.opens, value: all.sessionOpens.toLocaleString(locale), ...countChange(T, tw.sessionOpens, lw.sessionOpens), icon: 'EyeIcon' },
     {
-      label: 'Unique Viewers',
-      value: all.uniqueViewers.toLocaleString(),
-      change: `${tw.uniqueViewers} active this week`,
+      label: T.kpis.viewers,
+      value: all.uniqueViewers.toLocaleString(locale),
+      change: T.activeThisWeek(tw.uniqueViewers),
       trend: tw.uniqueViewers > 0 ? 'up' : 'flat',
       icon: 'UsersIcon',
     },
-    { label: 'Avg Time on Session', value: all.sessionOpens ? fmtDuration(all.avgTimeSec) : '—', change: timeChange, trend: timeTrend, icon: 'ClockIcon' },
-    { label: 'Completion Rate', value: `${all.completionRate.toFixed(1)}%`, change: rateChange, trend: rateTrend, icon: 'CheckCircleIcon' },
-    { label: 'Video Play Taps', value: all.videoPlays.toLocaleString(), ...countChange(tw.videoPlays, lw.videoPlays), icon: 'PlayIcon' },
-    { label: 'Infographic Opens', value: all.infographicOpens.toLocaleString(), ...countChange(tw.infographicOpens, lw.infographicOpens), icon: 'PhotoIcon' },
+    { label: T.kpis.avgTime, value: all.sessionOpens ? fmtDuration(all.avgTimeSec) : '—', change: timeChange, trend: timeTrend, icon: 'ClockIcon' },
+    { label: T.kpis.completion, value: `${all.completionRate.toFixed(1)}%`, change: rateChange, trend: rateTrend, icon: 'CheckCircleIcon' },
+    { label: T.kpis.videoTaps, value: all.videoPlays.toLocaleString(locale), ...countChange(T, tw.videoPlays, lw.videoPlays), icon: 'PlayIcon' },
+    { label: T.kpis.infographicOpens, value: all.infographicOpens.toLocaleString(locale), ...countChange(T, tw.infographicOpens, lw.infographicOpens), icon: 'PhotoIcon' },
   ];
 }
 
 export default function OverallAnalytics({ refreshKey, onLoaded, onExportReady }: Props) {
+  const { t, locale } = useStaffT();
+  const T = t.analytics;
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,7 +134,7 @@ export default function OverallAnalytics({ refreshKey, onLoaded, onExportReady }
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e instanceof AnalyticsError ? e.message : 'Could not load analytics.');
+        setError(e instanceof AnalyticsError ? e.message : T.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -164,7 +170,7 @@ export default function OverallAnalytics({ refreshKey, onLoaded, onExportReady }
     return () => onExportReady(null);
   }, [data, onExportReady]);
 
-  const kpis = useMemo(() => (data ? buildKpis(data) : []), [data]);
+  const kpis = useMemo(() => (data ? buildKpis(data, T, locale) : []), [data, T, locale]);
 
   if (error) {
     return (
@@ -204,8 +210,8 @@ export default function OverallAnalytics({ refreshKey, onLoaded, onExportReady }
       <div className="bg-card rounded-xl border border-border shadow-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-[15px] font-600 text-foreground">Weekly Session Completions</h2>
-            <p className="text-[12px] text-muted-foreground mt-0.5">Lesson opens and first-time completions per week over the past 8 weeks</p>
+            <h2 className="text-[15px] font-600 text-foreground">{T.weeklyTitle}</h2>
+            <p className="text-[12px] text-muted-foreground mt-0.5">{T.weeklyHint}</p>
           </div>
         </div>
         {data ? <WeeklyCompletionsChart data={data.weekly} /> : <Skeleton className="h-[260px] w-full" />}
@@ -214,8 +220,8 @@ export default function OverallAnalytics({ refreshKey, onLoaded, onExportReady }
       {/* Session Performance Table */}
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
-          <h2 className="text-[15px] font-600 text-foreground">All Content Performance</h2>
-          <p className="text-[12px] text-muted-foreground mt-0.5">Engagement metrics per session — sorted by completion rate</p>
+          <h2 className="text-[15px] font-600 text-foreground">{T.performanceTitle}</h2>
+          <p className="text-[12px] text-muted-foreground mt-0.5">{T.performanceHint}</p>
         </div>
         {data ? <SessionPerformanceTable rows={data.content} /> : <Skeleton className="h-[400px] w-full" />}
       </div>

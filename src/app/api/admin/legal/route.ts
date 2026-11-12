@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireAdminCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireAdminCaller } from '@/lib/server/staff-auth';
 import { LEGAL_BUCKET, LEGAL_COLUMNS, MAX_LEGAL_BYTES, isLegalKind, toLegalDocument } from '@/lib/legal';
 
 export const runtime = 'nodejs';
@@ -75,6 +75,6 @@ export async function POST(request: Request) {
         .catch((err: unknown) => ({ error: err instanceof Error ? err : new Error(String(err)) }));
       if (error) console.error('[legal upload] could not remove', stored, error.message);
     }
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /** Dashboard side of the AI knowledge base (reads via RLS, writes via /api/admin/knowledge). */
 
@@ -137,8 +138,8 @@ export function suggestSlug(name: string): string {
 export async function listKnowledgeBases(supabase: SupabaseClient): Promise<KnowledgeBase[]> {
   const { data, error } = await supabase.rpc('knowledge_base_list');
   if (error) {
-    if (error.code === 'PGRST202') throw new KnowledgeError('Run the knowledge_bases migration first.');
-    throw new KnowledgeError(error.message || 'Could not load knowledge bases.');
+    if (error.code === 'PGRST202') throw new KnowledgeError(staffText().kb.lib.runKbMigration);
+    throw new KnowledgeError(error.message || staffText().kb.lib.loadBases);
   }
   return ((data as Row[] | null) ?? []).map((r) => ({
     id: String(r.id),
@@ -206,8 +207,8 @@ export async function listDocuments(supabase: SupabaseClient, knowledgeBaseId: s
     .eq('source_type', 'upload')
     .order('created_at', { ascending: false });
   if (error) {
-    if (error.code === '42P01' || error.code === 'PGRST205') throw new KnowledgeError('Run the knowledge_base migration first.');
-    throw new KnowledgeError(error.message || 'Could not load documents.');
+    if (error.code === '42P01' || error.code === 'PGRST205') throw new KnowledgeError(staffText().kb.lib.runDocMigration);
+    throw new KnowledgeError(error.message || staffText().kb.lib.loadDocuments);
   }
   const rows = (data as Row[] | null) ?? [];
   // Uploader usernames (best effort — the list still works without them).
@@ -245,15 +246,16 @@ export async function listDocuments(supabase: SupabaseClient, knowledgeBaseId: s
   }));
 }
 
-/** "just now", "42 min ago", "3 h ago", else a short date. */
-export function fmtRelative(iso: string): string {
+/** "just now", "42 min ago", "3 h ago", else a short date (in the dashboard language). */
+export function fmtRelative(iso: string, locale = 'en-US'): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return '';
   const diff = Date.now() - t;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} h ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const T = staffText().kb.lib;
+  if (diff < 60_000) return T.justNow;
+  if (diff < 3_600_000) return T.minutesAgo(Math.floor(diff / 60_000));
+  if (diff < 86_400_000) return T.hoursAgo(Math.floor(diff / 3_600_000));
+  return new Date(iso).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 function parseSettings(raw: unknown): ChunkSettings | null {
@@ -296,7 +298,7 @@ export async function listChunks(supabase: SupabaseClient, documentId: string, g
     .eq('generation', generation)
     .order('chunk_index')
     .limit(2000);
-  if (error) throw new KnowledgeError(error.message || 'Could not load chunks.');
+  if (error) throw new KnowledgeError(error.message || staffText().kb.lib.loadChunks);
   return ((data as Row[] | null) ?? []).map((r) => {
     const m = (r.metadata ?? {}) as Record<string, unknown>;
     return {
@@ -325,7 +327,7 @@ export async function keywordSearch(
     p_knowledge_base_id: knowledgeBaseId,
     p_limit: limit,
   });
-  if (error) throw new KnowledgeError(error.message || 'Search failed.');
+  if (error) throw new KnowledgeError(error.message || staffText().kb.lib.searchFailed);
   return ((data as Row[] | null) ?? []).map((r) => {
     const m = (r.metadata ?? {}) as Record<string, unknown>;
     return {
@@ -345,10 +347,10 @@ async function api<T>(url: string, init: RequestInit): Promise<T> {
   try {
     res = await fetch(url, { credentials: 'same-origin', ...init });
   } catch {
-    throw new KnowledgeError('Network error. Check your connection and try again.');
+    throw new KnowledgeError(staffText().common.networkError);
   }
   const data = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!res.ok) throw new KnowledgeError(data?.error || `Request failed (${res.status}).`);
+  if (!res.ok) throw new KnowledgeError(data?.error || staffText().common.requestFailed(res.status));
   return data as T;
 }
 

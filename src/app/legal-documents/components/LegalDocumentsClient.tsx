@@ -20,17 +20,20 @@ import {
   type LegalDocument,
   type LegalKind,
 } from '@/lib/legal';
-import { LEGAL_TEXT as T } from '../text';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
-const formatWhen = (iso: string) =>
+const formatDate = (iso: string, locale: string) =>
   iso
-    ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    ? new Date(iso).toLocaleString(locale, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
     : '—';
 
 /** Admin page: upload new versions of the Terms of Use and the Privacy Policy. */
 export default function LegalDocumentsClient() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin' && profile.isActive;
+  const { t, locale } = useStaffT();
+  const T = t.legal;
+  const formatWhen = (iso: string) => formatDate(iso, locale);
   const supabase = useMemo(() => createClient(), []);
   const [docs, setDocs] = useState<LegalDocument[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

@@ -1,10 +1,11 @@
 import React from 'react';
 import AppLayout from '@/components/AppLayout';
 import SettingsClient from './components/SettingsClient';
-import { SETTINGS_TEXT as T } from './text';
+import { getStaffText } from '@/lib/i18n/staff/server';
 
 /** Study-wide settings staff can change (public.app_settings). */
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const T = (await getStaffText()).settings;
   return (
     <AppLayout>
       <div className="space-y-5">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { SLUG_RE, friendlyDbError, readKnowledgeBaseFields } from './validate';
 
 /**
@@ -28,6 +28,6 @@ export async function POST(request: Request) {
     if (error) friendlyDbError(error);
     return NextResponse.json({ id: data.id }, { status: 201 });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

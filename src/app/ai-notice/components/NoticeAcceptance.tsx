@@ -11,6 +11,7 @@ import { TERMS_URL } from '@/lib/agent-fixed-replies';
 import { LANGUAGE_NAMES, LANGUAGES, dirOf, type Language } from '@/lib/languages';
 import { downloadCsv, todayStamp } from '@/lib/analytics';
 import { listUsers } from '@/lib/users';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 /** current: accepted this notice and Terms of Use; outdated: accepted an older one, asked again; none: never accepted. */
 type Status = 'current' | 'outdated' | 'none';
@@ -29,19 +30,21 @@ interface Row {
 
 type Filter = 'all' | Status;
 
-const STATUS_LABEL: Record<Status, string> = { current: 'Accepted', outdated: 'Must accept again', none: 'Not yet' };
+/** For the CSV export, which stays in English (column names and values that analysis scripts read). */
+const CSV_STATUS: Record<Status, string> = { current: 'Accepted', outdated: 'Must accept again', none: 'Not yet' };
 const STATUS_BADGE: Record<Status, 'active' | 'warning' | 'inactive'> = { current: 'active', outdated: 'warning', none: 'inactive' };
 const STATUS_ORDER: Record<Status, number> = { current: 0, outdated: 1, none: 2 };
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-
-const versionLabel = (r: Pick<Row, 'version' | 'termsVersion'>) =>
-  r.version == null ? '—' : `Notice v${r.version} · Terms ${r.termsVersion ? `v${r.termsVersion}` : 'sample'}`;
+const formatDate = (iso: string, locale: string) =>
+  new Date(iso).toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** Which active patients accepted the notice shown before they use the AI assistant, and which version. */
 export default function NoticeAcceptance() {
   const supabase = useMemo(() => createClient(), []);
+  const { t, lang, locale } = useStaffT();
+  const T = t.aiNotice;
+  const STATUS_LABEL = T.status;
+  const versionLabel = (r: Pick<Row, 'version' | 'termsVersion'>) => (r.version == null ? '—' : T.versionLabel(r.version, r.termsVersion));
   const [rows, setRows] = useState<Row[]>([]);
   const [termsVersion, setTermsVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -82,7 +85,7 @@ export default function NoticeAcceptance() {
       );
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load the AI notice records.');
+      setError(e instanceof Error ? e.message : T.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -108,7 +111,7 @@ export default function NoticeAcceptance() {
         r.username,
         r.fullName,
         r.displayId,
-        STATUS_LABEL[r.status],
+        CSV_STATUS[r.status],
         r.version == null ? '' : String(r.version),
         r.termsVersion == null ? '' : String(r.termsVersion),
         r.agreedAt ?? '',
@@ -116,16 +119,16 @@ export default function NoticeAcceptance() {
     );
 
   const stats = [
-    { label: 'Accepted', value: currentCount, hint: `${percent}% of active patients, current versions`, icon: 'CheckCircleIcon', tone: 'text-success bg-success/10' },
+    { label: T.stats.accepted, value: currentCount, hint: T.stats.acceptedHint(percent), icon: 'CheckCircleIcon', tone: 'text-success bg-success/10' },
     {
-      label: 'Must accept again',
+      label: T.stats.again,
       value: outdatedCount,
-      hint: 'Accepted an older notice or Terms of Use; asked again the next time they open the AI assistant',
+      hint: T.stats.againHint,
       icon: 'ArrowPathIcon',
       tone: 'text-warning bg-warning/10',
     },
-    { label: 'Not yet', value: noneCount, hint: 'Have not opened the AI assistant yet, or left without accepting', icon: 'ClockIcon', tone: 'text-muted-foreground bg-muted' },
-    { label: 'Active patients', value: total, hint: 'Disabled accounts are not counted', icon: 'UsersIcon', tone: 'text-primary bg-primary/10' },
+    { label: T.stats.notYet, value: noneCount, hint: T.stats.notYetHint, icon: 'ClockIcon', tone: 'text-muted-foreground bg-muted' },
+    { label: T.stats.patients, value: total, hint: T.stats.patientsHint, icon: 'UsersIcon', tone: 'text-primary bg-primary/10' },
   ];
 
   const renderNotice = (lang: Language) => {
@@ -156,12 +159,11 @@ export default function NoticeAcceptance() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-[13px] text-secondary-foreground max-w-2xl">
-          Before a patient first uses the AI assistant in the app, a notice explains that its answers are for reference only and links to the{' '}
+          {T.introBefore}
           <a href={TERMS_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-            Terms of Use
+            {T.termsOfUse}
           </a>
-          . The patient cannot chat until they tick “{AI_NOTICE.en.agree}” and press “{AI_NOTICE.en.continue}”. When the notice changes or an
-          admin uploads a new Terms of Use, every patient is asked again.
+          {T.introAfter(AI_NOTICE[lang].agree, AI_NOTICE[lang].continue)}
         </p>
         <button
           onClick={exportCsv}
@@ -169,7 +171,7 @@ export default function NoticeAcceptance() {
           className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg text-[13px] font-600 text-foreground hover:bg-muted disabled:opacity-50 whitespace-nowrap"
         >
           <Icon name="ArrowDownTrayIcon" size={16} variant="outline" />
-          Export CSV
+          {T.exportCsv}
         </button>
       </div>
 
@@ -180,33 +182,31 @@ export default function NoticeAcceptance() {
           className="w-full flex items-center gap-2 px-5 py-3 text-left text-[13px] font-600 text-foreground"
         >
           <Icon name="DocumentTextIcon" size={16} variant="outline" className="text-muted-foreground" />
-          <span className="flex-1">
-            The notice patients see (notice version {AI_NOTICE_VERSION} · Terms of Use {termsVersion ? `version ${termsVersion}` : 'sample, none uploaded yet'})
-          </span>
+          <span className="flex-1">{T.noticeHeading(AI_NOTICE_VERSION, termsVersion)}</span>
           <Icon name={showNotice ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={14} variant="outline" className="text-muted-foreground" />
         </button>
         {showNotice && (
           <div className="grid md:grid-cols-2 gap-5 px-5 pb-5 border-t border-border pt-4">
             <div>
-              <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground mb-1.5">English (official)</p>
+              <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground mb-1.5">{T.englishOfficial}</p>
               {renderNotice('en')}
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1.5">
-                <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground">Translation</p>
+                <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground">{T.translation}</p>
                 <select
                   value={previewLang}
                   onChange={(e) => setPreviewLang(e.target.value as Language)}
-                  aria-label="Language"
+                  aria-label={T.language}
                   className="h-7 pl-2 pr-7 rounded-md border border-border bg-card text-[12px] text-foreground"
                 >
                   {LANGUAGES.filter((l) => l !== 'en').map((l) => (
                     <option key={l} value={l}>
-                      {LANGUAGE_NAMES[l].english}
+                      {t.languageNames[l]} · {LANGUAGE_NAMES[l].native}
                     </option>
                   ))}
                 </select>
-                <span className="text-[11px] text-muted-foreground">Machine translation, pending research-team review</span>
+                <span className="text-[11px] text-muted-foreground">{T.machineTranslation}</span>
               </div>
               {renderNotice(previewLang)}
             </div>
@@ -220,10 +220,10 @@ export default function NoticeAcceptance() {
         <div className="bg-card rounded-xl border border-border shadow-card">
           <EmptyState
             icon="ExclamationTriangleIcon"
-            title="Could not load the records"
+            title={T.loadFailedTitle}
             description={error}
             action={{
-              label: 'Retry',
+              label: T.retry,
               onClick: () => {
                 setLoading(true);
                 void load();
@@ -250,10 +250,8 @@ export default function NoticeAcceptance() {
 
           <div className="bg-card rounded-xl border border-border shadow-card p-4">
             <div className="flex items-center justify-between text-[12px] mb-1.5">
-              <span className="font-600 text-foreground">Accepted the current notice and Terms of Use</span>
-              <span className="text-muted-foreground tabular-nums">
-                {currentCount} of {total} ({percent}%)
-              </span>
+              <span className="font-600 text-foreground">{T.progressTitle}</span>
+              <span className="text-muted-foreground tabular-nums">{T.progressCount(currentCount, total, percent)}</span>
             </div>
             <div
               className="h-2 rounded-full bg-muted overflow-hidden"
@@ -261,7 +259,7 @@ export default function NoticeAcceptance() {
               aria-valuenow={percent}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label="Patients who accepted the current AI notice"
+              aria-label={T.progressLabel}
             >
               <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
             </div>
@@ -270,7 +268,7 @@ export default function NoticeAcceptance() {
           <div className="flex items-center gap-2 flex-wrap">
             {(
               [
-                { key: 'all', label: 'All', count: total },
+                { key: 'all', label: T.all, count: total },
                 { key: 'current', label: STATUS_LABEL.current, count: currentCount },
                 { key: 'outdated', label: STATUS_LABEL.outdated, count: outdatedCount },
                 { key: 'none', label: STATUS_LABEL.none, count: noneCount },
@@ -292,19 +290,19 @@ export default function NoticeAcceptance() {
             {visible.length === 0 ? (
               <EmptyState
                 icon="UsersIcon"
-                title={total === 0 ? 'No active patients yet' : 'No patients here'}
-                description={total === 0 ? 'Patients appear here once their accounts are created.' : 'No patient matches this filter.'}
+                title={total === 0 ? T.emptyNoneTitle : T.emptyFilterTitle}
+                description={total === 0 ? T.emptyNoneBody : T.emptyFilterBody}
               />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]">
                   <thead>
                     <tr className="border-b border-border text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground">
-                      <th className="px-5 py-3">Patient</th>
-                      <th className="px-5 py-3">Participant ID</th>
-                      <th className="px-5 py-3">AI notice</th>
-                      <th className="px-5 py-3">Accepted version</th>
-                      <th className="px-5 py-3">Accepted on</th>
+                      <th className="px-5 py-3">{T.columns.patient}</th>
+                      <th className="px-5 py-3">{T.columns.participantId}</th>
+                      <th className="px-5 py-3">{T.columns.notice}</th>
+                      <th className="px-5 py-3">{T.columns.version}</th>
+                      <th className="px-5 py-3">{T.columns.acceptedOn}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -319,7 +317,7 @@ export default function NoticeAcceptance() {
                           <Badge variant={STATUS_BADGE[r.status]} label={STATUS_LABEL[r.status]} size="sm" />
                         </td>
                         <td className="px-5 py-3 text-secondary-foreground tabular-nums whitespace-nowrap">{versionLabel(r)}</td>
-                        <td className="px-5 py-3 text-secondary-foreground tabular-nums">{r.agreedAt ? formatDate(r.agreedAt) : '—'}</td>
+                        <td className="px-5 py-3 text-secondary-foreground tabular-nums">{r.agreedAt ? formatDate(r.agreedAt, locale) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

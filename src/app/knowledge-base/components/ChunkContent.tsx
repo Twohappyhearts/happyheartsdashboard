@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { assetUrl } from '@/lib/knowledge';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Renders a chunk's content for preview: HTML tables become real tables (rebuilt
@@ -23,7 +24,7 @@ export default function ChunkContent({ documentId, content }: { documentId: stri
               {p.alt && <figcaption className="text-[10px] text-muted-foreground mt-0.5">{p.alt}</figcaption>}
             </figure>
           ) : (
-            <span key={`p-${i}`} className="text-muted-foreground">[image: {p.alt || p.src}]</span>
+            <span key={`p-${i}`} className="text-muted-foreground">[{staffText().kb.docs.image}: {p.alt || p.src}]</span>
           );
         }
         return p.value.trim() ? (

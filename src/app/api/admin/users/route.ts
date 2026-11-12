@@ -7,7 +7,7 @@ import {
   USERNAME_RE,
   assertCanManageRole,
   cleanPhone,
-  jsonError,
+  staffJsonError,
   passwordProblem,
   requireStaffCaller,
   type AccountRole,
@@ -89,6 +89,6 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ id: data.user.id }, { status: 201 });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

@@ -7,6 +7,7 @@ import { initials } from '@/contexts/AuthContext';
 import { compareMessages, MAX_MESSAGE_LENGTH, patientName, type ChatMessage, type ConversationSummary } from '@/lib/chat';
 import type { ThreadState } from './MessagesClient';
 import { dayKey, formatDayLabel, formatMessageTime } from './format';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   conversation: ConversationSummary | undefined;
@@ -39,6 +40,8 @@ export default function ChatThread({
   onReload,
   onNewChat,
 }: Props) {
+  const { t, locale } = useStaffT();
+  const T = t.messages;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const prepend = useRef<{ height: number; top: number } | null>(null);
@@ -79,15 +82,15 @@ export default function ChatThread({
       <div className="flex-1 flex items-center justify-center bg-background">
         <EmptyState
           icon="ChatBubbleLeftRightIcon"
-          title="Select a conversation"
-          description="Choose a patient on the left to read and reply to their messages, or start a new conversation."
-          action={{ label: 'New conversation', onClick: onNewChat }}
+          title={T.selectTitle}
+          description={T.selectBody}
+          action={{ label: T.newConversation, onClick: onNewChat }}
         />
       </div>
     );
   }
 
-  const name = conversation ? patientName(conversation.patient) : 'Loading…';
+  const name = conversation ? patientName(conversation.patient) : T.loading;
   const tooLong = draft.trim().length > MAX_MESSAGE_LENGTH;
   const canSend = draft.trim().length > 0 && !tooLong;
 
@@ -110,9 +113,9 @@ export default function ChatThread({
 
   const authorLabel = (m: ChatMessage) => {
     if (m.senderRole === 'user') return null;
-    if (m.senderId && m.senderId === myId) return myName ? `${myName} (you)` : 'You';
+    if (m.senderId && m.senderId === myId) return myName ? T.youNamed(myName) : T.you;
     if (m.senderId && names[m.senderId]) return names[m.senderId];
-    return 'Research Team';
+    return T.researchTeam;
   };
 
   return (
@@ -130,7 +133,7 @@ export default function ChatThread({
         </div>
         <div className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`} />
-          {connected ? 'Live' : 'Reconnecting…'}
+          {connected ? T.live : T.reconnecting}
         </div>
       </div>
 
@@ -142,7 +145,7 @@ export default function ChatThread({
           </div>
         )}
         {thread && !thread.hasMore && thread.loaded && messages.length > 0 && (
-          <p className="text-center text-[11px] text-muted-foreground py-2">Start of conversation</p>
+          <p className="text-center text-[11px] text-muted-foreground py-2">{T.startOfConversation}</p>
         )}
 
         {!thread || thread.loading ? (
@@ -153,12 +156,12 @@ export default function ChatThread({
           <div className="h-full flex flex-col items-center justify-center gap-3">
             <p className="text-[13px] text-danger text-center max-w-sm">{thread.error}</p>
             <button onClick={() => onReload(conversationId)} className="text-[13px] font-600 text-primary hover:underline">
-              Try again
+              {T.tryAgain}
             </button>
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-[13px] text-muted-foreground text-center">
-            No messages yet. Say hello — {name} will see it in the HappyHearts app.
+            {T.emptyThread(name)}
           </div>
         ) : (
           <div className="space-y-1">
@@ -192,19 +195,19 @@ export default function ChatThread({
                             ? `bg-primary text-primary-foreground rounded-br-md ${m.state !== 'sent' ? 'opacity-70' : ''}`
                             : 'bg-card text-foreground border border-border rounded-bl-md'
                         }`}
-                        title={new Date(m.createdAt).toLocaleString()}
+                        title={new Date(m.createdAt).toLocaleString(locale)}
                       >
                         {m.content}
                       </div>
                       {m.state === 'pending' && (
-                        <span className="text-[10.5px] text-muted-foreground mt-1 px-1">Sending…</span>
+                        <span className="text-[10.5px] text-muted-foreground mt-1 px-1">{T.sending}</span>
                       )}
                       {m.state === 'failed' && (
                         <span className="text-[11px] text-danger mt-1 px-1 flex items-center gap-1.5">
                           <Icon name="ExclamationCircleIcon" size={13} variant="outline" />
-                          {failReasons[m.id] ?? 'Not sent.'}
+                          {failReasons[m.id] ?? T.notSent}
                           <button onClick={() => onRetry(m)} className="font-600 underline">
-                            Retry
+                            {T.retry}
                           </button>
                         </span>
                       )}
@@ -231,21 +234,21 @@ export default function ChatThread({
               }
             }}
             rows={1}
-            placeholder={`Message ${name}`}
+            placeholder={T.placeholder(name)}
             className="flex-1 resize-none px-3.5 py-2.5 border border-border rounded-xl text-[13.5px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
             onClick={submit}
             disabled={!canSend}
             className="h-[42px] px-4 bg-primary text-primary-foreground rounded-xl text-[13px] font-600 hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
-            title="Send (Enter)"
+            title={T.sendHint}
           >
             <Icon name="PaperAirplaneIcon" size={15} variant="solid" />
-            Send
+            {T.send}
           </button>
         </div>
         <div className="flex justify-between mt-1.5 px-1 text-[11px] text-muted-foreground">
-          <span>Enter to send · Shift+Enter for a new line</span>
+          <span>{T.keys}</span>
           {draft.length > MAX_MESSAGE_LENGTH - 400 && (
             <span className={tooLong ? 'text-danger font-600' : ''}>
               {draft.trim().length}/{MAX_MESSAGE_LENGTH}

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Websites the AI assistant's web search is limited to (public.agent_web_domains).
@@ -49,10 +50,11 @@ type Row = Record<string, unknown>;
 
 function fail(e: { code?: string; message?: string } | null, fallback: string): WebDomainError {
   if (!e) return new WebDomainError(fallback);
-  if (e.code === '42501') return new WebDomainError('Your account does not have staff permission for this.', e.code);
-  if (e.code === '23505') return new WebDomainError('This website is already on the list.', e.code);
-  if (e.code === '23514') return new WebDomainError('Enter a website address like cdc.gov, and keep the name under 120 characters.', e.code);
-  if (e.code === 'PGRST205' || e.code === '42P01') return new WebDomainError('Run the agent_web_domains migration first.', e.code);
+  const E = staffText().websites.errors;
+  if (e.code === '42501') return new WebDomainError(staffText().common.noStaffPermission, e.code);
+  if (e.code === '23505') return new WebDomainError(E.duplicate, e.code);
+  if (e.code === '23514') return new WebDomainError(E.invalid, e.code);
+  if (e.code === 'PGRST205' || e.code === '42P01') return new WebDomainError(E.missingTable, e.code);
   return new WebDomainError(e.message || fallback, e.code);
 }
 
@@ -68,19 +70,19 @@ const toDomain = (r: Row): WebDomain => ({
 
 export async function listWebDomains(supabase: SupabaseClient): Promise<WebDomain[]> {
   const { data, error } = await supabase.from('agent_web_domains').select(COLUMNS).order('domain');
-  if (error) throw fail(error, 'Could not load the websites.');
+  if (error) throw fail(error, staffText().websites.errors.load);
   return ((data as Row[] | null) ?? []).map(toDomain);
 }
 
 export async function createWebDomain(supabase: SupabaseClient, input: { domain: string; label: string }): Promise<WebDomain> {
   const domain = cleanDomain(input.domain);
-  if (!domain) throw new WebDomainError('Enter a website address like cdc.gov.');
+  if (!domain) throw new WebDomainError(staffText().websites.errors.enterAddress);
   const { data, error } = await supabase
     .from('agent_web_domains')
     .insert({ domain, label: input.label.trim() })
     .select(COLUMNS)
     .single();
-  if (error) throw fail(error, 'Could not add the website.');
+  if (error) throw fail(error, staffText().websites.errors.add);
   return toDomain(data as Row);
 }
 
@@ -92,18 +94,18 @@ export async function updateWebDomain(
   const row: Row = {};
   if (patch.domain !== undefined) {
     const domain = cleanDomain(patch.domain);
-    if (!domain) throw new WebDomainError('Enter a website address like cdc.gov.');
+    if (!domain) throw new WebDomainError(staffText().websites.errors.enterAddress);
     row.domain = domain;
   }
   if (patch.label !== undefined) row.label = patch.label.trim();
   if (patch.active !== undefined) row.is_active = patch.active;
   const { data, error } = await supabase.from('agent_web_domains').update(row).eq('id', id).select(COLUMNS).maybeSingle();
-  if (error) throw fail(error, 'Could not save the website.');
-  if (!data) throw new WebDomainError('This website is no longer on the list. Refresh the page.');
+  if (error) throw fail(error, staffText().websites.errors.save);
+  if (!data) throw new WebDomainError(staffText().websites.errors.gone);
   return toDomain(data as Row);
 }
 
 export async function deleteWebDomain(supabase: SupabaseClient, id: string): Promise<void> {
   const { error } = await supabase.from('agent_web_domains').delete().eq('id', id);
-  if (error) throw fail(error, 'Could not remove the website.');
+  if (error) throw fail(error, staffText().websites.errors.remove);
 }

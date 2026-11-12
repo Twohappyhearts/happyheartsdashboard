@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { KNOWLEDGE_BUCKET } from '@/lib/server/knowledge';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,6 +30,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (error || !data) throw new ApiError(400, 'Could not create a download link.');
     return NextResponse.redirect(data.signedUrl);
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

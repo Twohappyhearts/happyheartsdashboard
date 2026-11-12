@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { staffText } from '@/lib/i18n/staff';
 
 export type AccountRole = 'patient' | 'staff' | 'admin';
 
@@ -113,7 +114,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         throw new AuthError(
           error.message === 'Invalid login credentials'
-            ? 'Incorrect email or password.'
+            ? staffText().auth.wrongPassword
             : error.message
         );
       }
@@ -122,8 +123,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         await supabase.auth.signOut();
         throw new AuthError(
           p.role === 'patient'
-            ? 'This is a patient account. Only research staff can use the dashboard.'
-            : 'This staff account is not active. Ask an admin to enable it.'
+            ? staffText().auth.patientAccount
+            : staffText().auth.inactiveAccount
         );
       }
       loadedFor.current = data.user.id;
@@ -146,12 +147,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         throw new AuthError(
           error.message.toLowerCase().includes('different')
-            ? 'Choose a password different from the temporary one.'
+            ? staffText().auth.samePassword
             : error.message
         );
       }
       const { error: rpcErr } = await supabase.rpc('complete_password_change');
-      if (rpcErr) throw new AuthError('Password changed, but the account could not be updated. Please refresh.');
+      if (rpcErr) throw new AuthError(staffText().auth.passwordChangedNotSaved);
       setProfile((p) => (p ? { ...p, mustChangePassword: false } : p));
     },
     [supabase]
@@ -172,9 +173,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 };
 
 export function displayName(p: { fullName?: string; full_name?: string; username?: string } | null | undefined) {
-  if (!p) return 'Unknown';
+  if (!p) return staffText().common.unknown;
   const name = (p.fullName ?? p.full_name ?? '').trim();
-  return name || (p.username ? `@${p.username}` : 'Unknown');
+  return name || (p.username ? `@${p.username}` : staffText().common.unknown);
 }
 
 export function initials(name: string) {

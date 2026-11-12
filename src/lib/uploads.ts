@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseUrl } from '@/lib/supabase/config';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Lesson files staff upload from the Content page (public bucket "lesson-materials"):
@@ -86,15 +87,14 @@ export async function uploadLessonFile(
   opts: { purpose: UploadPurpose; contentId?: string | null }
 ): Promise<UploadedFile> {
   const allowed = allowedMimeTypes(opts.purpose);
-  if (file.size === 0) throw new UploadError(`“${file.name}” is empty.`);
-  if (file.size > MAX_LESSON_FILE_BYTES) throw new UploadError(`“${file.name}” is larger than 50 MB.`);
+  const E = staffText().content.errors;
+  if (file.size === 0) throw new UploadError(E.fileEmpty(file.name));
+  if (file.size > MAX_LESSON_FILE_BYTES) throw new UploadError(E.fileTooLarge(file.name));
   // Trust the bytes, not the name: the bucket only checks the declared type.
   const mime = await sniffMimeType(file);
   if (!mime || !allowed.includes(mime)) {
     throw new UploadError(
-      opts.purpose === 'image'
-        ? `“${file.name}” is not a JPG, PNG or WebP image.`
-        : `“${file.name}” is not a JPG, PNG or WebP image or a PDF.`
+      opts.purpose === 'image' ? E.notImage(file.name) : E.notImageOrPdf(file.name)
     );
   }
 
@@ -111,13 +111,13 @@ export async function uploadLessonFile(
   }).catch(() => null);
   const body = res ? ((await res.json().catch(() => ({}))) as { error?: string; path?: string; token?: string; publicUrl?: string }) : {};
   if (!res || !res.ok || !body.path || !body.token || !body.publicUrl) {
-    throw new UploadError(body.error || 'Could not start the upload. Check your connection and try again.');
+    throw new UploadError(body.error || E.uploadStart);
   }
 
   const { error } = await supabase.storage
     .from(LESSON_BUCKET)
     .uploadToSignedUrl(body.path, body.token, file, { contentType: mime, cacheControl: '31536000', upsert: false });
-  if (error) throw new UploadError(`Could not upload “${file.name}”: ${error.message}`);
+  if (error) throw new UploadError(E.uploadFailed(file.name, error.message));
 
   return { url: body.publicUrl, name: file.name, mime, size: file.size };
 }

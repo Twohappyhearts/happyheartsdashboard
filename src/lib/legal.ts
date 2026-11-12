@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Terms of Use and Privacy Policy (public.legal_documents, bucket "legal").
@@ -74,7 +75,7 @@ export function toLegalDocument(supabase: SupabaseClient, r: Row): LegalDocument
 
 function fail(e: { code?: string; message?: string }, fallback: string): LegalError {
   if (e.code === '42P01' || e.code === 'PGRST205') {
-    return new LegalError('The legal documents table is missing. Run the latest database migration first.', e.code);
+    return new LegalError(staffText().legal.errors.missingTable, e.code);
   }
   return new LegalError(`${fallback}${e.message ? `: ${e.message}` : ''}`, e.code);
 }
@@ -86,7 +87,7 @@ export async function listLegalDocuments(supabase: SupabaseClient): Promise<Lega
     .select(LEGAL_COLUMNS)
     .order('kind')
     .order('version', { ascending: false });
-  if (error) throw fail(error, 'Could not load the legal documents');
+  if (error) throw fail(error, staffText().legal.errors.loadDocs);
   return ((data ?? []) as Row[]).map((r) => toLegalDocument(supabase, r));
 }
 
@@ -103,6 +104,6 @@ export async function currentLegalVersion(supabase: SupabaseClient, kind: LegalK
     .order('version', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw fail(error, 'Could not read the current version');
+  if (error) throw fail(error, staffText().legal.errors.readVersion);
   return Number((data as Row | null)?.version ?? 0);
 }

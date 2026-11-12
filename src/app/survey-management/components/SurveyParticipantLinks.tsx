@@ -9,6 +9,7 @@ import { displayName } from '@/contexts/AuthContext';
 import { listUsers, type ManagedUser } from '@/lib/users';
 import { completionsForSurvey, personalizedLink, type CompletionInfo } from '@/lib/surveys';
 import type { Survey } from './SurveyManagementClient';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface SurveyParticipantLinksProps {
   surveys: Survey[];
@@ -16,6 +17,8 @@ interface SurveyParticipantLinksProps {
 
 export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLinksProps) {
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useStaffT();
+  const T = t.surveys.participants;
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(surveys[0]?.id ?? null);
   const [patients, setPatients] = useState<ManagedUser[]>([]);
@@ -33,7 +36,7 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
         if (!cancelled) setPatients(list.filter(u => u.role === 'patient' && u.active));
       })
       .catch(e => {
-        if (!cancelled) setUsersError(e instanceof Error ? e.message : 'Could not load patients.');
+        if (!cancelled) setUsersError(e instanceof Error ? e.message : T.loadFailed);
       })
       .finally(() => {
         if (!cancelled) setLoadingUsers(false);
@@ -68,22 +71,22 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
 
   const handleCopy = (link: string, username: string) => {
     navigator.clipboard.writeText(link);
-    toast.success(`Copied link for ${username}`);
+    toast.success(T.copiedFor(username));
   };
 
   const handleCopyAll = () => {
     if (!selectedSurvey) return;
     const all = filteredUsers.map(u => `${u.username}: ${buildLink(selectedSurvey, u.username)}`).join('\n');
     navigator.clipboard.writeText(all);
-    toast.success(`Copied ${filteredUsers.length} participant links`);
+    toast.success(T.copiedAll(filteredUsers.length));
   };
 
   if (surveys.length === 0) {
     return (
       <div className="bg-card rounded-xl border border-border shadow-card p-10 text-center">
         <Icon name="ClipboardDocumentListIcon" size={32} variant="outline" className="text-muted-foreground mx-auto mb-3" />
-        <p className="text-[14px] font-600 text-foreground mb-1">No active surveys</p>
-        <p className="text-[12px] text-muted-foreground">Activate a survey in the Survey Links tab to view participant links here.</p>
+        <p className="text-[14px] font-600 text-foreground mb-1">{T.noActive}</p>
+        <p className="text-[12px] text-muted-foreground">{T.noActiveBody}</p>
       </div>
     );
   }
@@ -94,17 +97,15 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
       <div className="bg-info/5 border border-info/20 rounded-lg p-4 flex items-start gap-3">
         <Icon name="InformationCircleIcon" size={18} variant="outline" className="text-info shrink-0 mt-0.5" />
         <div>
-          <p className="text-[13px] font-600 text-foreground">Staff reference only</p>
-          <p className="text-[12px] text-muted-foreground mt-0.5">
-            These personalized links are for verification. The app builds them automatically for each logged-in patient — patients never type their username manually.
-          </p>
+          <p className="text-[13px] font-600 text-foreground">{T.staffOnly}</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5">{T.staffOnlyBody}</p>
         </div>
       </div>
 
       {/* Survey selector + search */}
       <div className="flex items-center gap-3 flex-wrap">
         <div>
-          <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">Survey</label>
+          <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{T.survey}</label>
           <select
             value={selectedSurvey?.id || ''}
             onChange={e => setSelectedId(e.target.value)}
@@ -116,12 +117,12 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
           </select>
         </div>
         <div className="flex-1">
-          <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">Search Patient</label>
+          <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{T.searchPatient}</label>
           <div className="relative">
             <Icon name="MagnifyingGlassIcon" size={14} variant="outline" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by username or name..."
+              placeholder={T.searchPlaceholder}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring w-64"
@@ -134,7 +135,7 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
             className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
           >
             <Icon name="ClipboardDocumentIcon" size={14} variant="outline" />
-            Copy All ({filteredUsers.length})
+            {T.copyAll(filteredUsers.length)}
           </button>
         </div>
       </div>
@@ -147,17 +148,17 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
               <p className="text-[13px] font-600 text-foreground">{selectedSurvey.title}</p>
               <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[400px]">{selectedSurvey.url}</p>
             </div>
-            <span className="text-[12px] text-muted-foreground">{filteredUsers.length} participants</span>
+            <span className="text-[12px] text-muted-foreground">{T.count(filteredUsers.length)}</span>
           </div>
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/20">
-                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Patient</th>
-                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Username (Participant Code)</th>
-                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Personalized Survey Link</th>
-                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">Completed</th>
-                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">Copy</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.patient}</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.username}</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.link}</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.completed}</th>
+                  <th className="text-left px-5 py-2.5 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">{T.columns.copy}</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,7 +173,7 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
                 ) : filteredUsers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-5 py-8 text-center text-[12px] text-muted-foreground">
-                      {patients.length === 0 ? 'No active patient accounts yet.' : 'No patients match your search.'}
+                      {patients.length === 0 ? T.noPatients : T.noMatch}
                     </td>
                   </tr>
                 ) : filteredUsers.map(user => {
@@ -199,8 +200,8 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
                       </td>
                       <td className="px-5 py-3 text-[12px] whitespace-nowrap">
                         {completion ? (
-                          <span className="text-success font-500" title={`${completion.count} completion${completion.count === 1 ? '' : 's'} recorded`}>
-                            ✓ {new Date(completion.lastAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          <span className="text-success font-500" title={T.completions(completion.count)}>
+                            ✓ {new Date(completion.lastAt).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
                             {completion.count > 1 ? ` (×${completion.count})` : ''}
                           </span>
                         ) : (
@@ -210,11 +211,11 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
                       <td className="px-5 py-3">
                         <button
                           onClick={() => handleCopy(link, user.username)}
-                          title={`Copy personalized link for ${user.username}`}
+                          title={T.copyFor(user.username)}
                           className="flex items-center gap-1.5 px-2.5 py-1.5 border border-border rounded-lg text-[11px] font-500 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-100"
                         >
                           <Icon name="ClipboardDocumentIcon" size={12} variant="outline" />
-                          Copy
+                          {T.copy}
                         </button>
                       </td>
                     </tr>

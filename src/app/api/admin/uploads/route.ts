@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { LESSON_BUCKET, MAX_LESSON_FILE_BYTES, MIME_EXT, allowedMimeTypes, type UploadPurpose } from '@/lib/uploads';
 
 export const runtime = 'nodejs';
@@ -62,6 +62,6 @@ export async function POST(request: Request) {
     if (error || !data) throw new ApiError(502, `Could not prepare the upload: ${error?.message ?? 'no upload URL'}`);
     return NextResponse.json({ path: data.path, token: data.token, publicUrl: bucket.getPublicUrl(data.path).data.publicUrl });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

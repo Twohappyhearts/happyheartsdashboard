@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { generateTempPassword, passwordStrength } from '@/lib/users';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 export const inputClass =
   'w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
@@ -21,6 +22,7 @@ interface Props {
 /** Password input with Show toggle, optional Generate button and strength meter. */
 export default function PasswordField({ id, value, onChange, showStrength, allowGenerate, placeholder }: Props) {
   const [show, setShow] = useState(false);
+  const T = useStaffT().t.password;
   const strength = passwordStrength(value);
   return (
     <div>
@@ -40,7 +42,7 @@ export default function PasswordField({ id, value, onChange, showStrength, allow
             onClick={() => setShow((s) => !s)}
             className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 text-[11px] font-600 text-muted-foreground hover:text-foreground"
           >
-            {show ? 'Hide' : 'Show'}
+            {show ? T.hide : T.show}
           </button>
         </div>
         {allowGenerate && (
@@ -50,11 +52,11 @@ export default function PasswordField({ id, value, onChange, showStrength, allow
               onChange(generateTempPassword());
               setShow(true);
             }}
-            title="Generate a strong temporary password"
+            title={T.generateHint}
             className="flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-150 whitespace-nowrap"
           >
             <Icon name="SparklesIcon" size={13} variant="outline" />
-            Generate
+            {T.generate}
           </button>
         )}
       </div>
@@ -68,7 +70,7 @@ export default function PasswordField({ id, value, onChange, showStrength, allow
               />
             ))}
           </div>
-          <span className="text-[11px] text-muted-foreground w-12 text-right">{strength.label}</span>
+          <span className="text-[11px] text-muted-foreground w-12 text-right">{T.strength[strength.score]}</span>
         </div>
       )}
     </div>

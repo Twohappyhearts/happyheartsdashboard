@@ -17,6 +17,7 @@ import {
 } from '@/lib/users';
 import PasswordField, { inputClass } from './PasswordField';
 import ReenableConfirmModal from './ReenableConfirmModal';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   user: ManagedUser | null;
@@ -27,6 +28,8 @@ interface Props {
 }
 
 export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, onSaved }: Props) {
+  const { t } = useStaffT();
+  const T = t.users.editForm;
   const [displayId, setDisplayId] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<AccountRole>('patient');
@@ -57,7 +60,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
 
   const save = async (skipConfirm = false) => {
     if (displayId.trim().length > 50) {
-      toast.error('Display ID must be 50 characters or fewer.');
+      toast.error(T.displayIdTooLong);
       return;
     }
     const phoneErr = phoneProblem(phone);
@@ -81,12 +84,12 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
     setSaving(true);
     try {
       await updateUser(user.id, changes);
-      toast.success(`Updated @${user.username}`);
+      toast.success(T.updated(user.username));
       setConfirmReenable(false);
       onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof UsersError ? e.message : 'Could not update the user.');
+      toast.error(e instanceof UsersError ? e.message : T.updateFailed);
     } finally {
       setSaving(false);
     }
@@ -95,19 +98,19 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
   const doReset = async () => {
     const problem = passwordProblem(newPassword);
     if (problem) {
-      toast.error(`Password: ${problem}`);
+      toast.error(T.passwordProblem(problem));
       return;
     }
     setResetting(true);
     try {
       await resetPassword(user.id, newPassword);
       navigator.clipboard?.writeText(newPassword).catch(() => {});
-      toast.success('Temporary password set and copied. The user must change it at next sign-in.');
+      toast.success(T.passwordSet);
       setShowReset(false);
       setNewPassword('');
       onSaved();
     } catch (e) {
-      toast.error(e instanceof UsersError ? e.message : 'Could not reset the password.');
+      toast.error(e instanceof UsersError ? e.message : T.resetFailed);
     } finally {
       setResetting(false);
     }
@@ -118,12 +121,12 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
       <Modal
         open={!!user && !confirmReenable}
         onClose={onClose}
-        title="Edit User"
+        title={T.title}
         size="md"
         footer={
           <>
             <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-              Cancel
+              {T.cancel}
             </button>
             <button
               onClick={() => save()}
@@ -131,7 +134,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 disabled:opacity-60"
             >
               {saving && <Icon name="ArrowPathIcon" size={14} variant="outline" className="animate-spin" />}
-              Update User
+              {T.update}
             </button>
           </>
         }
@@ -139,33 +142,33 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
         <div className="space-y-4">
           {locked && (
             <p className="text-[12px] text-warning bg-warning/5 border border-warning/20 rounded-lg px-3 py-2">
-              Only an Admin can change Admin accounts.
+              {T.adminOnly}
             </p>
           )}
           <div>
-            <label className="block text-[13px] font-500 text-foreground mb-1">User ID</label>
+            <label className="block text-[13px] font-500 text-foreground mb-1">{T.userId}</label>
             <input value={user.id} readOnly className="w-full px-3 py-2 border border-border rounded-lg text-[12px] font-mono text-muted-foreground bg-muted/50 cursor-not-allowed" />
           </div>
           <div>
-            <label className="block text-[13px] font-500 text-foreground mb-1">Username</label>
+            <label className="block text-[13px] font-500 text-foreground mb-1">{T.username}</label>
             <input value={user.username} readOnly className="w-full px-3 py-2 border border-border rounded-lg text-[13px] font-mono text-muted-foreground bg-muted/50 cursor-not-allowed" />
-            <p className="text-[11px] text-muted-foreground mt-1">Usernames can’t be changed — they link the account to REDCap survey responses.</p>
+            <p className="text-[11px] text-muted-foreground mt-1">{T.usernameLocked}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="eu-display" className="block text-[13px] font-500 text-foreground mb-1">Display ID</label>
+              <label htmlFor="eu-display" className="block text-[13px] font-500 text-foreground mb-1">{T.displayId}</label>
               <input
                 id="eu-display"
                 value={displayId}
                 onChange={(e) => setDisplayId(e.target.value)}
                 maxLength={50}
                 disabled={locked}
-                placeholder="Friendly name for display"
+                placeholder={T.displayIdPlaceholder}
                 className={`${inputClass} disabled:opacity-60`}
               />
             </div>
             <div>
-              <label htmlFor="eu-role" className="block text-[13px] font-500 text-foreground mb-1">Role</label>
+              <label htmlFor="eu-role" className="block text-[13px] font-500 text-foreground mb-1">{T.role}</label>
               <div className="relative">
                 <select
                   id="eu-role"
@@ -174,18 +177,18 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
                   disabled={roleDisabled}
                   className={`${inputClass} appearance-none pr-8 disabled:opacity-60`}
                 >
-                  <option value="patient">Patient</option>
-                  <option value="staff">Careteam</option>
-                  <option value="admin" disabled={!callerIsAdmin}>Admin</option>
+                  <option value="patient">{t.users.roleNames.patient}</option>
+                  <option value="staff">{t.users.roleNames.staff}</option>
+                  <option value="admin" disabled={!callerIsAdmin}>{t.users.roleNames.admin}</option>
                 </select>
                 <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               </div>
-              {isSelf && <p className="text-[11px] text-muted-foreground mt-1">You can’t change your own role.</p>}
+              {isSelf && <p className="text-[11px] text-muted-foreground mt-1">{T.ownRole}</p>}
             </div>
           </div>
 
           <div>
-            <label htmlFor="eu-phone" className="block text-[13px] font-500 text-foreground mb-1">Phone Number</label>
+            <label htmlFor="eu-phone" className="block text-[13px] font-500 text-foreground mb-1">{T.phone}</label>
             <input
               id="eu-phone"
               type="tel"
@@ -193,7 +196,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
               onChange={(e) => setPhone(e.target.value)}
               maxLength={30}
               disabled={locked}
-              placeholder="e.g. (949) 555-0100"
+              placeholder={T.phonePlaceholder}
               className={`${inputClass} disabled:opacity-60`}
             />
             {phone && phoneProblem(phone) && <p className="text-[11px] text-danger mt-1">{phoneProblem(phone)}</p>}
@@ -208,9 +211,9 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
               className="mt-0.5 accent-[var(--primary)]"
             />
             <span>
-              <span className="block text-[13px] font-500 text-foreground">Account Enabled</span>
+              <span className="block text-[13px] font-500 text-foreground">{T.enabled}</span>
               <span className="block text-[11px] text-muted-foreground">
-                {isSelf ? 'You can’t disable your own account.' : 'Uncheck to disable this account. Their data is kept.'}
+                {isSelf ? T.cantDisableSelf : T.enabledHint}
               </span>
             </span>
           </label>
@@ -223,11 +226,11 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
                 className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Icon name="KeyIcon" size={13} variant="outline" />
-                Reset Password
+                {T.resetPassword}
               </button>
             ) : (
               <div className="space-y-2">
-                <label htmlFor="eu-newpw" className="block text-[13px] font-500 text-foreground">New temporary password</label>
+                <label htmlFor="eu-newpw" className="block text-[13px] font-500 text-foreground">{T.newTempPassword}</label>
                 <PasswordField id="eu-newpw" value={newPassword} onChange={setNewPassword} showStrength allowGenerate />
                 <div className="flex items-center gap-2">
                   <button
@@ -235,7 +238,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
                     disabled={resetting}
                     className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-[12px] font-600 hover:opacity-90 disabled:opacity-60"
                   >
-                    {resetting ? 'Saving…' : 'Set Password'}
+                    {resetting ? T.saving : T.setPassword}
                   </button>
                   <button
                     onClick={() => {
@@ -244,10 +247,10 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
                     }}
                     className="px-3 py-1.5 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted"
                   >
-                    Cancel
+                    {T.cancel}
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">The user will be asked to choose a new password at their next sign-in.</p>
+                <p className="text-[11px] text-muted-foreground">{T.resetHint}</p>
               </div>
             )}
           </div>

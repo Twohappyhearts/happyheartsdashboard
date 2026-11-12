@@ -7,6 +7,7 @@ import Topbar from '@/components/Topbar';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
 import ChangePasswordGate from '@/components/ChangePasswordGate';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -44,6 +45,7 @@ export default function AppLayout({ children, fullBleed = false }: AppLayoutProp
     }
   };
   const { user, isStaff, loading, signOut, profile } = useAuth();
+  const { t } = useStaffT();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -68,10 +70,8 @@ export default function AppLayout({ children, fullBleed = false }: AppLayoutProp
           <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
             <Icon name="LockClosedIcon" size={24} variant="outline" className="text-muted-foreground" />
           </div>
-          <h1 className="text-[16px] font-600 text-foreground mb-1">Staff access only</h1>
-          <p className="text-[13px] text-muted-foreground mb-5">
-            {user.email} is not an active staff account. Ask an admin to grant the staff role.
-          </p>
+          <h1 className="text-[16px] font-600 text-foreground mb-1">{t.layout.staffOnlyTitle}</h1>
+          <p className="text-[13px] text-muted-foreground mb-5">{t.layout.staffOnlyBody(user.email ?? '')}</p>
           <button
             onClick={async () => {
               await signOut();
@@ -79,7 +79,7 @@ export default function AppLayout({ children, fullBleed = false }: AppLayoutProp
             }}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90"
           >
-            Sign out
+            {t.layout.signOut}
           </button>
         </div>
       </div>

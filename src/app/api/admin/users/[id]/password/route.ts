@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   ApiError,
   assertCanManageRole,
-  jsonError,
+  staffJsonError,
   passwordProblem,
   requireStaffCaller,
   type AccountRole,
@@ -47,6 +47,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (flagErr) throw flagErr;
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

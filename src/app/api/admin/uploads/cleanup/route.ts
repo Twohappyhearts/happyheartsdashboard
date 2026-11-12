@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { LESSON_BUCKET, lessonStoragePath } from '@/lib/uploads';
 
 export const runtime = 'nodejs';
@@ -38,6 +38,6 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ removed: unused.length, kept: paths.length - unused.length });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

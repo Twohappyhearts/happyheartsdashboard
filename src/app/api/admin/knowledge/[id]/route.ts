@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ApiError, jsonError, requireStaffCaller } from '@/lib/server/staff-auth';
+import { ApiError, staffJsonError, requireStaffCaller } from '@/lib/server/staff-auth';
 import { removeDocumentFiles } from '../files';
 import { UUID_RE, assertNotBusy } from '../claim';
 
@@ -36,7 +36,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!data || data.length === 0) throw new ApiError(404, 'Document not found.');
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }
 
@@ -60,6 +60,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (delErr) throw delErr;
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return jsonError(e);
+    return staffJsonError(e);
   }
 }

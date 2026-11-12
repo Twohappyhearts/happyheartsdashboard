@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
 import { displayName, initials, useAuth } from '@/contexts/AuthContext';
 import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import LanguageSwitch from '@/components/LanguageSwitch';
 
 interface TopbarProps {
   sidebarCollapsed: boolean;
@@ -14,8 +16,9 @@ export default function Topbar({ sidebarCollapsed }: TopbarProps) {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const { profile, user } = useAuth();
   const { openCount: alertCount } = useOpenAlerts();
+  const { t } = useStaffT();
   const name = profile?.fullName?.trim() || user?.email || displayName(profile);
-  const roleLabel = profile?.role === 'admin' ? 'Admin' : 'Staff';
+  const roleLabel = profile?.role === 'admin' ? t.topbar.roleAdmin : t.topbar.roleStaff;
 
   const sidebarWidth = sidebarCollapsed ? 'ml-16' : 'ml-60';
 
@@ -31,17 +34,20 @@ export default function Topbar({ sidebarCollapsed }: TopbarProps) {
       {/* Left: Page context is handled per-page */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-500 text-muted-foreground uppercase tracking-widest">
-          HappyHearts Admin
+          {t.topbar.brand}
         </span>
       </div>
 
       {/* Right actions */}
       <div className="flex items-center gap-2">
+        {/* Dashboard language: English / Español (cookie hh_staff_lang) */}
+        <LanguageSwitch />
+
         {/* Alerts bell */}
         <Link
           href="/alerts"
           className="relative p-2 rounded-lg hover:bg-muted transition-colors duration-150"
-          title={alertCount > 0 ? `${alertCount} open alert${alertCount === 1 ? '' : 's'}` : 'No open alerts'}
+          title={alertCount > 0 ? t.topbar.openAlerts(alertCount) : t.topbar.noOpenAlerts}
         >
           <Icon name="BellIcon" size={18} variant="outline" className="text-secondary-foreground" />
           {alertCount > 0 && (

@@ -5,6 +5,7 @@ import Icon from '@/components/ui/AppIcon';
 import { initials } from '@/contexts/AuthContext';
 import { patientName, type ConversationSummary } from '@/lib/chat';
 import { formatListTime } from './format';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   conversations: ConversationSummary[];
@@ -31,6 +32,7 @@ export default function ConversationList({
   onRetry,
   onNewChat,
 }: Props) {
+  const T = useStaffT().t.messages;
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -57,19 +59,19 @@ export default function ConversationList({
       <div className="px-4 pt-4 pb-3 border-b border-border space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h1 className="text-[17px] font-700 text-foreground">Messages</h1>
+            <h1 className="text-[17px] font-700 text-foreground">{T.title}</h1>
             <span
               className={`w-2 h-2 rounded-full ${connected ? 'bg-success' : 'bg-muted-foreground/40'}`}
-              title={connected ? 'Live updates on' : 'Connecting…'}
+              title={connected ? T.liveOn : T.connecting}
             />
           </div>
           <button
             onClick={onNewChat}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary text-primary-foreground rounded-lg text-[12px] font-600 hover:opacity-90 transition-opacity"
-            title="Start a conversation with a patient"
+            title={T.newHint}
           >
             <Icon name="PencilSquareIcon" size={14} variant="outline" />
-            New
+            {T.new}
           </button>
         </div>
 
@@ -83,7 +85,7 @@ export default function ConversationList({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search patients"
+            placeholder={T.searchPatients}
             className="w-full pl-8 pr-3 py-2 bg-muted rounded-lg text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
@@ -91,8 +93,8 @@ export default function ConversationList({
         <div className="flex gap-1 p-0.5 bg-muted rounded-lg">
           {(
             [
-              ['all', 'All'],
-              ['awaiting', `Needs reply${awaitingCount ? ` · ${awaitingCount}` : ''}`],
+              ['all', T.all],
+              ['awaiting', T.needsReply(awaitingCount)],
             ] as [Filter, string][]
           ).map(([key, label]) => (
             <button
@@ -126,22 +128,22 @@ export default function ConversationList({
           <div className="p-6 text-center">
             <p className="text-[13px] text-danger mb-3">{error}</p>
             <button onClick={onRetry} className="text-[13px] font-600 text-primary hover:underline">
-              Try again
+              {T.tryAgain}
             </button>
           </div>
         ) : visible.length === 0 ? (
           <div className="p-6 text-center text-[13px] text-muted-foreground">
             {conversations.length === 0 ? (
               <>
-                <p className="mb-3">No patient conversations yet.</p>
+                <p className="mb-3">{T.noConversations}</p>
                 <button onClick={onNewChat} className="font-600 text-primary hover:underline">
-                  Start one
+                  {T.startOne}
                 </button>
               </>
             ) : filter === 'awaiting' && !query ? (
-              'All caught up — no patients waiting for a reply.'
+              T.allCaughtUp
             ) : (
-              'No patients match your search.'
+              T.noMatch
             )}
           </div>
         ) : (
@@ -150,7 +152,7 @@ export default function ConversationList({
               const name = patientName(c.patient);
               const last = c.lastMessage;
               const awaiting = last?.senderRole === 'user';
-              const prefix = !last ? '' : last.senderRole === 'user' ? '' : last.senderId === myId ? 'You: ' : 'Team: ';
+              const prefix = !last ? '' : last.senderRole === 'user' ? '' : last.senderId === myId ? T.youPrefix : T.teamPrefix;
               const isActive = c.id === activeId;
               return (
                 <li key={c.id}>
@@ -178,7 +180,7 @@ export default function ConversationList({
                         </span>
                       </div>
                       <p className={`text-[12.5px] truncate mt-0.5 ${awaiting ? 'text-foreground' : 'text-muted-foreground'}`}>
-                        {last ? prefix + last.content : <span className="italic">No messages yet</span>}
+                        {last ? prefix + last.content : <span className="italic">{T.noMessagesYet}</span>}
                       </p>
                     </div>
                   </button>

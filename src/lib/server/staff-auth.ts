@@ -2,6 +2,8 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getStaffLang } from '@/lib/i18n/staff/server';
+import { translateServerMessage } from '@/lib/i18n/staff/server-messages';
 
 export type AccountRole = 'patient' | 'staff' | 'admin';
 
@@ -17,10 +19,20 @@ export class ApiError extends Error {
   }
 }
 
-export function jsonError(e: unknown) {
-  if (e instanceof ApiError) return NextResponse.json({ error: e.message }, { status: e.status });
+export function jsonError(e: unknown, translate: (message: string) => string = (m) => m) {
+  if (e instanceof ApiError) return NextResponse.json({ error: translate(e.message) }, { status: e.status });
   console.error('[admin api]', e);
-  return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
+  return NextResponse.json({ error: translate('Something went wrong. Please try again.') }, { status: 500 });
+}
+
+/**
+ * jsonError for the dashboard's own routes (src/app/api/admin/*): the message is in the staff
+ * dashboard language (hh_staff_lang cookie). The agent routes, which the patient chat also
+ * calls, keep jsonError.
+ */
+export async function staffJsonError(e: unknown) {
+  const lang = await getStaffLang();
+  return jsonError(e, (m) => translateServerMessage(m, lang));
 }
 
 /**
