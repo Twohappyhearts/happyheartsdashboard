@@ -13,6 +13,7 @@ import {
   updateCategory,
   type ContentCategory,
 } from '@/lib/content';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   open: boolean;
@@ -29,6 +30,7 @@ interface Props {
  */
 export default function CategoryManager({ open, onClose, categories, onChanged }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const T = useStaffT().t.content.categories;
   const [newName, setNewName] = useState('');
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +45,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
       toast.success(success);
       return true;
     } catch (e) {
-      toast.error(e instanceof ContentError ? e.message : 'Something went wrong.');
+      toast.error(e instanceof ContentError ? e.message : T.failed);
       return false;
     } finally {
       setBusy(false);
@@ -54,14 +56,14 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
     const name = newName.trim();
     if (!name) return;
     const nextOrder = sorted.reduce((m, c) => Math.max(m, c.sortOrder), 0) + 1;
-    if (await run(() => createCategory(supabase, name, nextOrder), `Added “${name}”`)) setNewName('');
+    if (await run(() => createCategory(supabase, name, nextOrder), T.added(name))) setNewName('');
   };
 
   const rename = async () => {
     if (!editing) return;
     const name = editing.name.trim();
     if (!name) return;
-    if (await run(() => updateCategory(supabase, editing.id, { name }), 'Category renamed')) setEditing(null);
+    if (await run(() => updateCategory(supabase, editing.id, { name }), T.renamed)) setEditing(null);
   };
 
   /** Swap positions with the neighbour, then renumber 1..n so orders stay clean. */
@@ -79,21 +81,18 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
             .map(({ c, order }) => updateCategory(supabase, c.id, { sortOrder: order }))
         );
       },
-      'Order updated'
+      T.orderUpdated
     );
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Content Categories" size="md">
+    <Modal open={open} onClose={onClose} title={T.title} size="md">
       <div className="space-y-4">
-        <p className="text-[12px] text-muted-foreground">
-          Categories appear as filter buttons in the app&apos;s Education tab, in this order. Inactive categories are hidden
-          from patients. A category that is still used by a session can&apos;t be deleted — deactivate it instead.
-        </p>
+        <p className="text-[12px] text-muted-foreground">{T.intro}</p>
 
         <ul className="divide-y divide-border border border-border rounded-lg overflow-hidden">
           {sorted.length === 0 && (
-            <li className="px-3 py-6 text-center text-[13px] text-muted-foreground">No categories yet.</li>
+            <li className="px-3 py-6 text-center text-[13px] text-muted-foreground">{T.none}</li>
           )}
           {sorted.map((c, i) => (
             <li key={c.id} className="flex items-center gap-2 px-3 py-2.5 bg-card">
@@ -101,7 +100,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                 <button
                   onClick={() => move(i, -1)}
                   disabled={busy || i === 0}
-                  title="Move up"
+                  title={T.moveUp}
                   className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
                 >
                   <Icon name="ChevronUpIcon" size={12} variant="outline" />
@@ -109,7 +108,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                 <button
                   onClick={() => move(i, 1)}
                   disabled={busy || i === sorted.length - 1}
-                  title="Move down"
+                  title={T.moveDown}
                   className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
                 >
                   <Icon name="ChevronDownIcon" size={12} variant="outline" />
@@ -135,13 +134,13 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                       disabled={busy}
                       className="px-2 py-1 bg-primary text-primary-foreground rounded-md text-[11.5px] font-600 disabled:opacity-60"
                     >
-                      Save
+                      {T.save}
                     </button>
                     <button
                       onClick={() => setEditing(null)}
                       className="px-2 py-1 border border-border rounded-md text-[11.5px] font-500"
                     >
-                      Cancel
+                      {T.cancel}
                     </button>
                   </div>
                 ) : (
@@ -150,8 +149,8 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                       {c.name}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {c.usageCount} {c.usageCount === 1 ? 'item' : 'items'}
-                      {c.isActive ? '' : ' · hidden from the app'}
+                      {T.items(c.usageCount)}
+                      {c.isActive ? '' : T.hiddenSuffix}
                     </p>
                   </>
                 )}
@@ -165,22 +164,22 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                     onChange={(val) =>
                       void run(
                         () => updateCategory(supabase, c.id, { isActive: val }),
-                        val ? `“${c.name}” is visible in the app` : `“${c.name}” is hidden from the app`
+                        val ? T.visible(c.name) : T.hidden(c.name)
                       )
                     }
                   />
                   <button
                     onClick={() => setEditing({ id: c.id, name: c.name })}
                     disabled={busy}
-                    title="Rename"
+                    title={T.rename}
                     className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <Icon name="PencilIcon" size={14} variant="outline" />
                   </button>
                   <button
-                    onClick={() => void run(() => deleteCategory(supabase, c.id), `Deleted “${c.name}”`)}
+                    onClick={() => void run(() => deleteCategory(supabase, c.id), T.deleted(c.name))}
                     disabled={busy || c.usageCount > 0}
-                    title={c.usageCount > 0 ? 'In use — deactivate it instead' : 'Delete'}
+                    title={c.usageCount > 0 ? T.inUse : T.delete}
                     className="p-1.5 rounded-md text-muted-foreground hover:bg-danger/10 hover:text-danger disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                   >
                     <Icon name="TrashIcon" size={14} variant="outline" />
@@ -197,7 +196,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
             maxLength={60}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void add()}
-            placeholder="New category name"
+            placeholder={T.newPlaceholder}
             className="flex-1 px-3 py-2 border border-border rounded-lg text-[13px] bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
@@ -206,7 +205,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 disabled:opacity-50"
           >
             <Icon name="PlusIcon" size={14} variant="outline" />
-            Add
+            {T.add}
           </button>
         </div>
       </div>

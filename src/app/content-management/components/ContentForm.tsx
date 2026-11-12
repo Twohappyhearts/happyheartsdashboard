@@ -22,7 +22,7 @@ import {
   uploadLessonFile,
   type UploadPurpose,
 } from '@/lib/uploads';
-import { CONTENT_TEXT as T } from './text';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface ContentFormProps {
   item: ContentItem | null;
@@ -90,8 +90,6 @@ function UploadButton({
 
 const HTTPS_LINK = /^https:\/\/\S+$/i;
 
-const HTTPS = { value: /^https:\/\/\S+$/i, message: 'Must be a full link starting with https://' };
-
 function getYouTubeId(url: string): string | null {
   const patterns = [
     /youtube\.com\/watch\?v=([^&]+)/,
@@ -125,6 +123,8 @@ export default function ContentForm({
   onDirtyChange,
 }: ContentFormProps) {
   const isSession = type === 'sessions';
+  const T = useStaffT().t.content.form;
+  const HTTPS = { value: HTTPS_LINK, message: T.httpsOnly };
   const supabase = useMemo(() => createClient(), []);
   const requestClose = useSlideOverClose();
   const {
@@ -216,7 +216,7 @@ export default function ContentForm({
       setValue(field, up.url, { shouldDirty: true, shouldValidate: true });
       toast.success(T.uploadedOk);
     } catch (e) {
-      setImageError((x) => ({ ...x, [field]: e instanceof UploadError ? e.message : 'Could not upload the image.' }));
+      setImageError((x) => ({ ...x, [field]: e instanceof UploadError ? e.message : T.imageUploadFailed }));
     } finally {
       setUploadingImage(null);
     }
@@ -242,7 +242,7 @@ export default function ContentForm({
           { name: up.name.trim().slice(0, 200) || 'File', url: up.url, kind: attachmentKindOf(up.mime), sizeBytes: up.size },
         ]);
       } catch (e) {
-        errors.push(e instanceof UploadError ? e.message : `Could not upload “${q.name}”.`);
+        errors.push(e instanceof UploadError ? e.message : T.fileUploadFailed(q.name));
       } finally {
         setPendingMaterials((p) => p.filter((x) => x.key !== q.key));
       }
@@ -284,7 +284,7 @@ export default function ContentForm({
       .map((r) => ({ title: r.title.trim(), url: r.url.trim() }))
       .filter((r) => r.title || r.url);
     if (cleaned.some((r) => !HTTPS_LINK.test(r.url))) {
-      setReferenceError('Every reference needs a full link starting with https://');
+      setReferenceError(T.referenceNeedsHttps);
       return;
     }
     setReferenceError(null);
@@ -303,7 +303,7 @@ export default function ContentForm({
       releaseLessonFiles([...(item ? lessonFileUrls(item) : []), ...sessionUploads.current]);
     } catch (e) {
       saved.current = false;
-      setSaveError(e instanceof ContentError ? e.message : 'Could not save. Check your connection and try again.');
+      setSaveError(e instanceof ContentError ? e.message : T.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -313,27 +313,27 @@ export default function ContentForm({
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Basic Info */}
       <div>
-        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">Basic Information</h3>
+        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">{T.basicInfo}</h3>
         <div className="space-y-4">
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Title <span className="text-danger">*</span>
+              {T.title} <span className="text-danger">*</span>
             </label>
             <input
-              {...register('title', { required: 'Title is required', maxLength: { value: 200, message: 'Max 200 characters' } })}
+              {...register('title', { required: T.titleRequired, maxLength: { value: 200, message: T.maxChars(200) } })}
               type="text"
-              placeholder={isSession ? 'e.g. Understanding Prenatal Anxiety' : 'e.g. Crisis Text Line'}
+              placeholder={isSession ? T.titlePlaceholderSession : T.titlePlaceholderResource}
               className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {errors.title && <p className="text-[11px] text-danger mt-1">{errors.title.message}</p>}
           </div>
 
           <div>
-            <label className="block text-[13px] font-500 text-foreground mb-1">Description</label>
+            <label className="block text-[13px] font-500 text-foreground mb-1">{T.description}</label>
             <textarea
-              {...register('description', { maxLength: { value: 2000, message: 'Max 2000 characters' } })}
+              {...register('description', { maxLength: { value: 2000, message: T.maxChars(2000) } })}
               rows={2}
-              placeholder="Brief description shown in the app session list..."
+              placeholder={T.descriptionPlaceholder}
               className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
             />
           </div>
@@ -342,29 +342,29 @@ export default function ContentForm({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-[13px] font-500 text-foreground">
-                  Category <span className="text-danger">*</span>
+                  {T.category} <span className="text-danger">*</span>
                 </label>
                 <button
                   type="button"
                   onClick={onManageCategories}
                   className="text-[11px] font-600 text-primary hover:underline"
                 >
-                  Manage categories
+                  {T.manageCategories}
                 </button>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-1">Used for the category filter in the app</p>
+              <p className="text-[11px] text-muted-foreground mb-1">{T.categoryHint}</p>
               <div className="relative">
                 <select
                   {...register('categoryId', {
-                    validate: (v) => !!v || 'Choose a category',
+                    validate: (v) => !!v || T.chooseCategory,
                   })}
                   className="w-full appearance-none pl-3 pr-9 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
                 >
-                  <option value="">Select a category…</option>
+                  <option value="">{T.selectCategory}</option>
                   {categoryOptions.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
-                      {c.isActive ? '' : ' (inactive)'}
+                      {c.isActive ? '' : T.inactiveSuffix}
                     </option>
                   ))}
                 </select>
@@ -381,8 +381,8 @@ export default function ContentForm({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[13px] font-500 text-foreground mb-1">Group ID</label>
-              <p className="text-[11px] text-muted-foreground mb-1">Assigned automatically — cannot be edited</p>
+              <label className="block text-[13px] font-500 text-foreground mb-1">{T.groupId}</label>
+              <p className="text-[11px] text-muted-foreground mb-1">{T.groupIdHint}</p>
               <input
                 value={item ? item.groupId : nextGroupId}
                 readOnly
@@ -391,12 +391,12 @@ export default function ContentForm({
               />
             </div>
             <div>
-              <label className="block text-[13px] font-500 text-foreground mb-1">Group Name</label>
+              <label className="block text-[13px] font-500 text-foreground mb-1">{T.groupName}</label>
               <p className="text-[11px] text-muted-foreground mb-1">
-                {isSession ? 'Shown in the app, e.g. “Session 1”' : 'Defaults to “Community Resources”'}
+                {isSession ? T.groupNameHintSession : T.groupNameHintResource}
               </p>
               <input
-                {...register('groupName', { maxLength: { value: 100, message: 'Max 100 characters' } })}
+                {...register('groupName', { maxLength: { value: 100, message: T.maxChars(100) } })}
                 type="text"
                 placeholder={nextGroupName}
                 className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -406,13 +406,13 @@ export default function ContentForm({
           </div>
 
           <div>
-            <label className="block text-[13px] font-500 text-foreground mb-1">Tags</label>
-            <p className="text-[11px] text-muted-foreground mb-1">Comma-separated keywords that help patients find this in the app search</p>
+            <label className="block text-[13px] font-500 text-foreground mb-1">{T.tags}</label>
+            <p className="text-[11px] text-muted-foreground mb-1">{T.tagsHint}</p>
             <input
               type="text"
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
-              placeholder={isSession ? 'anxiety, mental health, pregnancy' : 'food, hotline'}
+              placeholder={isSession ? T.tagsPlaceholderSession : T.tagsPlaceholderResource}
               className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
@@ -423,19 +423,19 @@ export default function ContentForm({
 
       {/* Media URLs */}
       <div>
-        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">Media Links</h3>
+        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">{T.mediaLinks}</h3>
         <div className="space-y-5">
           {/* Video URL */}
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Video URL <span className="text-[11px] font-400 text-muted-foreground">(YouTube)</span>
+              {T.videoUrl} <span className="text-[11px] font-400 text-muted-foreground">(YouTube)</span>
             </label>
-            <p className="text-[11px] text-muted-foreground mb-1">Paste a YouTube link — youtube.com/watch?v=..., youtu.be/..., or embed URL</p>
+            <p className="text-[11px] text-muted-foreground mb-1">{T.videoHint}</p>
             <div className="relative">
               <input
                 {...register('videoUrl', {
                   pattern: HTTPS,
-                  validate: (v) => !v || !!getYouTubeId(v) || 'Must be a YouTube link',
+                  validate: (v) => !v || !!getYouTubeId(v) || T.mustYouTube,
                 })}
                 type="url"
                 placeholder="https://www.youtube.com/watch?v=..."
@@ -450,7 +450,7 @@ export default function ContentForm({
             {errors.videoUrl ? (
               <p className="text-[11px] text-danger mt-1">{errors.videoUrl.message}</p>
             ) : (
-              videoUrl && !youtubeId && <p className="text-[11px] text-danger mt-1">This doesn&apos;t look like a valid YouTube URL</p>
+              videoUrl && !youtubeId && <p className="text-[11px] text-danger mt-1">{T.notYouTube}</p>
             )}
             {youtubeId && (
               <div className="mt-2 rounded-lg overflow-hidden border border-border aspect-video">
@@ -459,15 +459,15 @@ export default function ContentForm({
                   className="w-full h-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
-                  title="YouTube video preview"
+                  title={T.videoPreview}
                 />
               </div>
             )}
             <div className="mt-2">
-              <label className="block text-[12px] font-500 text-foreground mb-1">Video Duration (MM:SS)</label>
+              <label className="block text-[12px] font-500 text-foreground mb-1">{T.videoDuration}</label>
               <input
                 {...register('videoDuration', {
-                  pattern: { value: /^\d{1,3}:[0-5]\d$/, message: 'Format must be MM:SS (e.g. 5:47)' }
+                  pattern: { value: /^\d{1,3}:[0-5]\d$/, message: T.durationFormat('5:47') }
                 })}
                 type="text"
                 placeholder="5:47"
@@ -480,14 +480,14 @@ export default function ContentForm({
           {/* Audio URL */}
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Audio URL <span className="text-[11px] font-400 text-muted-foreground">(SoundCloud)</span>
+              {T.audioUrl} <span className="text-[11px] font-400 text-muted-foreground">(SoundCloud)</span>
             </label>
-            <p className="text-[11px] text-muted-foreground mb-1">Paste a SoundCloud track URL — soundcloud.com/...</p>
+            <p className="text-[11px] text-muted-foreground mb-1">{T.audioHint}</p>
             <div className="relative">
               <input
                 {...register('audioUrl', {
                   pattern: HTTPS,
-                  validate: (v) => !v || isSoundCloudUrl(v) || 'Must be a SoundCloud link',
+                  validate: (v) => !v || isSoundCloudUrl(v) || T.mustSoundCloud,
                 })}
                 type="url"
                 placeholder="https://soundcloud.com/..."
@@ -502,7 +502,7 @@ export default function ContentForm({
             {errors.audioUrl ? (
               <p className="text-[11px] text-danger mt-1">{errors.audioUrl.message}</p>
             ) : (
-              audioUrl && !soundcloudValid && <p className="text-[11px] text-danger mt-1">This doesn&apos;t look like a valid SoundCloud URL</p>
+              audioUrl && !soundcloudValid && <p className="text-[11px] text-danger mt-1">{T.notSoundCloud}</p>
             )}
             {soundcloudValid && (
               <div className="mt-2 rounded-lg overflow-hidden border border-border">
@@ -511,15 +511,15 @@ export default function ContentForm({
                   height="166"
                   allow="autoplay"
                   src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(audioUrl)}&color=%23E05C6B&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false`}
-                  title="SoundCloud audio preview"
+                  title={T.audioPreview}
                 />
               </div>
             )}
             <div className="mt-2">
-              <label className="block text-[12px] font-500 text-foreground mb-1">Audio Duration (MM:SS)</label>
+              <label className="block text-[12px] font-500 text-foreground mb-1">{T.audioDuration}</label>
               <input
                 {...register('audioDuration', {
-                  pattern: { value: /^\d{1,3}:[0-5]\d$/, message: 'Format must be MM:SS (e.g. 6:15)' }
+                  pattern: { value: /^\d{1,3}:[0-5]\d$/, message: T.durationFormat('6:15') }
                 })}
                 type="text"
                 placeholder="6:15"
@@ -540,7 +540,7 @@ export default function ContentForm({
               <div className="relative flex-1 min-w-0">
                 <input
                   {...register('thumbnailUrl', {
-                    required: isSession ? 'Upload an image or paste its link' : false,
+                    required: isSession ? T.thumbnailRequired : false,
                     pattern: HTTPS,
                   })}
                   type="url"
@@ -568,11 +568,11 @@ export default function ContentForm({
               <p className="text-[11px] text-warning mt-1">{T.notKnownHost}</p>
             )}
             <div className="mt-2">
-              <label className="block text-[12px] font-500 text-foreground mb-1">Image description (for screen readers)</label>
+              <label className="block text-[12px] font-500 text-foreground mb-1">{T.imageAlt}</label>
               <input
-                {...register('thumbnailAlt', { maxLength: { value: 300, message: 'Max 300 characters' } })}
+                {...register('thumbnailAlt', { maxLength: { value: 300, message: T.maxChars(300) } })}
                 type="text"
-                placeholder="e.g. Pregnant woman resting on a sofa"
+                placeholder={T.imageAltPlaceholder}
                 className="w-full px-3 py-1.5 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {errors.thumbnailAlt && <p className="text-[11px] text-danger mt-1">{errors.thumbnailAlt.message}</p>}
@@ -582,7 +582,7 @@ export default function ContentForm({
                 <AppImage
                   key={thumbnailUrl}
                   src={thumbnailUrl}
-                  alt="Thumbnail preview"
+                  alt={T.thumbnailPreview}
                   width={128}
                   height={80}
                   className="w-full h-full object-cover"
@@ -596,13 +596,13 @@ export default function ContentForm({
             <label className="block text-[13px] font-500 text-foreground mb-1">
               {T.infographicLabel} <span className="text-[11px] font-400 text-muted-foreground">({T.infographicNote})</span>
             </label>
-            <p className="text-[11px] text-muted-foreground mb-1">If provided, patients can tap to view full-screen with pinch-to-zoom. {T.imageHint}</p>
+            <p className="text-[11px] text-muted-foreground mb-1">{T.infographicHint} {T.imageHint}</p>
             <div className="flex items-center gap-2">
               <div className="relative flex-1 min-w-0">
                 <input
                   {...register('infographicUrl', { pattern: HTTPS })}
                   type="url"
-                  placeholder="https://... (optional)"
+                  placeholder={T.optionalLink}
                   className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring pr-8"
                 />
                 {infographicUrl && (
@@ -630,7 +630,7 @@ export default function ContentForm({
                 <AppImage
                   key={infographicUrl}
                   src={infographicUrl}
-                  alt="Infographic preview"
+                  alt={T.infographicPreview}
                   width={128}
                   height={80}
                   className="w-full h-full object-cover"
@@ -641,9 +641,9 @@ export default function ContentForm({
           {/* Quiz URL */}
           <div>
             <label className="block text-[13px] font-500 text-foreground mb-1">
-              Quiz URL <span className="text-[11px] font-400 text-muted-foreground">(optional — e.g. Kahoot)</span>
+              {T.quizUrl} <span className="text-[11px] font-400 text-muted-foreground">({T.quizNote})</span>
             </label>
-            <p className="text-[11px] text-muted-foreground mb-1">Shown at the end of the session; the app records when it is completed</p>
+            <p className="text-[11px] text-muted-foreground mb-1">{T.quizHint}</p>
             <input
               {...register('quizUrl', { pattern: HTTPS })}
               type="url"
@@ -653,7 +653,7 @@ export default function ContentForm({
             {errors.quizUrl && <p className="text-[11px] text-danger mt-1">{errors.quizUrl.message}</p>}
             {quizUrl && !errors.quizUrl && (
               <a href={quizUrl} target="_blank" rel="noreferrer" className="inline-block text-[11px] text-primary hover:underline mt-1">
-                Open quiz in a new tab ↗
+                {T.openQuiz}
               </a>
             )}
           </div>
@@ -749,21 +749,19 @@ export default function ContentForm({
 
       {/* Script */}
       <div>
-        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">Script / Content</h3>
-        <label className="block text-[13px] font-500 text-foreground mb-1">Session Script</label>
-        <p className="text-[11px] text-muted-foreground mb-2">Rich text content displayed below the media in the app</p>
+        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">{T.scriptSection}</h3>
+        <label className="block text-[13px] font-500 text-foreground mb-1">{T.script}</label>
+        <p className="text-[11px] text-muted-foreground mb-2">{T.scriptHint}</p>
         <Controller
           name="script"
           control={control}
-          rules={{ maxLength: { value: 200000, message: 'Script is too long' } }}
+          rules={{ maxLength: { value: 200000, message: T.scriptTooLong } }}
           render={({ field }) => (
             <RichTextEditor
               value={field.value}
               onChange={field.onChange}
               invalid={!!errors.script}
-              placeholder={
-                isSession ? 'Write the lesson script or key points here…' : 'Details about this resource (hours, phone, eligibility)…'
-              }
+              placeholder={isSession ? T.scriptPlaceholderSession : T.scriptPlaceholderResource}
             />
           )}
         />
@@ -776,15 +774,12 @@ export default function ContentForm({
 
           {/* References */}
           <div>
-            <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">References</h3>
-            <p className="text-[11px] text-muted-foreground mb-3">
-              Shown at the end of the lesson in the app. The lesson&apos;s video, audio and the links in the script are listed
-              automatically; add any other source here.
-            </p>
+            <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">{T.references}</h3>
+            <p className="text-[11px] text-muted-foreground mb-3">{T.referencesHint}</p>
 
             {ownReferences.length > 0 && (
               <div className="mb-4">
-                <p className="text-[12px] font-500 text-foreground mb-1.5">Listed automatically</p>
+                <p className="text-[12px] font-500 text-foreground mb-1.5">{T.listedAutomatically}</p>
                 <ul className="space-y-1">
                   {ownReferences.map((r) => (
                     <li key={r.url} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border text-[12px]">
@@ -799,8 +794,8 @@ export default function ContentForm({
               </div>
             )}
 
-            <p className="text-[12px] font-500 text-foreground mb-1.5">Added by you</p>
-            {references.length === 0 && <p className="text-[12px] text-muted-foreground mb-2">No extra references yet.</p>}
+            <p className="text-[12px] font-500 text-foreground mb-1.5">{T.addedByYou}</p>
+            {references.length === 0 && <p className="text-[12px] text-muted-foreground mb-2">{T.noReferences}</p>}
             <div className="space-y-2">
               {references.map((r, i) => (
                 <div key={i} className="flex items-start gap-2">
@@ -809,8 +804,8 @@ export default function ContentForm({
                     value={r.title}
                     onChange={(e) => setReference(i, { title: e.target.value })}
                     maxLength={200}
-                    placeholder="Title, e.g. ACOG: Preeclampsia FAQ"
-                    aria-label={`Reference ${i + 1} title`}
+                    placeholder={T.referenceTitlePlaceholder}
+                    aria-label={T.referenceTitle(i)}
                     className="w-2/5 px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   <input
@@ -819,7 +814,7 @@ export default function ContentForm({
                     onChange={(e) => setReference(i, { url: e.target.value })}
                     maxLength={2000}
                     placeholder="https://..."
-                    aria-label={`Reference ${i + 1} link`}
+                    aria-label={T.referenceLink(i)}
                     className={`flex-1 min-w-0 px-3 py-2 border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring ${
                       r.url.trim() && !HTTPS_LINK.test(r.url.trim()) ? 'border-danger' : 'border-border'
                     }`}
@@ -831,8 +826,8 @@ export default function ContentForm({
                       setReferences((list) => list.filter((_, j) => j !== i));
                     }}
                     className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-danger"
-                    aria-label={`Remove reference ${i + 1}`}
-                    title="Remove"
+                    aria-label={T.removeReference(i)}
+                    title={T.remove}
                   >
                     <Icon name="TrashIcon" size={16} variant="outline" />
                   </button>
@@ -847,7 +842,7 @@ export default function ContentForm({
                 className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-600 text-foreground hover:bg-muted"
               >
                 <Icon name="PlusIcon" size={13} variant="outline" />
-                Add reference
+                {T.addReference}
               </button>
             )}
           </div>
@@ -858,11 +853,11 @@ export default function ContentForm({
 
       {/* Visibility */}
       <div>
-        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">Visibility</h3>
+        <h3 className="text-[13px] font-600 text-muted-foreground uppercase tracking-wider mb-3">{T.visibility}</h3>
         <div className="flex items-center justify-between p-3 bg-muted/40 rounded-lg border border-border">
           <div>
-            <p className="text-[13px] font-600 text-foreground">Active (visible in mobile app)</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">When off, this content is hidden from all patients immediately</p>
+            <p className="text-[13px] font-600 text-foreground">{T.activeLabel}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{T.activeHint}</p>
           </div>
           <Toggle
             checked={activeVal}
@@ -882,7 +877,7 @@ export default function ContentForm({
           onClick={() => (requestClose ?? onCancel)()}
           className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
         >
-          Cancel
+          {T.cancel}
         </button>
         <button
           type="submit"
@@ -892,10 +887,12 @@ export default function ContentForm({
           {saving ? (
             <>
               <Icon name="ArrowPathIcon" size={14} variant="outline" className="animate-spin" />
-              Saving...
+              {T.saving}
             </>
+          ) : item ? (
+            T.saveChanges
           ) : (
-            item ? 'Save Changes' : 'Create Content'
+            T.create
           )}
         </button>
       </div>

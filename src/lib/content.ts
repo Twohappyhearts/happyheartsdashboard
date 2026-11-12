@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { MAX_ATTACHMENTS } from '@/lib/uploads';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Staff side of education content (public.content_items) and its categories
@@ -135,8 +136,9 @@ const decode = (t: string) =>
  */
 export function lessonOwnReferences(item: Pick<ContentItem, 'videoUrl' | 'audioUrl' | 'script'>): ReferenceLink[] {
   const out: ReferenceLink[] = [];
-  if (item.videoUrl.trim()) out.push({ title: 'Lesson video', url: item.videoUrl.trim() });
-  if (item.audioUrl.trim()) out.push({ title: 'Lesson audio', url: item.audioUrl.trim() });
+  const T = staffText().content.form;
+  if (item.videoUrl.trim()) out.push({ title: T.lessonVideo, url: item.videoUrl.trim() });
+  if (item.audioUrl.trim()) out.push({ title: T.lessonAudio, url: item.audioUrl.trim() });
   for (const m of item.script.matchAll(HREF)) {
     const url = decode(m[1]);
     const text = decode(m[2].replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
@@ -225,21 +227,24 @@ function toRow(input: ContentInput): Row {
   };
 }
 
+/** Error messages in the dashboard's language (src/lib/i18n/staff). */
+const E = () => staffText().content.errors;
+
 function fail(e: { code?: string; message?: string } | null, fallback: string): ContentError {
   if (!e) return new ContentError(fallback);
-  if (e.code === '42501') return new ContentError('Your account does not have staff permission for this.', e.code);
+  if (e.code === '42501') return new ContentError(staffText().common.noStaffPermission, e.code);
   if (e.code === '23514') {
     const m = e.message ?? '';
-    if (m.includes('reference_links')) return new ContentError('Every reference needs a link starting with https:// (at most 30 references).', e.code);
-    if (m.includes('attachments')) return new ContentError('Every material needs a name and an https:// link (at most 20 files).', e.code);
-    if (m.includes('url')) return new ContentError('Every link must start with https://', e.code);
-    if (m.includes('duration')) return new ContentError('Durations must look like 5:47 (MM:SS).', e.code);
-    return new ContentError('Some fields are too long or in the wrong format.', e.code);
+    if (m.includes('reference_links')) return new ContentError(E().referencesInvalid, e.code);
+    if (m.includes('attachments')) return new ContentError(E().materialsInvalid, e.code);
+    if (m.includes('url')) return new ContentError(E().linkInvalid, e.code);
+    if (m.includes('duration')) return new ContentError(E().durationInvalid, e.code);
+    return new ContentError(E().tooLong, e.code);
   }
-  if (e.code === 'PGRST204' || e.code === '42703') return new ContentError('The database is missing a column. Run the latest migration first.', e.code);
-  if (e.code === '23505') return new ContentError('A category with this name already exists.', e.code);
+  if (e.code === 'PGRST204' || e.code === '42703') return new ContentError(E().missingColumn, e.code);
+  if (e.code === '23505') return new ContentError(E().categoryExists, e.code);
   if (e.code === '23503') {
-    return new ContentError('This category is still used by some content. Deactivate it instead.', e.code);
+    return new ContentError(E().categoryInUse, e.code);
   }
   return new ContentError(`${fallback}${e.message ? `: ${e.message}` : ''}`, e.code);
 }
@@ -252,7 +257,7 @@ export async function listContent(supabase: SupabaseClient, kind: ContentKind): 
     .select(COLUMNS)
     .eq('kind', kind)
     .order('group_number', { ascending: true });
-  if (error) throw fail(error, 'Could not load content');
+  if (error) throw fail(error, E().load);
   return ((data ?? []) as unknown as Row[]).map(toItem);
 }
 
@@ -266,7 +271,7 @@ export async function createContent(
     .insert({ kind, ...toRow(input) })
     .select(COLUMNS)
     .single();
-  if (error) throw fail(error, 'Could not create content');
+  if (error) throw fail(error, E().create);
   return toItem(data as unknown as Row);
 }
 
@@ -281,7 +286,7 @@ export async function updateContent(
     .eq('id', id)
     .select(COLUMNS)
     .single();
-  if (error) throw fail(error, 'Could not save changes');
+  if (error) throw fail(error, E().save);
   return toItem(data as unknown as Row);
 }
 
@@ -291,13 +296,13 @@ export async function setContentActive(supabase: SupabaseClient, id: string, act
     .update({ is_active: active })
     .eq('id', id)
     .select('id');
-  if (error) throw fail(error, 'Could not change visibility');
-  if (!data || data.length === 0) throw new ContentError('This content no longer exists. Refresh the page.');
+  if (error) throw fail(error, E().visibility);
+  if (!data || data.length === 0) throw new ContentError(E().gone);
 }
 
 export async function deleteContent(supabase: SupabaseClient, id: string): Promise<void> {
   const { error } = await supabase.from('content_items').delete().eq('id', id);
-  if (error) throw fail(error, 'Could not delete content');
+  if (error) throw fail(error, E().delete);
 }
 
 /** What the database will assign to the next item (shown as a preview only). */
@@ -315,7 +320,7 @@ export async function listCategories(supabase: SupabaseClient): Promise<ContentC
     supabase.from('content_categories').select('id, name, sort_order, is_active').order('sort_order').order('name'),
     supabase.from('content_items').select('category_id').not('category_id', 'is', null),
   ]);
-  if (error) throw fail(error, 'Could not load categories');
+  if (error) throw fail(error, E().loadCategories);
   const counts = new Map<string, number>();
   ((usage.data ?? []) as Row[]).forEach((r) => {
     const id = String(r.category_id);
@@ -332,7 +337,7 @@ export async function listCategories(supabase: SupabaseClient): Promise<ContentC
 
 export async function createCategory(supabase: SupabaseClient, name: string, sortOrder: number): Promise<void> {
   const { error } = await supabase.from('content_categories').insert({ name: name.trim(), sort_order: sortOrder });
-  if (error) throw fail(error, 'Could not add category');
+  if (error) throw fail(error, E().addCategory);
 }
 
 export async function updateCategory(
@@ -345,10 +350,10 @@ export async function updateCategory(
   if (patch.sortOrder !== undefined) row.sort_order = patch.sortOrder;
   if (patch.isActive !== undefined) row.is_active = patch.isActive;
   const { error } = await supabase.from('content_categories').update(row).eq('id', id);
-  if (error) throw fail(error, 'Could not update category');
+  if (error) throw fail(error, E().updateCategory);
 }
 
 export async function deleteCategory(supabase: SupabaseClient, id: string): Promise<void> {
   const { error } = await supabase.from('content_categories').delete().eq('id', id);
-  if (error) throw fail(error, 'Could not delete category');
+  if (error) throw fail(error, E().deleteCategory);
 }
