@@ -301,6 +301,8 @@ interface SearchResult {
   kind?: 'web';
   /** Knowledge-base document (its original file opens through /api/agent/sources/:id). */
   documentId?: string;
+  /** The community resource directory: used for the answer, but not listed as a source. */
+  hideAsSource?: boolean;
 }
 
 /** ref → search result, over every searchKnowledge / webSearch call in this reply (refs are shared). */
@@ -369,9 +371,11 @@ function SourceChips({
   const docs = new Map<string, SearchResult>();
   for (const ref of refs) {
     const r = results.get(ref);
-    const key = r ? (r.kind === 'web' && r.url ? r.url : r.title) : '';
-    if (r && !docs.has(key)) docs.set(key, r);
+    if (!r || r.hideAsSource) continue;
+    const key = r.kind === 'web' && r.url ? r.url : r.title;
+    if (!docs.has(key)) docs.set(key, r);
   }
+  // Nothing to list (e.g. only the resource directory was cited): no "Sources" line at all.
   if (!docs.size) return null;
 
   const openDocument = async (key: string, documentId: string) => {

@@ -41,6 +41,11 @@ export interface SearchResultItem {
    * when it has no web page. Not shown to the model (toModelOutput).
    */
   documentId?: string;
+  /**
+   * true for the community resource directory (source_type 'resources'): the app leaves it out
+   * of the answer's source list, since it is one long generated article. Not shown to the model.
+   */
+  hideAsSource?: boolean;
 }
 
 export interface SearchToolOutput {
@@ -81,15 +86,21 @@ export function parseDocumentSource(description: string | null | undefined): { s
 
 async function documentSources(caller: AgentCaller, documentIds: string[]) {
   const ids = Array.from(new Set(documentIds));
-  if (!ids.length) return new Map<string, { source: string | null; url: string | null }>();
-  const { data } = await caller.admin.from('knowledge_documents').select('id, description').in('id', ids);
-  return new Map((data ?? []).map((d) => [String(d.id), parseDocumentSource(d.description as string | null)]));
+  type DocumentSource = { source: string | null; url: string | null; directory: boolean };
+  if (!ids.length) return new Map<string, DocumentSource>();
+  const { data } = await caller.admin.from('knowledge_documents').select('id, description, source_type').in('id', ids);
+  return new Map<string, DocumentSource>(
+    (data ?? []).map((d) => [
+      String(d.id),
+      { ...parseDocumentSource(d.description as string | null), directory: d.source_type === 'resources' },
+    ]),
+  );
 }
 
 /** A search output without the fields only the app uses. */
 function forModel(output: SearchToolOutput) {
   return {
-    results: (output.results ?? []).map(({ documentId: _documentId, ...r }) => r),
+    results: (output.results ?? []).map(({ documentId: _documentId, hideAsSource: _hide, ...r }) => r),
     ...(output.trimmed ? { trimmed: true } : {}),
     ...(output.note ? { note: output.note } : {}),
   };
@@ -126,6 +137,7 @@ export function createAgentTools(caller: AgentCaller, opts: AgentToolOptions = {
             url: sources.get(c.documentId)?.url ?? null,
             content: c.content.length > MAX_CHUNK_CHARS ? `${c.content.slice(0, MAX_CHUNK_CHARS)}…` : c.content,
             documentId: c.documentId,
+            ...(sources.get(c.documentId)?.directory ? { hideAsSource: true } : {}),
           })),
         };
       },
