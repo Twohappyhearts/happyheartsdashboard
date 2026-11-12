@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { staffText } from '@/lib/i18n/staff';
 
 /**
  * Staff side of "I need assistance" requests (public.assistance_requests).
@@ -11,30 +12,11 @@ export type AlertStatus = 'NEW' | 'ACK' | 'RESOLVED';
 export type AlertFilter = 'open' | 'new' | 'ack' | 'resolved' | 'all';
 
 /**
- * Staff-facing words. The stored status stays 'ACK'; staff see it as "Seen"
+ * Filter tabs, in order. Staff-facing words (status and filter labels) are in the staff text
+ * (src/lib/i18n/staff, section `alerts`): the stored status stays 'ACK'; staff see it as "Seen"
  * ("ACK" was unclear to people outside the team).
  */
-export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
-  NEW: 'NEW',
-  ACK: 'SEEN',
-  RESOLVED: 'RESOLVED',
-};
-
-export const ALERT_TEXT = {
-  markSeen: 'Mark as seen',
-  markSeenHint: 'Mark as seen — stays in the Open view',
-  markedSeen: 'Marked as seen',
-  seenCard: 'Seen',
-  seenAt: 'Seen:',
-};
-
-export const ALERT_FILTER_LABELS: Record<AlertFilter, string> = {
-  open: 'Open (NEW + SEEN)',
-  new: 'NEW Only',
-  ack: 'SEEN Only',
-  resolved: 'Resolved',
-  all: 'All',
-};
+export const ALERT_FILTERS: AlertFilter[] = ['open', 'new', 'ack', 'resolved', 'all'];
 
 export interface AssistanceAlert {
   id: string;
@@ -105,7 +87,7 @@ function toAlert(r: Row): AssistanceAlert {
   return {
     id: String(r.id),
     patientId: String(r.patient_id),
-    patientName: fullName || (username ? `@${username}` : 'Unknown participant'),
+    patientName: fullName || (username ? `@${username}` : staffText().alerts.errors.unknownParticipant),
     username,
     message: String(r.message ?? ''),
     status,
@@ -121,8 +103,8 @@ function toAlert(r: Row): AssistanceAlert {
 }
 
 function fail(e: { code?: string; message?: string } | null, fallback: string): AlertError {
-  if (e?.code === '42501') return new AlertError('Your account does not have staff permission for this.', e.code);
-  if (e?.code === '23514') return new AlertError('Notes must be 5000 characters or fewer.', e.code);
+  if (e?.code === '42501') return new AlertError(staffText().common.noStaffPermission, e.code);
+  if (e?.code === '23514') return new AlertError(staffText().alerts.errors.notesTooLong, e.code);
   return new AlertError(`${fallback}${e?.message ? `: ${e.message}` : ''}`, e?.code);
 }
 
@@ -152,13 +134,13 @@ export async function listAlerts(
       ? q.order('resolved_at', { ascending: false, nullsFirst: false })
       : q.order('created_at', { ascending: false });
   const { data, error } = await ordered.order('id', { ascending: false }).limit(limit);
-  if (error) throw fail(error, 'Could not load alerts');
+  if (error) throw fail(error, staffText().alerts.errors.load);
   return ((data ?? []) as unknown as Row[]).map(toAlert);
 }
 
 export async function getAlert(supabase: SupabaseClient, id: string): Promise<AssistanceAlert | null> {
   const { data, error } = await supabase.from('assistance_requests').select(SELECT).eq('id', id).maybeSingle();
-  if (error) throw fail(error, 'Could not load alert');
+  if (error) throw fail(error, staffText().alerts.errors.loadOne);
   return data ? toAlert(data as unknown as Row) : null;
 }
 
@@ -176,14 +158,14 @@ export async function getAlertCounts(supabase: SupabaseClient): Promise<AlertCou
     head().eq('status', 'RESOLVED').gte('resolved_at', startOfToday()),
   ]);
   const err = n.error ?? a.error ?? r.error;
-  if (err) throw fail(err, 'Could not load alert counts');
+  if (err) throw fail(err, staffText().alerts.errors.counts);
   return { new: n.count ?? 0, ack: a.count ?? 0, resolvedToday: r.count ?? 0 };
 }
 
 /** Who/when fields are filled in by the database trigger. */
 export async function setAlertStatus(supabase: SupabaseClient, id: string, status: AlertStatus): Promise<void> {
   const { error } = await supabase.from('assistance_requests').update({ status }).eq('id', id);
-  if (error) throw fail(error, 'Could not update the alert');
+  if (error) throw fail(error, staffText().alerts.errors.update);
 }
 
 /**
@@ -196,7 +178,7 @@ export async function saveAlertNotes(supabase: SupabaseClient, id: string, notes
     .update({ notes })
     .eq('request_id', id)
     .select('request_id');
-  if (error) throw fail(error, 'Could not save notes');
+  if (error) throw fail(error, staffText().alerts.errors.saveNotes);
   if (data && data.length > 0) return;
 
   const ins = await supabase.from('assistance_request_notes').insert({ request_id: id, notes });
@@ -205,7 +187,7 @@ export async function saveAlertNotes(supabase: SupabaseClient, id: string, notes
     // Another staff member created the row first; apply ours on top.
     const again = await supabase.from('assistance_request_notes').update({ notes }).eq('request_id', id);
     if (!again.error) return;
-    throw fail(again.error, 'Could not save notes');
+    throw fail(again.error, staffText().alerts.errors.saveNotes);
   }
-  throw fail(ins.error, 'Could not save notes');
+  throw fail(ins.error, staffText().alerts.errors.saveNotes);
 }

@@ -12,9 +12,7 @@ import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
 import { initials } from '@/contexts/AuthContext';
 import { openConversationForPatient, fetchProfiles, ChatError } from '@/lib/chat';
 import {
-  ALERT_FILTER_LABELS,
-  ALERT_STATUS_LABELS,
-  ALERT_TEXT,
+  ALERT_FILTERS,
   AlertError,
   getAlert,
   listAlerts,
@@ -25,11 +23,13 @@ import {
   type AlertStatus,
   type AssistanceAlert,
 } from '@/lib/alerts';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import { staffText } from '@/lib/i18n/staff';
 
 const NOTES_MAX = 5000;
 
-function formatOccurred(iso: string) {
-  return new Date(iso).toLocaleString('en-US', {
+function formatOccurred(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
@@ -39,18 +39,22 @@ function formatOccurred(iso: string) {
 }
 
 function timeAgo(iso: string) {
+  const T = staffText().alerts.ago;
   const diffM = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (diffM < 1) return 'just now';
-  if (diffM < 60) return `${diffM}m ago`;
+  if (diffM < 1) return T.justNow;
+  if (diffM < 60) return T.minutes(diffM);
   const diffH = Math.floor(diffM / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return `${Math.floor(diffH / 24)}d ago`;
+  if (diffH < 24) return T.hours(diffH);
+  return T.days(Math.floor(diffH / 24));
 }
 
 export default function AlertsClient() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const { counts, version, refresh: refreshCounts } = useOpenAlerts();
+  const { t, locale } = useStaffT();
+  const T = t.alerts;
+  const fmtOccurred = (iso: string) => formatOccurred(iso, locale);
 
   const [filter, setFilter] = useState<AlertFilter>('open');
   // Search: participant name/username + Occurred date range.
@@ -105,7 +109,7 @@ export default function AlertsClient() {
       const profiles = await fetchProfiles(supabase, Array.from(ids));
       setNames((prev) => ({
         ...prev,
-        ...Object.fromEntries(profiles.map((p) => [p.id, p.fullName || (p.username ? `@${p.username}` : 'Staff')])),
+        ...Object.fromEntries(profiles.map((p) => [p.id, p.fullName || (p.username ? `@${p.username}` : staffText().alerts.staff)])),
       }));
     },
     [supabase]
@@ -123,7 +127,7 @@ export default function AlertsClient() {
         void resolveNames(rows);
       } catch (e) {
         if (seq !== loadSeq.current) return;
-        setError(e instanceof AlertError ? e.message : 'Could not load alerts.');
+        setError(e instanceof AlertError ? e.message : staffText().alerts.loadFailed);
       } finally {
         if (seq === loadSeq.current) setLoading(false);
       }
@@ -154,18 +158,18 @@ export default function AlertsClient() {
   const savePanelNotes = async () => {
     if (!selected) return;
     if (panelDraft.length > NOTES_MAX) {
-      toast.error(`Notes must be ${NOTES_MAX} characters or fewer.`);
+      toast.error(T.notesTooLong(NOTES_MAX));
       return;
     }
     setPanelSaving(true);
     try {
       await saveAlertNotes(supabase, selected.id, panelDraft.trim());
-      toast.success('Notes saved');
+      toast.success(T.notesSaved);
       await load({ silent: true });
       const fresh = await getAlert(supabase, selected.id);
       if (fresh) setSelected(fresh);
     } catch (e) {
-      toast.error(e instanceof AlertError ? e.message : 'Could not save notes.');
+      toast.error(e instanceof AlertError ? e.message : T.notesFailed);
     } finally {
       setPanelSaving(false);
     }
@@ -190,7 +194,7 @@ export default function AlertsClient() {
       toast.success(success);
       await Promise.all([load({ silent: true }), refreshCounts()]);
     } catch (e) {
-      toast.error(e instanceof AlertError || e instanceof ChatError ? e.message : 'Something went wrong.');
+      toast.error(e instanceof AlertError || e instanceof ChatError ? e.message : T.failed);
     } finally {
       setBusy((b) => {
         const { [id]: _done, ...rest } = b;
@@ -204,26 +208,26 @@ export default function AlertsClient() {
       a.id,
       () => setAlertStatus(supabase, a.id, status),
       status === 'ACK'
-        ? ALERT_TEXT.markedSeen
+        ? T.markedSeen
         : status === 'RESOLVED'
-          ? 'Alert resolved'
-          : 'Alert reopened'
+          ? T.resolved
+          : T.reopened
     );
 
   const saveNotes = async () => {
     if (!editing) return;
     if (editing.draft.length > NOTES_MAX) {
-      toast.error(`Notes must be ${NOTES_MAX} characters or fewer.`);
+      toast.error(T.notesTooLong(NOTES_MAX));
       return;
     }
     setSavingNotes(true);
     try {
       await saveAlertNotes(supabase, editing.id, editing.draft.trim());
-      toast.success('Notes saved');
+      toast.success(T.notesSaved);
       setEditing(null);
       await load({ silent: true });
     } catch (e) {
-      toast.error(e instanceof AlertError ? e.message : 'Could not save notes.');
+      toast.error(e instanceof AlertError ? e.message : T.notesFailed);
     } finally {
       setSavingNotes(false);
     }
@@ -236,10 +240,10 @@ export default function AlertsClient() {
         const conversationId = await openConversationForPatient(supabase, a.patientId);
         router.push(`/messages?c=${encodeURIComponent(conversationId)}`);
       },
-      `Opening chat with ${a.patientName}`
+      T.openingChat(a.patientName)
     );
 
-  const staffName = (id: string | null) => (id ? names[id] || 'a team member' : 'a team member');
+  const staffName = (id: string | null) => (id ? names[id] || T.teamMember : T.teamMember);
   const rows = alerts ?? [];
   const newCount = counts?.new ?? 0;
 
@@ -249,16 +253,14 @@ export default function AlertsClient() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-[22px] font-700 text-foreground">Alerts</h1>
+            <h1 className="text-[22px] font-700 text-foreground">{T.title}</h1>
             {newCount > 0 && (
               <span className="bg-danger text-white text-[11px] font-700 rounded-full px-2 py-0.5 leading-none">
-                {newCount} NEW
+                {T.newBadge(newCount)}
               </span>
             )}
           </div>
-          <p className="text-[13px] text-muted-foreground mt-0.5">
-            Assistance requests sent from the &ldquo;I need assistance&rdquo; button in the mobile app.
-          </p>
+          <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -270,7 +272,7 @@ export default function AlertsClient() {
             className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-60"
           >
             <Icon name="ArrowPathIcon" size={14} variant="outline" className={loading ? 'animate-spin' : ''} />
-            Refresh
+            {T.refresh}
           </button>
         </div>
       </div>
@@ -278,11 +280,11 @@ export default function AlertsClient() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'NEW', value: counts?.new, color: 'text-danger', bg: 'bg-danger/5 border-danger/20' },
-          { label: ALERT_TEXT.seenCard, value: counts?.ack, color: 'text-warning', bg: 'bg-warning/5 border-warning/20' },
-          { label: 'Resolved today', value: counts?.resolvedToday, color: 'text-success', bg: 'bg-success/5 border-success/20' },
+          { label: T.stats.new, value: counts?.new, color: 'text-danger', bg: 'bg-danger/5 border-danger/20' },
+          { label: T.stats.seen, value: counts?.ack, color: 'text-warning', bg: 'bg-warning/5 border-warning/20' },
+          { label: T.stats.resolvedToday, value: counts?.resolvedToday, color: 'text-success', bg: 'bg-success/5 border-success/20' },
           {
-            label: 'Total open',
+            label: T.stats.totalOpen,
             value: counts ? counts.new + counts.ack : undefined,
             color: 'text-foreground',
             bg: 'bg-card border-border',
@@ -297,7 +299,7 @@ export default function AlertsClient() {
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1 bg-muted rounded-lg p-1 w-fit flex-wrap">
-        {(Object.keys(ALERT_FILTER_LABELS) as AlertFilter[]).map((f) => (
+        {ALERT_FILTERS.map((f) => (
           <button
             key={`filter-${f}`}
             onClick={() => {
@@ -309,7 +311,7 @@ export default function AlertsClient() {
               ${filter === f ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'}
             `}
           >
-            {ALERT_FILTER_LABELS[f]}
+            {T.filters[f]}
             {f === 'new' && newCount > 0 && (
               <span className="ml-1.5 bg-danger text-white text-[9px] font-700 rounded-full px-1 py-0.5 leading-none">
                 {newCount}
@@ -323,7 +325,7 @@ export default function AlertsClient() {
       <div className="flex flex-wrap items-end gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <label htmlFor="alert-search" className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">
-            Participant
+            {T.participant}
           </label>
           <Icon
             name="MagnifyingGlassIcon"
@@ -336,13 +338,13 @@ export default function AlertsClient() {
             type="search"
             value={participantInput}
             onChange={(e) => setParticipantInput(e.target.value)}
-            placeholder="Search by name or username"
+            placeholder={T.searchPlaceholder}
             className="w-full pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-card placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div>
           <label htmlFor="alert-from" className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">
-            From
+            {T.from}
           </label>
           <input
             id="alert-from"
@@ -355,7 +357,7 @@ export default function AlertsClient() {
         </div>
         <div>
           <label htmlFor="alert-to" className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">
-            To
+            {T.to}
           </label>
           <input
             id="alert-to"
@@ -372,17 +374,17 @@ export default function AlertsClient() {
             className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-500 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted"
           >
             <Icon name="XMarkIcon" size={14} variant="outline" />
-            Clear
+            {T.clear}
           </button>
         )}
         {searching && alerts && !loading && (
           <p className="text-[12px] text-muted-foreground pb-2.5">
-            {alerts.length} {alerts.length === 1 ? 'result' : 'results'} in {ALERT_FILTER_LABELS[filter]}
+            {T.results(alerts.length, T.filters[filter])}
           </p>
         )}
       </div>
       {dateRangeInvalid && (
-        <p className="text-[12px] text-danger -mt-2">The From date is after the To date.</p>
+        <p className="text-[12px] text-danger -mt-2">{T.badRange}</p>
       )}
 
       {/* Table */}
@@ -391,14 +393,14 @@ export default function AlertsClient() {
           <table className="w-full min-w-[980px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                {['Occurred', 'Participant', 'Message', 'Status', 'Notes', 'Actions'].map((h) => (
+                {(['occurred', 'participant', 'message', 'status', 'notes', 'actions'] as const).map((h) => (
                   <th
                     key={h}
                     className={`text-left px-5 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider ${
-                      h === 'Message' ? 'w-[30%]' : h === 'Notes' ? 'w-[24%]' : ''
+                      h === 'message' ? 'w-[30%]' : h === 'notes' ? 'w-[24%]' : ''
                     }`}
                   >
-                    {h}
+                    {T.columns[h]}
                   </th>
                 ))}
               </tr>
@@ -419,7 +421,7 @@ export default function AlertsClient() {
                   <td colSpan={6} className="px-5 py-12 text-center">
                     <p className="text-[13px] text-danger mb-3">{error}</p>
                     <button onClick={() => void load()} className="text-[13px] font-600 text-primary hover:underline">
-                      Try again
+                      {T.tryAgain}
                     </button>
                   </td>
                 </tr>
@@ -429,19 +431,15 @@ export default function AlertsClient() {
                     {searching ? (
                       <EmptyState
                         icon="MagnifyingGlassIcon"
-                        title="No matching alerts"
-                        description={`No assistance requests in “${ALERT_FILTER_LABELS[filter]}” match your search. Try another name, a wider date range, or the All tab.`}
-                        action={{ label: 'Clear search', onClick: clearSearch }}
+                        title={T.noMatchTitle}
+                        description={T.noMatchBody(T.filters[filter])}
+                        action={{ label: T.clearSearch, onClick: clearSearch }}
                       />
                     ) : (
                       <EmptyState
                         icon="BellSlashIcon"
-                        title={filter === 'open' ? 'No open alerts' : `No alerts in “${ALERT_FILTER_LABELS[filter]}”`}
-                        description={
-                          filter === 'open'
-                            ? 'Every assistance request has been resolved. New requests from the app appear here automatically.'
-                            : 'No assistance requests match this filter.'
-                        }
+                        title={filter === 'open' ? T.noOpenTitle : T.noneInFilter(T.filters[filter])}
+                        description={filter === 'open' ? T.noOpenBody : T.noneInFilterBody}
                       />
                     )}
                   </td>
@@ -466,7 +464,7 @@ export default function AlertsClient() {
                     >
                       {/* Occurred */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        <p className="text-[13px] text-foreground tabular-nums">{formatOccurred(a.createdAt)}</p>
+                        <p className="text-[13px] text-foreground tabular-nums">{fmtOccurred(a.createdAt)}</p>
                         <p className="text-[11px] text-muted-foreground">{timeAgo(a.createdAt)}</p>
                       </td>
 
@@ -493,24 +491,24 @@ export default function AlertsClient() {
                             }}
                             className="text-[11px] font-600 text-primary hover:underline mt-1"
                           >
-                            {showFull ? 'Show less' : 'Show more'}
+                            {showFull ? T.showLess : T.showMore}
                           </button>
                         )}
                       </td>
 
                       {/* Status */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        {a.status === 'NEW' && <Badge variant="new" label="NEW" />}
-                        {a.status === 'ACK' && <Badge variant="ack" label={ALERT_STATUS_LABELS.ACK} />}
-                        {a.status === 'RESOLVED' && <Badge variant="resolved" label="RESOLVED" />}
+                        {a.status === 'NEW' && <Badge variant="new" label={T.status.NEW} />}
+                        {a.status === 'ACK' && <Badge variant="ack" label={T.status.ACK} />}
+                        {a.status === 'RESOLVED' && <Badge variant="resolved" label={T.status.RESOLVED} />}
                         {a.status === 'ACK' && a.acknowledgedAt && (
                           <p className="text-[11px] text-muted-foreground mt-1">
-                            by {staffName(a.acknowledgedBy)} · {timeAgo(a.acknowledgedAt)}
+                            {T.by(staffName(a.acknowledgedBy), timeAgo(a.acknowledgedAt))}
                           </p>
                         )}
                         {a.status === 'RESOLVED' && a.resolvedAt && (
                           <p className="text-[11px] text-muted-foreground mt-1">
-                            by {staffName(a.resolvedBy)} · {timeAgo(a.resolvedAt)}
+                            {T.by(staffName(a.resolvedBy), timeAgo(a.resolvedAt))}
                           </p>
                         )}
                       </td>
@@ -528,7 +526,7 @@ export default function AlertsClient() {
                                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void saveNotes();
                               }}
                               rows={4}
-                              placeholder="Add notes, callbacks, follow-ups..."
+                              placeholder={T.notesPlaceholder}
                               className="w-full px-2.5 py-2 border border-border rounded-lg text-[12.5px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
                             />
                             <div className="flex items-center gap-2">
@@ -537,14 +535,14 @@ export default function AlertsClient() {
                                 disabled={savingNotes}
                                 className="px-2.5 py-1 bg-primary text-primary-foreground rounded-md text-[11.5px] font-600 hover:opacity-90 disabled:opacity-60"
                               >
-                                {savingNotes ? 'Saving…' : 'Save'}
+                                {savingNotes ? T.saving : T.save}
                               </button>
                               <button
                                 onClick={() => setEditing(null)}
                                 disabled={savingNotes}
                                 className="px-2.5 py-1 border border-border rounded-md text-[11.5px] font-500 text-foreground hover:bg-muted"
                               >
-                                Cancel
+                                {T.cancel}
                               </button>
                               <span
                                 className={`ml-auto text-[10.5px] tabular-nums ${
@@ -578,35 +576,35 @@ export default function AlertsClient() {
                             <button
                               onClick={() => void changeStatus(a, 'ACK')}
                               disabled={isBusy}
-                              title={ALERT_TEXT.markSeenHint}
+                              title={T.markSeenHint}
                               className="px-2 py-1 bg-warning/10 text-warning rounded-md text-[11px] font-600 hover:bg-warning/20 disabled:opacity-50 whitespace-nowrap"
                             >
-                              {ALERT_TEXT.markSeen}
+                              {T.markSeen}
                             </button>
                           )}
                           {a.status !== 'RESOLVED' && (
                             <button
                               onClick={() => void changeStatus(a, 'RESOLVED')}
                               disabled={isBusy}
-                              title="Mark as handled — moves to Resolved"
+                              title={T.resolveHint}
                               className="px-2 py-1 bg-success/10 text-success rounded-md text-[11px] font-600 hover:bg-success/20 disabled:opacity-50"
                             >
-                              Resolve
+                              {T.resolve}
                             </button>
                           )}
                           {a.status === 'RESOLVED' && (
                             <button
                               onClick={() => void changeStatus(a, 'NEW')}
                               disabled={isBusy}
-                              title="Reopen as NEW"
+                              title={T.reopenHint}
                               className="px-2 py-1 bg-muted text-foreground rounded-md text-[11px] font-600 hover:bg-secondary disabled:opacity-50"
                             >
-                              Reopen
+                              {T.reopen}
                             </button>
                           )}
                           <button
                             onClick={() => openDetail(a)}
-                            title="View full message and add notes"
+                            title={T.viewHint}
                             className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                           >
                             <Icon name="ChatBubbleLeftEllipsisIcon" size={15} variant="outline" />
@@ -614,7 +612,7 @@ export default function AlertsClient() {
                           <button
                             onClick={() => setEditing({ id: a.id, draft: a.notes })}
                             disabled={isBusy || isEditing}
-                            title="Edit notes"
+                            title={T.editNotes}
                             className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
                           >
                             <Icon name="PencilSquareIcon" size={15} variant="outline" />
@@ -622,7 +620,7 @@ export default function AlertsClient() {
                           <button
                             onClick={() => void openChat(a)}
                             disabled={isBusy}
-                            title={`Open chat with ${a.patientName}`}
+                            title={T.openChatWith(a.patientName)}
                             className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
                           >
                             <Icon name="ChatBubbleLeftRightIcon" size={15} variant="outline" />
@@ -638,7 +636,7 @@ export default function AlertsClient() {
         </div>
         {alerts && alerts.length >= 500 && (
           <p className="px-5 py-3 text-[11px] text-muted-foreground border-t border-border">
-            Showing the 500 most recent alerts for this filter.
+            {T.first500}
           </p>
         )}
       </div>
@@ -648,8 +646,8 @@ export default function AlertsClient() {
         open={!!selected}
         onClose={() => setSelected(null)}
         dirty={!!selected && panelDraft.trim() !== selected.notes.trim()}
-        title="Alert Detail"
-        subtitle={selected ? `${selected.patientName} · ${formatOccurred(selected.createdAt)}` : ''}
+        title={T.detailTitle}
+        subtitle={selected ? `${selected.patientName} · ${fmtOccurred(selected.createdAt)}` : ''}
         width="md"
         footer={
           selected ? (
@@ -659,7 +657,7 @@ export default function AlertsClient() {
                 disabled={!!busy[selected.id]}
                 className="px-4 py-2 border border-border rounded-lg text-[13px] font-600 text-foreground hover:bg-muted disabled:opacity-60"
               >
-                Reopen
+                {T.reopen}
               </button>
             ) : (
               <>
@@ -669,7 +667,7 @@ export default function AlertsClient() {
                     disabled={!!busy[selected.id]}
                     className="px-4 py-2 bg-warning/10 text-warning border border-warning/20 rounded-lg text-[13px] font-600 hover:bg-warning/20 transition-colors duration-150 disabled:opacity-60"
                   >
-                    {ALERT_TEXT.markSeen}
+                    {T.markSeen}
                   </button>
                 )}
                 <button
@@ -677,7 +675,7 @@ export default function AlertsClient() {
                   disabled={!!busy[selected.id]}
                   className="px-4 py-2 bg-success text-white rounded-lg text-[13px] font-600 hover:opacity-90 transition-opacity duration-150 disabled:opacity-60"
                 >
-                  Mark Resolved
+                  {T.markResolved}
                 </button>
               </>
             )
@@ -688,9 +686,9 @@ export default function AlertsClient() {
           <div className="space-y-5">
             {/* Status */}
             <div className="flex items-center gap-2">
-              {selected.status === 'NEW' && <Badge variant="new" label="NEW" />}
-              {selected.status === 'ACK' && <Badge variant="ack" label={ALERT_STATUS_LABELS.ACK} />}
-              {selected.status === 'RESOLVED' && <Badge variant="resolved" label="RESOLVED" />}
+              {selected.status === 'NEW' && <Badge variant="new" label={T.status.NEW} />}
+              {selected.status === 'ACK' && <Badge variant="ack" label={T.status.ACK} />}
+              {selected.status === 'RESOLVED' && <Badge variant="resolved" label={T.status.RESOLVED} />}
             </div>
 
             {/* Patient info */}
@@ -709,11 +707,11 @@ export default function AlertsClient() {
                   <button
                     onClick={() => void openChat(selected)}
                     disabled={!!busy[selected.id]}
-                    title="Open chat with this patient"
+                    title={T.openChatHint}
                     className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-[12px] font-500 text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-60"
                   >
                     <Icon name="ChatBubbleLeftRightIcon" size={13} variant="outline" />
-                    Open Chat
+                    {T.openChat}
                   </button>
                 </div>
               </div>
@@ -721,22 +719,22 @@ export default function AlertsClient() {
 
             {/* Timeline */}
             <div>
-              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Timeline</p>
+              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">{T.timeline}</p>
               <ul className="space-y-1.5 text-[13px] text-foreground">
                 <li>
-                  <span className="text-muted-foreground">Received:</span> {formatOccurred(selected.createdAt)} ·{' '}
+                  <span className="text-muted-foreground">{T.received}</span> {fmtOccurred(selected.createdAt)} ·{' '}
                   {timeAgo(selected.createdAt)}
                 </li>
                 {selected.acknowledgedAt && (
                   <li>
-                    <span className="text-muted-foreground">{ALERT_TEXT.seenAt}</span> {formatOccurred(selected.acknowledgedAt)}{' '}
-                    by {staffName(selected.acknowledgedBy)}
+                    <span className="text-muted-foreground">{T.seenAt}</span> {fmtOccurred(selected.acknowledgedAt)}{' '}
+                    {T.byName(staffName(selected.acknowledgedBy))}
                   </li>
                 )}
                 {selected.resolvedAt && (
                   <li>
-                    <span className="text-muted-foreground">Resolved:</span> {formatOccurred(selected.resolvedAt)} by{' '}
-                    {staffName(selected.resolvedBy)}
+                    <span className="text-muted-foreground">{T.resolvedAt}</span> {fmtOccurred(selected.resolvedAt)}{' '}
+                    {T.byName(staffName(selected.resolvedBy))}
                   </li>
                 )}
               </ul>
@@ -744,7 +742,7 @@ export default function AlertsClient() {
 
             {/* Full message */}
             <div>
-              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">Patient Message</p>
+              <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">{T.patientMessage}</p>
               <div className="p-4 bg-muted/30 rounded-lg border border-border">
                 <p className="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap break-words">
                   {selected.message}
@@ -755,19 +753,19 @@ export default function AlertsClient() {
             {/* Notes */}
             <div>
               <p className="text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-2">
-                Staff Notes <span className="normal-case font-400">(only visible to staff)</span>
+                {T.staffNotes} <span className="normal-case font-400">{T.staffOnly}</span>
               </p>
               <textarea
                 value={panelDraft}
                 onChange={(e) => setPanelDraft(e.target.value)}
                 rows={5}
-                placeholder="Add notes, callbacks, follow-ups..."
+                placeholder={T.notesPlaceholder}
                 className="w-full px-3 py-2.5 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
               />
               <div className="flex items-center justify-between mt-2">
                 <span className="text-[11px] text-muted-foreground">
                   {selected.notesUpdatedAt
-                    ? `Last edited by ${staffName(selected.notesUpdatedBy)} · ${timeAgo(selected.notesUpdatedAt)}`
+                    ? T.lastEdited(staffName(selected.notesUpdatedBy), timeAgo(selected.notesUpdatedAt))
                     : `${panelDraft.length}/${NOTES_MAX}`}
                 </span>
                 <button
@@ -778,10 +776,10 @@ export default function AlertsClient() {
                   {panelSaving ? (
                     <>
                       <Icon name="ArrowPathIcon" size={12} variant="outline" className="animate-spin" />
-                      Saving...
+                      {T.saving}
                     </>
                   ) : (
-                    'Save Notes'
+                    T.saveNotes
                   )}
                 </button>
               </div>
