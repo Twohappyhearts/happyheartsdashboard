@@ -111,11 +111,12 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // Marks the Esc as handled so a SlideOver underneath does not close as well.
-      e.preventDefault();
+      // Already handled by a control inside (e.g. Esc cancels an inline rename and calls preventDefault).
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
       // The discard prompt on top handles this Esc itself ("Keep editing").
       if (asking) return;
+      // Marks the Esc as handled so a SlideOver underneath does not close as well.
+      e.preventDefault();
       requestClose();
     };
     if (open) document.addEventListener('keydown', handleKey);
