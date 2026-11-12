@@ -62,6 +62,10 @@ export default function TrustedWebsites() {
 
   const activeCount = sites.filter((s) => s.active).length;
   const cleaned = draft ? cleanDomain(draft.domain) : null;
+  // Typed into the add/edit dialog and not saved: closing asks before discarding it.
+  const draftOrigin = draft?.id ? sites.find((s) => s.id === draft.id) : null;
+  const draftDirty =
+    !!draft && (draft.domain !== (draftOrigin?.domain ?? '') || draft.label !== (draftOrigin?.label ?? ''));
 
   const save = async () => {
     if (!draft) return;
@@ -247,10 +251,11 @@ export default function TrustedWebsites() {
         onClose={() => !saving && setDraft(null)}
         title={draft?.id ? T.editTitle : T.add}
         size="md"
-        footer={
+        dirty={draftDirty}
+        footer={(requestClose) => (
           <>
             <button
-              onClick={() => setDraft(null)}
+              onClick={requestClose}
               disabled={saving}
               className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
             >
@@ -264,7 +269,7 @@ export default function TrustedWebsites() {
               {saving ? T.saving : draft?.id ? T.saveChanges : T.add}
             </button>
           </>
-        }
+        )}
       >
         {draft && (
           <form

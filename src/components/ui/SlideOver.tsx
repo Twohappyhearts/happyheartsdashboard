@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
-import Modal from '@/components/ui/Modal';
+import { useDiscardGuard } from '@/components/ui/Modal';
 import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface SlideOverProps {
@@ -31,17 +31,8 @@ const SlideOverCloseContext = createContext<(() => void) | null>(null);
 export const useSlideOverClose = () => useContext(SlideOverCloseContext);
 
 export default function SlideOver({ open, onClose, title, subtitle, children, footer, width = 'lg', dirty = false }: SlideOverProps) {
-  const [asking, setAsking] = useState(false);
   const DISCARD_TEXT = useStaffT().t.discard;
-
-  const requestClose = useCallback(() => {
-    if (dirty) setAsking(true);
-    else onClose();
-  }, [dirty, onClose]);
-
-  useEffect(() => {
-    if (!open) setAsking(false);
-  }, [open]);
+  const { requestClose, discardPrompt } = useDiscardGuard(open, dirty, onClose);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -53,17 +44,6 @@ export default function SlideOver({ open, onClose, title, subtitle, children, fo
     if (open) document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [open, requestClose]);
-
-  // Leaving the page (reload, closing the tab) with unsaved changes: let the browser ask.
-  useEffect(() => {
-    if (!open || !dirty) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [open, dirty]);
 
   return (
     <div
@@ -111,34 +91,7 @@ export default function SlideOver({ open, onClose, title, subtitle, children, fo
         )}
       </div>
 
-      <Modal
-        open={open && asking}
-        onClose={() => setAsking(false)}
-        title={DISCARD_TEXT.title}
-        size="sm"
-        footer={
-          <>
-            <button
-              autoFocus
-              onClick={() => setAsking(false)}
-              className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted"
-            >
-              {DISCARD_TEXT.keep}
-            </button>
-            <button
-              onClick={() => {
-                setAsking(false);
-                onClose();
-              }}
-              className="px-4 py-2 bg-danger text-white rounded-lg text-[13px] font-600 hover:opacity-90"
-            >
-              {DISCARD_TEXT.discard}
-            </button>
-          </>
-        }
-      >
-        <p className="text-[13px] text-muted-foreground">{DISCARD_TEXT.body}</p>
-      </Modal>
+      {discardPrompt}
     </div>
   );
 }

@@ -58,6 +58,17 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
   const locked = !callerIsAdmin && user.role === 'admin';
   const roleDisabled = isSelf || locked;
 
+  const pendingChanges = () => {
+    const changes: { role?: AccountRole; displayId?: string; isActive?: boolean; phone?: string } = {};
+    if (displayId.trim() !== user.displayId) changes.displayId = displayId.trim();
+    if (normalizePhone(phone) !== user.phone) changes.phone = phone.trim();
+    if (role !== user.role) changes.role = role;
+    if (enabled !== user.active) changes.isActive = enabled;
+    return changes;
+  };
+  // Unsaved edits (or a typed new password): closing asks before discarding them.
+  const dirty = Object.keys(pendingChanges()).length > 0 || newPassword !== '';
+
   const save = async (skipConfirm = false) => {
     if (displayId.trim().length > 50) {
       toast.error(T.displayIdTooLong);
@@ -72,11 +83,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
       setConfirmReenable(true);
       return;
     }
-    const changes: { role?: AccountRole; displayId?: string; isActive?: boolean; phone?: string } = {};
-    if (displayId.trim() !== user.displayId) changes.displayId = displayId.trim();
-    if (normalizePhone(phone) !== user.phone) changes.phone = phone.trim();
-    if (role !== user.role) changes.role = role;
-    if (enabled !== user.active) changes.isActive = enabled;
+    const changes = pendingChanges();
     if (Object.keys(changes).length === 0) {
       onClose();
       return;
@@ -123,9 +130,10 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
         onClose={onClose}
         title={T.title}
         size="md"
-        footer={
+        dirty={dirty}
+        footer={(requestClose) => (
           <>
-            <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+            <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
               {T.cancel}
             </button>
             <button
@@ -137,7 +145,7 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
               {T.update}
             </button>
           </>
-        }
+        )}
       >
         <div className="space-y-4">
           {locked && (

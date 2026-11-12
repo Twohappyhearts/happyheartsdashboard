@@ -48,6 +48,8 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
     displayId: form.displayId.length > 50 ? T.maxChars(50) : null,
   };
   const valid = Object.values(errors).every((e) => !e);
+  // Typed into the form and not created yet: closing asks before discarding it.
+  const dirty = !created && JSON.stringify(form) !== JSON.stringify(EMPTY);
 
   const close = () => {
     setForm(EMPTY);
@@ -127,9 +129,10 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
       onClose={close}
       title={T.title}
       size="md"
-      footer={
+      dirty={dirty}
+      footer={(requestClose) => (
         <>
-          <button onClick={close} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+          <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
             {T.cancel}
           </button>
           <button
@@ -141,7 +144,7 @@ export default function AddUserModal({ open, onClose, onCreated, canCreateAdmin 
             {T.create}
           </button>
         </>
-      }
+      )}
     >
       <form
         className="space-y-4"

@@ -92,6 +92,15 @@ export default function SurveyManagementClient() {
   const codeVal = (watch('code', '') ?? '').toUpperCase();
   const placementVal = watch('placement');
 
+  // The form as it was when the dialog opened (after reset), so closing can ask before discarding edits.
+  const formSnapshot = JSON.stringify(watch());
+  const [openSnapshot, setOpenSnapshot] = useState<string | null>(null);
+  useEffect(() => {
+    setOpenSnapshot(modalOpen ? formSnapshot : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, editingSurvey]);
+  const formDirty = modalOpen && openSnapshot !== null && formSnapshot !== openSnapshot;
+
   const handleOpenNew = () => {
     setEditingSurvey(null);
     reset({
@@ -378,10 +387,11 @@ export default function SurveyManagementClient() {
         onClose={() => setModalOpen(false)}
         title={editingSurvey ? T.editTitle : T.addLink}
         size="lg"
-        footer={
+        dirty={formDirty}
+        footer={(requestClose) => (
           <>
             <button
-              onClick={() => setModalOpen(false)}
+              onClick={requestClose}
               className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150"
             >
               {T.cancel}
@@ -399,7 +409,7 @@ export default function SurveyManagementClient() {
               ) : editingSurvey ? T.saveChanges : T.addSurvey}
             </button>
           </>
-        }
+        )}
       >
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <div className="grid grid-cols-3 gap-4">
