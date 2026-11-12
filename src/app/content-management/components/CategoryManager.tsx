@@ -37,6 +37,15 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
 
   const sorted = [...categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
+  // A typed new category or a changed name not saved yet: closing asks before discarding it.
+  const renamedFrom = editing ? categories.find((c) => c.id === editing.id)?.name : undefined;
+  const dirty = newName.trim() !== '' || (editing !== null && editing.name.trim() !== (renamedFrom ?? '').trim());
+  const close = () => {
+    setNewName('');
+    setEditing(null);
+    onClose();
+  };
+
   const run = async (work: () => Promise<void>, success: string) => {
     setBusy(true);
     try {
@@ -86,7 +95,7 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={T.title} size="md">
+    <Modal open={open} onClose={close} title={T.title} size="md" dirty={dirty}>
       <div className="space-y-4">
         <p className="text-[12px] text-muted-foreground">{T.intro}</p>
 
@@ -125,7 +134,11 @@ export default function CategoryManager({ open, onClose, categories, onChanged }
                       onChange={(e) => setEditing({ id: c.id, name: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') void rename();
-                        if (e.key === 'Escape') setEditing(null);
+                        if (e.key === 'Escape') {
+                          // Cancels only this rename; the dialog stays open.
+                          e.preventDefault();
+                          setEditing(null);
+                        }
                       }}
                       className="flex-1 px-2 py-1 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-2 focus:ring-ring"
                     />

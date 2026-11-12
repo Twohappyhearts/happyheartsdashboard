@@ -42,6 +42,8 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [reparse, setReparse] = useState(false);
+  /** The settings the dialog opened with. */
+  const [startDraft, setStartDraft] = useState<ChunkSettingsDraft | null>(null);
   const stopRef = useRef(false);
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
     // Start from the knowledge base's defaults (else the last settings used).
     const prev = defaults ?? docs.find((d) => d.chunkSettings)?.chunkSettings ?? DEFAULT_CHUNK_SETTINGS;
     setDraft(toDraft(prev));
+    setStartDraft(toDraft(prev));
     setRows({});
     setRunning(false);
     setFinished(false);
@@ -59,6 +62,9 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
 
   const parsed = fromDraft(draft);
   const problem = typeof parsed === 'string' ? parsed : null;
+  // Changed settings that have not been run: closing asks before discarding them.
+  const dirty =
+    !running && !finished && startDraft !== null && (JSON.stringify(draft) !== JSON.stringify(startDraft) || reparse);
 
   const rechunking = docs.filter((d) => d.chunkGeneration).length;
   const anyParsed = docs.some((d) => d.hasParsed);
@@ -102,7 +108,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
   const failed = Object.values(rows).filter((r) => r.state === 'failed').length;
   const background = Object.values(rows).filter((r) => r.state === 'background').length;
 
-  const footer = (
+  const footer = (requestClose: () => void) => (
     <div className="flex items-center justify-between gap-3 w-full">
       <p className="text-[12px] text-muted-foreground">
         {running
@@ -120,7 +126,7 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
             {T.stopAfter}
           </button>
         ) : (
-          <button onClick={() => onClose(finished)} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+          <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
             {finished ? T.close : T.cancel}
           </button>
         )}
@@ -138,7 +144,14 @@ export default function ChunkModal({ open, docs, onClose, onProgress, defaults }
   );
 
   return (
-    <Modal open={open} onClose={running ? () => undefined : () => onClose(finished)} title={T.title} size="md" footer={footer}>
+    <Modal
+      open={open}
+      onClose={running ? () => undefined : () => onClose(finished)}
+      title={T.title}
+      size="md"
+      footer={footer}
+      dirty={dirty}
+    >
       <div className="space-y-4">
         <div>
           <p className="text-[12px] font-600 text-foreground mb-2">{T.settings}</p>

@@ -26,12 +26,38 @@ md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 md.core.ruler.push('tel_links', telLinks);
+md.core.ruler.push('untrusted_links', untrustedLinksToText);
 
-// Phone numbers in answers become tel: links: 911, 988 and 1-800-style numbers (also in Persian /
-// Arabic-Indic digits). No lookbehind: older iOS WebViews do not support it.
+/** What md.render gets per answer: the hosts its web links may point to (see linkableHosts). */
+interface RenderEnv {
+  linkableHosts: string[];
+}
+
+// Phone numbers in answers become tel: links (also in Persian / Arabic-Indic digits):
+// - US numbers: 714-479-8868, (714) 479-8868, 714.479.8868, 714 479 8868, optionally after "1-"
+//   or "+1"; dialed as tel:+1 and the 10 digits;
+// - the short numbers 911, 988 and 211, dialed as written.
+// Not blood pressure (162/112), dates (11/12/2026), ranges (25-35), ZIP codes, years, digits in
+// links, or a street number such as "211 W Chestnut Ave". No lookbehind: older iOS WebViews do
+// not support it, so the character before a number is matched (group 1) instead.
 const DIGIT = '0-9\\u06F0-\\u06F9\\u0660-\\u0669';
-const PHONE = new RegExp(`(^|[^${DIGIT}-])([${DIGIT}]-[${DIGIT}]{3}-[${DIGIT}]{3}-[${DIGIT}]{4}|[${DIGIT}]{3})(?![${DIGIT}-])`, 'g');
-const SHORT_NUMBERS = new Set(['911', '988']);
+const D = `[${DIGIT}]`;
+const D2_9 = '[2-9\\u06F2-\\u06F9\\u0662-\\u0669]';
+const ONE = '[1\\u06F1\\u0661]';
+const US_NUMBER =
+  `(?:\\+?${ONE}(?:[-. ]|(?=\\()))?(?:\\(${D2_9}${D}{2}\\) ?|${D2_9}${D}{2}[-. ])${D2_9}${D}{2}[-. ]${D}{4}` +
+  `(?![${DIGIT}\\w]|[-.][${DIGIT}])`;
+const STREET = `\\s+(?:[NSEW]\\.?\\s|[A-Z][a-z]+\\s+(?:St|Ave|Blvd|Rd|Dr|Way|Ln)\\b)`;
+const SHORT_NUMBER = `${D}{3}(?![${DIGIT}\\w]|[-/.,:][${DIGIT}]|${STREET})`;
+const PHONE = new RegExp(`(^|[^${DIGIT}\\w#+\\-./,:])(${US_NUMBER}|${SHORT_NUMBER})`, 'g');
+const SHORT_NUMBERS = new Set(['911', '988', '211']);
+
+/** The tel: link of a matched number, or null for a 3-digit number that is not a short number. */
+function telHref(raw: string): string | null {
+  const digits = asciiDigits(raw).replace(/[^0-9]/g, '');
+  if (digits.length === 3) return SHORT_NUMBERS.has(digits) ? `tel:${digits}` : null;
+  return `tel:+1${digits.slice(-10)}`;
+}
 
 function textToken(state: StateCore, content: string): Token {
   const t = new state.Token('text', '', 0);
@@ -57,12 +83,12 @@ function telLinks(state: StateCore) {
       for (let m = PHONE.exec(text); m; m = PHONE.exec(text)) {
         const start = m.index + m[1].length;
         const raw = m[2];
-        const digits = asciiDigits(raw).replace(/-/g, '');
-        if (raw.length === 3 ? !SHORT_NUMBERS.has(digits) : !digits.startsWith('1')) continue;
+        const href = telHref(raw);
+        if (!href) continue;
         if (start > last) out.push(textToken(state, text.slice(last, start)));
         const open = new state.Token('link_open', 'a', 1);
         open.attrs = [
-          ['href', `tel:${digits}`],
+          ['href', href],
           ['dir', 'ltr'],
           ['class', 'font-700 underline underline-offset-2 whitespace-nowrap'],
         ];
@@ -71,6 +97,43 @@ function telLinks(state: StateCore) {
       }
       if (last === 0) out.push(tok);
       else if (last < text.length) out.push(textToken(state, text.slice(last)));
+    }
+    block.children = out;
+  }
+}
+
+/** The link's host is one of the hosts, or a subdomain of one. */
+function hostAllowed(href: string, hosts: string[]): boolean {
+  let host: string;
+  try {
+    host = new URL(href).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hosts.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/**
+ * Web links (written by the model or made from a bare address) stay clickable only when they
+ * point to a host from this answer's own search results; any other link shows as plain text.
+ * tel: links are not affected.
+ */
+function untrustedLinksToText(state: StateCore) {
+  const hosts = (state.env as Partial<RenderEnv> | undefined)?.linkableHosts ?? [];
+  for (const block of state.tokens) {
+    if (block.type !== 'inline' || !block.children) continue;
+    const out: Token[] = [];
+    const dropped: boolean[] = [];
+    for (const tok of block.children) {
+      if (tok.type === 'link_open') {
+        const href = tok.attrGet('href') ?? '';
+        const drop = /^https?:/i.test(href) && !hostAllowed(href, hosts);
+        dropped.push(drop);
+        if (drop) continue;
+      } else if (tok.type === 'link_close' && dropped.pop()) {
+        continue;
+      }
+      out.push(tok);
     }
     block.children = out;
   }
@@ -150,6 +213,7 @@ export default function AiMessageParts({
   const { t } = usePatientText();
   const patient = audience === 'patient';
   const searchResults = useMemo(() => collectSearchResults(message), [message]);
+  const hosts = useMemo(() => linkableHosts(message), [message]);
   const emergency = useMemo(() => emergencyOf(message), [message]);
   const lapsed = !canRespond && !streaming;
 
@@ -196,7 +260,7 @@ export default function AiMessageParts({
     return (
       <div className="space-y-2">
         {message.parts.map(workPart)}
-        {text && <EmergencyReply text={text} crisis={crisis} />}
+        {text && <EmergencyReply text={text} crisis={crisis} linkableHosts={hosts} />}
         {careteamParts.map(careteamCard)}
       </div>
     );
@@ -210,7 +274,7 @@ export default function AiMessageParts({
       const { text, refs } = splitSources(part.text);
       return (
         <React.Fragment key={`t-${i}`}>
-          {text.trim() && <Markdown text={text} />}
+          {text.trim() && <Markdown text={text} linkableHosts={hosts} />}
           {refs.length > 0 && <SourceChips refs={refs} results={searchResults} onOpenDocument={onOpenDocument} />}
         </React.Fragment>
       );
@@ -223,7 +287,7 @@ export default function AiMessageParts({
       if (fallback) hasText = true;
       return (
         <React.Fragment key={part.toolCallId}>
-          {fallback && <Markdown text={fallback} />}
+          {fallback && <Markdown text={fallback} linkableHosts={hosts} />}
           {careteamCard(part as ToolPart)}
         </React.Fragment>
       );
@@ -257,6 +321,8 @@ interface SearchResult {
   kind?: 'web';
   /** Knowledge-base document (its original file opens through /api/agent/sources/:id). */
   documentId?: string;
+  /** The community resource directory: used for the answer, but not listed as a source. */
+  hideAsSource?: boolean;
 }
 
 /** ref → search result, over every searchKnowledge / webSearch call in this reply (refs are shared). */
@@ -269,6 +335,38 @@ function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
     }
   }
   return byRef;
+}
+
+/** Web addresses written in a passage (with http:// or https://). */
+const URL_IN_TEXT = /https?:\/\/[^\s<>()[\]{}"'`]+/gi;
+
+/**
+ * Hosts the answer's web links may point to: the page of each webSearch result, and any web
+ * address written in a searchKnowledge result (for example a program's website in the community
+ * resources directory). Addresses quoted inside a web page's excerpt do not count. "www." is
+ * dropped, so www.example.org also allows example.org and its other subdomains.
+ */
+function linkableHosts(message: UIMessage): string[] {
+  const hosts = new Set<string>();
+  const add = (url: string | null | undefined) => {
+    if (!url) return;
+    try {
+      // A sentence may end right after an address ("… at https://example.org.").
+      hosts.add(new URL(url.replace(/[.,;:!?]+$/, '')).hostname.toLowerCase().replace(/^www\./, ''));
+    } catch {
+      // not a full web address
+    }
+  };
+  for (const part of message.parts) {
+    if (!isToolUIPart(part) || part.state !== 'output-available') continue;
+    const name = getToolName(part);
+    const results = (part.output as { results?: Array<{ url?: string | null; content?: string }> } | undefined)?.results ?? [];
+    for (const r of results) {
+      if (name === 'webSearch') add(r.url);
+      else if (name === 'searchKnowledge') for (const url of String(r.content ?? '').match(URL_IN_TEXT) ?? []) add(url);
+    }
+  }
+  return [...hosts];
 }
 
 /**
@@ -293,9 +391,11 @@ function SourceChips({
   const docs = new Map<string, SearchResult>();
   for (const ref of refs) {
     const r = results.get(ref);
-    const key = r ? (r.kind === 'web' && r.url ? r.url : r.title) : '';
-    if (r && !docs.has(key)) docs.set(key, r);
+    if (!r || r.hideAsSource) continue;
+    const key = r.kind === 'web' && r.url ? r.url : r.title;
+    if (!docs.has(key)) docs.set(key, r);
   }
+  // Nothing to list (e.g. only the resource directory was cited): no "Sources" line at all.
   if (!docs.size) return null;
 
   const openDocument = async (key: string, documentId: string) => {
@@ -364,8 +464,8 @@ function SourceChips({
   );
 }
 
-function Markdown({ text }: { text: string }) {
-  const html = useMemo(() => md.render(text), [text]);
+function Markdown({ text, linkableHosts }: { text: string; linkableHosts: string[] }) {
+  const html = useMemo(() => md.render(text, { linkableHosts } satisfies RenderEnv), [text, linkableHosts]);
   return (
     <div
       // The answer's own direction (e.g. a Farsi answer while the app is in English).
@@ -377,7 +477,7 @@ function Markdown({ text }: { text: string }) {
 }
 
 /** Rule 1 replies: hard to miss, with buttons that call 911 (and 988 for thoughts of self-harm). */
-function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
+function EmergencyReply({ text, crisis, linkableHosts }: { text: string; crisis: boolean; linkableHosts: string[] }) {
   const { t } = usePatientText();
   const call = (number: string, primary: boolean) => (
     <a
@@ -395,7 +495,7 @@ function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
       <div className="flex items-start gap-2">
         <Icon name="ExclamationTriangleIcon" size={20} variant="solid" className="text-danger shrink-0 mt-1" />
         <div className="min-w-0 flex-1 font-500">
-          <Markdown text={text} />
+          <Markdown text={text} linkableHosts={linkableHosts} />
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-2">

@@ -285,7 +285,7 @@ export default function ContentManagementClient() {
                 <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.tags}</th>
                 <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.active}</th>
                 <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider">{T.columns.lastEdited}</th>
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">{T.columns.actions}</th>
+                <th className="sticky-actions text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-20">{T.columns.actions}</th>
               </tr>
             </thead>
             <tbody>
@@ -424,7 +424,7 @@ export default function ContentManagementClient() {
                     <td className="px-4 py-3 text-[12px] text-muted-foreground tabular-nums whitespace-nowrap">
                       {formatEdited(item.updatedAt, locale)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="sticky-actions px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(item)}

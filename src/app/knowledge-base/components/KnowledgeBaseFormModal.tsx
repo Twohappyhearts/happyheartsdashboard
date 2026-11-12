@@ -53,6 +53,13 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
   }, [open, knowledgeBase]);
 
   const settings = fromDraft(chunk);
+  // Changed from what the dialog opened with: closing asks before discarding it.
+  const dirty =
+    name !== (knowledgeBase?.name ?? '') ||
+    (!editing && slug !== '') ||
+    description !== (knowledgeBase?.description ?? '') ||
+    JSON.stringify(chunk) !== JSON.stringify(toDraft(knowledgeBase?.chunkSettings ?? DEFAULT_CHUNK_SETTINGS)) ||
+    active !== (knowledgeBase?.active ?? true);
   const problem = !name.trim()
     ? T.enterName
     : !editing && !KB_SLUG_RE.test(slug)
@@ -91,9 +98,9 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
     }
   };
 
-  const footer = (
+  const footer = (requestClose: () => void) => (
     <div className="flex items-center justify-end gap-3 w-full">
-      <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+      <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
         {T.cancel}
       </button>
       <button
@@ -107,7 +114,7 @@ export default function KnowledgeBaseFormModal({ open, knowledgeBase, onClose, o
   );
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? T.editTitle : T.newTitle} size="md" footer={footer}>
+    <Modal open={open} onClose={onClose} title={editing ? T.editTitle : T.newTitle} size="md" footer={footer} dirty={dirty}>
       <div className="space-y-4">
         <label className="block">
           <span className={labelClass}>{T.name}</span>

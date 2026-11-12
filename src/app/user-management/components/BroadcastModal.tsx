@@ -58,6 +58,8 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
 
   const trimmed = message.trim();
   const canSend = selected.size > 0 && trimmed.length > 0 && message.length <= BROADCAST_MAX && !sending;
+  // A written message or picked recipients: closing asks before discarding them.
+  const dirty = trimmed.length > 0 || selected.size > 0;
 
   const send = async () => {
     if (!canSend) return;
@@ -83,9 +85,10 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
       onClose={onClose}
       title={T.title}
       size="lg"
-      footer={
+      dirty={dirty}
+      footer={(requestClose) => (
         <>
-          <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
+          <button onClick={requestClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
             {T.cancel}
           </button>
           <button
@@ -101,7 +104,7 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
             {T.sendTo(selected.size)}
           </button>
         </>
-      }
+      )}
     >
       <div className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">

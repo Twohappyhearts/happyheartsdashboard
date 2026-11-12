@@ -152,7 +152,10 @@ export default function KnowledgeBaseListClient() {
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 {headers.map((h) => (
-                  <th key={`kbl-th-${h}`} className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                  <th
+                    key={`kbl-th-${h}`}
+                    className={`text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap ${h === C.actions ? 'sticky-actions' : ''}`}
+                  >
                     {h}
                   </th>
                 ))}
@@ -224,7 +227,7 @@ export default function KnowledgeBaseListClient() {
                     <td className="px-4 py-3 text-[12px] text-muted-foreground">{b.ownerUsername ?? '—'}</td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.createdAt, locale)}</td>
                     <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{fmtDate(b.updatedAt, locale)}</td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="sticky-actions px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => {
