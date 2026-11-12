@@ -1449,7 +1449,7 @@ export const es: StaffText = {
     roleAbilities: {
       patient: 'Solo usa la app móvil de Happy Hearts. No puede iniciar sesión en este panel.',
       staff:
-        'Usa todas las páginas del panel excepto Documentos legales. Puede crear y administrar cuentas de pacientes, pero no cuentas del equipo de atención ni de administrador.',
+        'Usa todas las páginas del panel excepto Documentos legales. Puede crear y administrar cuentas de pacientes y editar su propio ID visible y teléfono, pero no puede administrar otras cuentas del equipo de atención ni de administrador.',
       admin:
         'Todo lo que puede hacer el equipo de atención, y además administrar cuentas del equipo de atención y de administrador y subir los Términos de uso y la Política de privacidad (Documentos legales).',
     },
