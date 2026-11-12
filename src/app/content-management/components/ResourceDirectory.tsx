@@ -253,7 +253,7 @@ export default function ResourceDirectory({ onCountChange }: { onCountChange?: (
                 <th className={th}>{L.columns.active}</th>
                 <th className={th}>{L.columns.verified}</th>
                 <th className={th}>{L.columns.ai}</th>
-                <th className={`${th} w-20`}>{L.columns.actions}</th>
+                <th className={`${th} w-20 sticky-actions [--sticky-bg:var(--muted)]`}>{L.columns.actions}</th>
               </tr>
             </thead>
             <tbody>
@@ -338,7 +338,7 @@ export default function ResourceDirectory({ onCountChange }: { onCountChange?: (
                     <td className="px-4 py-3">
                       <ResourceAiBadge resource={r} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="sticky-actions px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openEdit(r)}

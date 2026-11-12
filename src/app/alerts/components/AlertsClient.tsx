@@ -397,7 +397,7 @@ export default function AlertsClient() {
                   <th
                     key={h}
                     className={`text-left px-5 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider ${
-                      h === 'message' ? 'w-[30%]' : h === 'notes' ? 'w-[24%]' : ''
+                      h === 'message' ? 'w-[30%]' : h === 'notes' ? 'w-[24%]' : h === 'actions' ? 'sticky-actions' : ''
                     }`}
                   >
                     {T.columns[h]}
@@ -570,7 +570,16 @@ export default function AlertsClient() {
                       </td>
 
                       {/* Actions */}
-                      <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className={`sticky-actions px-5 py-4 ${
+                          a.status === 'NEW'
+                            ? '[--sticky-bg:color-mix(in_srgb,var(--danger)_3%,var(--card))] [--sticky-hover-bg:color-mix(in_srgb,var(--danger)_7%,var(--card))]'
+                            : a.status === 'ACK'
+                              ? '[--sticky-bg:color-mix(in_srgb,var(--warning)_3%,var(--card))] [--sticky-hover-bg:color-mix(in_srgb,var(--warning)_7%,var(--card))]'
+                              : '[--sticky-hover-bg:color-mix(in_srgb,var(--muted)_40%,var(--card))]'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex flex-wrap items-center gap-1.5">
                           {a.status === 'NEW' && (
                             <button

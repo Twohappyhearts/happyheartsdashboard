@@ -302,7 +302,7 @@ export default function UserManagementClient() {
                     <SortIcon col={col.key} />
                   </th>
                 ))}
-                <th className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-32">{T.columns.actions}</th>
+                <th className="sticky-actions text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider w-32">{T.columns.actions}</th>
               </tr>
             </thead>
             <tbody>
@@ -367,7 +367,7 @@ export default function UserManagementClient() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <td className="sticky-actions px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setEditing(user)}

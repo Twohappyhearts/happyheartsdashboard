@@ -539,7 +539,10 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                   />
                 </th>
                 {headers.map((h) => (
-                  <th key={`kd-th-${h}`} className="text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                  <th
+                    key={`kd-th-${h}`}
+                    className={`text-left px-4 py-3 text-[11px] font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap ${h === C.actions ? 'sticky-actions' : ''}`}
+                  >
                     {h}
                   </th>
                 ))}
@@ -656,7 +659,11 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                       <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">
                         {doc.uploaderUsername ?? '—'} · {fmtRelative(doc.updatedAt, locale)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td
+                        className={`sticky-actions px-4 py-3 ${
+                          isSel ? '[--sticky-bg:color-mix(in_srgb,var(--primary)_5%,var(--card))] [--sticky-hover-bg:var(--sticky-bg)]' : ''
+                        }`}
+                      >
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => openChunks(doc)} className={actionBtn}>
                             <Icon name="EyeIcon" size={13} variant="outline" />
