@@ -40,7 +40,7 @@ const CONTEXT = [
   '- Anxiety during pregnancy',
   '- Depression and anxiety around the time of birth, and where to find support',
   '- How to talk with a healthcare provider',
-  '- Local community resources (for example food, diapers, housing, child care or support groups): search the knowledge base, give the programs with their contact details as the results list them (you may name these programs), and remind the user to call the program first to confirm.',
+  '- Local community resources (for example food, diapers, housing, child care or support groups): search the knowledge base, give the programs with their contact details as the results list them (you may name these programs), and remind the user to call the program first to confirm. If the user is outside the area these programs serve (another state, or a county the results do not list), say that the Happy Hearts list covers local programs only and suggest calling 211; do not name programs from other search results.',
   'You may also answer other general questions about pregnancy and recovery after birth, but only when the search results cover them.',
 ];
 
