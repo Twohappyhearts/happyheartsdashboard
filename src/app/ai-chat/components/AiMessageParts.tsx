@@ -26,6 +26,12 @@ md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 md.core.ruler.push('tel_links', telLinks);
+md.core.ruler.push('untrusted_links', untrustedLinksToText);
+
+/** What md.render gets per answer: the hosts its web links may point to (see linkableHosts). */
+interface RenderEnv {
+  linkableHosts: string[];
+}
 
 // Phone numbers in answers become tel: links: 911, 988 and 1-800-style numbers (also in Persian /
 // Arabic-Indic digits). No lookbehind: older iOS WebViews do not support it.
@@ -71,6 +77,43 @@ function telLinks(state: StateCore) {
       }
       if (last === 0) out.push(tok);
       else if (last < text.length) out.push(textToken(state, text.slice(last)));
+    }
+    block.children = out;
+  }
+}
+
+/** The link's host is one of the hosts, or a subdomain of one. */
+function hostAllowed(href: string, hosts: string[]): boolean {
+  let host: string;
+  try {
+    host = new URL(href).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hosts.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/**
+ * Web links (written by the model or made from a bare address) stay clickable only when they
+ * point to a host from this answer's own search results; any other link shows as plain text.
+ * tel: links are not affected.
+ */
+function untrustedLinksToText(state: StateCore) {
+  const hosts = (state.env as Partial<RenderEnv> | undefined)?.linkableHosts ?? [];
+  for (const block of state.tokens) {
+    if (block.type !== 'inline' || !block.children) continue;
+    const out: Token[] = [];
+    const dropped: boolean[] = [];
+    for (const tok of block.children) {
+      if (tok.type === 'link_open') {
+        const href = tok.attrGet('href') ?? '';
+        const drop = /^https?:/i.test(href) && !hostAllowed(href, hosts);
+        dropped.push(drop);
+        if (drop) continue;
+      } else if (tok.type === 'link_close' && dropped.pop()) {
+        continue;
+      }
+      out.push(tok);
     }
     block.children = out;
   }
@@ -150,6 +193,7 @@ export default function AiMessageParts({
   const { t } = usePatientText();
   const patient = audience === 'patient';
   const searchResults = useMemo(() => collectSearchResults(message), [message]);
+  const hosts = useMemo(() => linkableHosts(message), [message]);
   const emergency = useMemo(() => emergencyOf(message), [message]);
   const lapsed = !canRespond && !streaming;
 
@@ -196,7 +240,7 @@ export default function AiMessageParts({
     return (
       <div className="space-y-2">
         {message.parts.map(workPart)}
-        {text && <EmergencyReply text={text} crisis={crisis} />}
+        {text && <EmergencyReply text={text} crisis={crisis} linkableHosts={hosts} />}
         {careteamParts.map(careteamCard)}
       </div>
     );
@@ -210,7 +254,7 @@ export default function AiMessageParts({
       const { text, refs } = splitSources(part.text);
       return (
         <React.Fragment key={`t-${i}`}>
-          {text.trim() && <Markdown text={text} />}
+          {text.trim() && <Markdown text={text} linkableHosts={hosts} />}
           {refs.length > 0 && <SourceChips refs={refs} results={searchResults} onOpenDocument={onOpenDocument} />}
         </React.Fragment>
       );
@@ -223,7 +267,7 @@ export default function AiMessageParts({
       if (fallback) hasText = true;
       return (
         <React.Fragment key={part.toolCallId}>
-          {fallback && <Markdown text={fallback} />}
+          {fallback && <Markdown text={fallback} linkableHosts={hosts} />}
           {careteamCard(part as ToolPart)}
         </React.Fragment>
       );
@@ -269,6 +313,38 @@ function collectSearchResults(message: UIMessage): Map<number, SearchResult> {
     }
   }
   return byRef;
+}
+
+/** Web addresses written in a passage (with http:// or https://). */
+const URL_IN_TEXT = /https?:\/\/[^\s<>()[\]{}"'`]+/gi;
+
+/**
+ * Hosts the answer's web links may point to: the page of each webSearch result, and any web
+ * address written in a searchKnowledge result (for example a program's website in the community
+ * resources directory). Addresses quoted inside a web page's excerpt do not count. "www." is
+ * dropped, so www.example.org also allows example.org and its other subdomains.
+ */
+function linkableHosts(message: UIMessage): string[] {
+  const hosts = new Set<string>();
+  const add = (url: string | null | undefined) => {
+    if (!url) return;
+    try {
+      // A sentence may end right after an address ("… at https://example.org.").
+      hosts.add(new URL(url.replace(/[.,;:!?]+$/, '')).hostname.toLowerCase().replace(/^www\./, ''));
+    } catch {
+      // not a full web address
+    }
+  };
+  for (const part of message.parts) {
+    if (!isToolUIPart(part) || part.state !== 'output-available') continue;
+    const name = getToolName(part);
+    const results = (part.output as { results?: Array<{ url?: string | null; content?: string }> } | undefined)?.results ?? [];
+    for (const r of results) {
+      if (name === 'webSearch') add(r.url);
+      else if (name === 'searchKnowledge') for (const url of String(r.content ?? '').match(URL_IN_TEXT) ?? []) add(url);
+    }
+  }
+  return [...hosts];
 }
 
 /**
@@ -364,8 +440,8 @@ function SourceChips({
   );
 }
 
-function Markdown({ text }: { text: string }) {
-  const html = useMemo(() => md.render(text), [text]);
+function Markdown({ text, linkableHosts }: { text: string; linkableHosts: string[] }) {
+  const html = useMemo(() => md.render(text, { linkableHosts } satisfies RenderEnv), [text, linkableHosts]);
   return (
     <div
       // The answer's own direction (e.g. a Farsi answer while the app is in English).
@@ -377,7 +453,7 @@ function Markdown({ text }: { text: string }) {
 }
 
 /** Rule 1 replies: hard to miss, with buttons that call 911 (and 988 for thoughts of self-harm). */
-function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
+function EmergencyReply({ text, crisis, linkableHosts }: { text: string; crisis: boolean; linkableHosts: string[] }) {
   const { t } = usePatientText();
   const call = (number: string, primary: boolean) => (
     <a
@@ -395,7 +471,7 @@ function EmergencyReply({ text, crisis }: { text: string; crisis: boolean }) {
       <div className="flex items-start gap-2">
         <Icon name="ExclamationTriangleIcon" size={20} variant="solid" className="text-danger shrink-0 mt-1" />
         <div className="min-w-0 flex-1 font-500">
-          <Markdown text={text} />
+          <Markdown text={text} linkableHosts={linkableHosts} />
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-2">

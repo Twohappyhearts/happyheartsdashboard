@@ -98,6 +98,7 @@ function decisionRules(canNotifyCareteam: boolean, canSearchWeb: boolean): strin
     ...(canSearchWeb
       ? ['- A result from PubMed describes one research study, not advice. Say so in plain words ("A study of … found …"), keep its certainty, and never turn it into advice for the user.']
       : []),
+    '- Do not write web addresses, except a program\'s own website as the knowledge base results list it. For local resources, give only the programs and contact details the knowledge base results list; never add another organization or website that a search result only mentions.',
     '- Then, as the very last line, list the ref numbers of the search results you used, like this: [sources: 2, 4]. Do not name organizations or sources anywhere else; the app shows the source names from this line.',
     '',
     '4. Pregnancy or postpartum question where nothing in the search results helps. Reply:',
