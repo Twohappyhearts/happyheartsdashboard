@@ -7,6 +7,7 @@ import Icon from '@/components/ui/AppIcon';
 import { createClient } from '@/lib/supabase/client';
 import { displayName } from '@/contexts/AuthContext';
 import { BROADCAST_MAX, UsersError, broadcastMessage, type ManagedUser } from '@/lib/users';
+import { useStaffT } from '@/lib/i18n/staff/context';
 
 interface Props {
   open: boolean;
@@ -22,6 +23,7 @@ interface Props {
  */
 export default function BroadcastModal({ open, users, onClose, onSent }: Props) {
   const recipients = useMemo(() => users.filter((u) => u.role === 'patient' && u.active), [users]);
+  const T = useStaffT().t.users.broadcastForm;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
@@ -62,11 +64,11 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
     setSending(true);
     try {
       const n = await broadcastMessage(createClient(), [...selected], trimmed);
-      toast.success(`Broadcast sent to ${n} ${n === 1 ? 'patient' : 'patients'}`);
+      toast.success(T.sent(n));
       onSent();
       onClose();
     } catch (e) {
-      toast.error(e instanceof UsersError ? e.message : 'Could not send the broadcast.');
+      toast.error(e instanceof UsersError ? e.message : T.failed);
     } finally {
       setSending(false);
     }
@@ -79,12 +81,12 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
     <Modal
       open={open}
       onClose={onClose}
-      title="Broadcast Message"
+      title={T.title}
       size="lg"
       footer={
         <>
           <button onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-[13px] font-500 text-foreground hover:bg-muted transition-colors duration-150">
-            Cancel
+            {T.cancel}
           </button>
           <button
             onClick={send}
@@ -96,7 +98,7 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
             ) : (
               <Icon name="PaperAirplaneIcon" size={14} variant="outline" />
             )}
-            Send to {selected.size} {selected.size === 1 ? 'user' : 'users'}
+            {T.sendTo(selected.size)}
           </button>
         </>
       }
@@ -104,18 +106,16 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
       <div className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           <button className={quickBtn} onClick={() => setSelected(new Set(recipients.map((u) => u.id)))}>
-            All Patients
+            {T.allPatients}
           </button>
           <button className={quickBtn} onClick={() => setSelected(new Set())}>
-            Clear Selection
+            {T.clearSelection}
           </button>
           <span className="text-[12px] text-muted-foreground ml-auto">
-            {selected.size} of {recipients.length} selected
+            {T.selected(selected.size, recipients.length)}
           </span>
         </div>
-        <p className="text-[11px] text-muted-foreground -mt-2">
-          Messages arrive in each patient’s Chat tab in the app. Careteam and Admin accounts don’t have an app chat, so they aren’t listed.
-        </p>
+        <p className="text-[11px] text-muted-foreground -mt-2">{T.hint}</p>
 
         <div className="border border-border rounded-lg overflow-hidden">
           <div className="p-2 border-b border-border">
@@ -124,7 +124,7 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Filter patients..."
+                placeholder={T.filter}
                 className="w-full pl-7 pr-3 py-1.5 border border-border rounded-lg text-[12px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -132,7 +132,7 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
           <div className="max-h-56 overflow-y-auto scrollbar-thin divide-y divide-border">
             {visible.length === 0 ? (
               <p className="px-4 py-6 text-center text-[12px] text-muted-foreground">
-                {recipients.length === 0 ? 'No active patient accounts.' : 'No patients match.'}
+                {recipients.length === 0 ? T.noPatients : T.noMatch}
               </p>
             ) : (
               visible.map((u) => (
@@ -147,17 +147,17 @@ export default function BroadcastModal({ open, users, onClose, onSent }: Props) 
         </div>
 
         <div>
-          <label htmlFor="bc-message" className="block text-[13px] font-500 text-foreground mb-1">Message</label>
+          <label htmlFor="bc-message" className="block text-[13px] font-500 text-foreground mb-1">{T.message}</label>
           <textarea
             id="bc-message"
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, BROADCAST_MAX))}
             rows={5}
-            placeholder="Type the message to send..."
+            placeholder={T.messagePlaceholder}
             className="w-full px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
           />
           <p className={`text-[11px] mt-1 text-right tabular-nums ${message.length >= BROADCAST_MAX ? 'text-danger' : 'text-muted-foreground'}`}>
-            {message.length} / {BROADCAST_MAX} characters
+            {T.characters(message.length, BROADCAST_MAX)}
           </p>
         </div>
       </div>
