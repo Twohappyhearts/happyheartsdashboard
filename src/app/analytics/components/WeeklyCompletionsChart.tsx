@@ -6,11 +6,13 @@ import {
 } from 'recharts';
 
 import type { WeeklyPoint } from '@/lib/analytics';
+import { useStaffT } from '@/lib/i18n/staff/context';
+import { staffText } from '@/lib/i18n/staff';
 
-function weekLabel(isoDate: string) {
+function weekLabel(isoDate: string, locale: string) {
   // isoDate is a calendar date (YYYY-MM-DD); format without timezone shifts.
   const [y, m, d] = isoDate.split('-').map(Number);
-  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -25,7 +27,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       ))}
       {payload.length === 2 && payload[0].value > 0 && (
         <p className="text-[11px] text-muted-foreground mt-1">
-          Rate: {Math.round((payload[1].value / payload[0].value) * 100)}%
+          {staffText().analytics.chart.rate(Math.round((payload[1].value / payload[0].value) * 100))}
         </p>
       )}
     </div>
@@ -33,7 +35,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function WeeklyCompletionsChart({ data: points }: { data: WeeklyPoint[] }) {
-  const data = points.map((p) => ({ week: weekLabel(p.weekStart), opens: p.opens, completions: p.completions }));
+  const { t, locale } = useStaffT();
+  const data = points.map((p) => ({ week: weekLabel(p.weekStart, locale), opens: p.opens, completions: p.completions }));
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={data} barGap={4} barCategoryGap="30%">
@@ -55,8 +58,8 @@ export default function WeeklyCompletionsChart({ data: points }: { data: WeeklyP
           wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}
           formatter={(value) => <span style={{ color: 'var(--muted-foreground)', fontWeight: 500 }}>{value}</span>}
         />
-        <Bar dataKey="opens" name="Session Opens" fill="url(#barOpens)" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="completions" name="Completions" fill="url(#barCompletions)" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="opens" name={t.analytics.chart.opens} fill="url(#barOpens)" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="completions" name={t.analytics.chart.completions} fill="url(#barCompletions)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
