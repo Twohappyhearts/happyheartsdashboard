@@ -22,7 +22,7 @@ export const isAgentLanguage = isLanguage;
 
 /**
  * The research team's disclaimer (Laura Narvaez, 2026-10-21), shown word for word in the
- * AI notice and under the chat box of the dashboard's staff preview.
+ * AI notice. Staff pages do not show it (Bo, 2026-11-13).
  */
 export const AI_DISCLAIMER =
   'Notice: AI-generated responses may occasionally be inaccurate or out of scope. Verify details and consult your healthcare provider. See Terms of Use.';
