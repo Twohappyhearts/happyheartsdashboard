@@ -9,6 +9,7 @@ import {
   isStepCount,
   isToolUIPart,
   streamText,
+  type ModelMessage,
   type UIMessage,
   type UIMessageChunk,
 } from 'ai';
@@ -218,6 +219,22 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
         });
         void followUp.consumeStream({ onError: (e) => console.error('[agent] care-team follow-up stream error', e) });
         writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
+      } else if (opts.canNotifyCareteam && (await offerWithoutAnswer(result))) {
+        // The model sometimes offers the care-team message (rule 2) and stops without writing an
+        // answer, so the patient saw only the referral sentence. Ask for the answer in one more
+        // call without tools; its text joins the same reply, and the offer stays pending.
+        console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer without an answer; asking for the answer`);
+        const followUp = streamText({
+          model: chatModel(cfg),
+          instructions: `${built.instructions}\n\nYou offered to send the user's message to the care team, but you wrote no answer. Now write your answer to the user's latest message, following every rule above, with the search results you already have. The offer is shown to the user below your answer. Do not call any tool and do not mention tools.`,
+          messages: [...modelMessages, ...withoutPendingOffer(await result.responseMessages)],
+          tools,
+          toolChoice: 'none',
+          stopWhen: isStepCount(1),
+          providerOptions: thinkingOptions(cfg, false),
+        });
+        void followUp.consumeStream({ onError: (e) => console.error('[agent] answer follow-up stream error', e) });
+        writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
       } else {
         writer.write({ type: 'finish' });
       }
@@ -322,6 +339,37 @@ async function compressAfterTurn(
   } catch (e) {
     console.warn('[agent] background summary failed', e);
   }
+}
+
+/**
+ * True when the reply is a rule 2 care-team offer with no answer text in any step. Emergency
+ * offers are left alone: the app shows the fixed 911 / 988 reply for them.
+ */
+async function offerWithoutAnswer(result: {
+  steps: PromiseLike<Array<{ text: string; toolCalls: Array<{ toolName: string; input?: unknown }> }>>;
+}) {
+  try {
+    const steps = await result.steps;
+    if (steps.some((st) => st.text.trim())) return false;
+    const offers = steps.flatMap((st) => st.toolCalls.filter((c) => c.toolName === 'notifyCareteam'));
+    return offers.length > 0 && offers.every((c) => (c.input as { situation?: unknown } | undefined)?.situation === 'personal');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The turn's messages without the care-team offer that is still waiting for the user: a tool
+ * call with no result cannot be sent back to the model.
+ */
+function withoutPendingOffer(messages: ModelMessage[]): ModelMessage[] {
+  return messages.flatMap((m): ModelMessage[] => {
+    if (m.role !== 'assistant' || typeof m.content === 'string') return [m];
+    const content = m.content.filter(
+      (p) => !(p.type === 'tool-call' && p.toolName === 'notifyCareteam') && p.type !== 'tool-approval-request',
+    );
+    return content.length ? [{ ...m, content }] : [];
+  });
 }
 
 /**

@@ -279,35 +279,35 @@ export default function AiMessageParts({
         </React.Fragment>
       );
     }
-    if (isToolUIPart(part) && getToolName(part) === 'notifyCareteam') {
-      // The model sometimes offers the care-team message without writing the fixed reply
-      // (the referral) first; show that reply from code so it is never missing.
-      const { situation, language } = (part.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
-      const fallback = !hasText && isCareteamSituation(situation) ? fixedReply(situation, typeof language === 'string' ? language : 'en') : null;
-      if (fallback) hasText = true;
-      return (
-        <React.Fragment key={part.toolCallId}>
-          {fallback && <Markdown text={fallback} linkableHosts={hosts} />}
-          {careteamCard(part as ToolPart)}
-        </React.Fragment>
-      );
-    }
+    // Care-team offers go below the answer (see below): when the model offers first, the
+    // server asks for the answer afterwards, and its text arrives after the offer.
+    if (isToolUIPart(part) && getToolName(part) === 'notifyCareteam') return null;
     return workPart(part, i);
   });
 
+  // A reply that ended with an offer and no text (older replies, or the follow-up failed):
+  // show the fixed reply (the referral) from code so it is never missing.
+  const first = careteamParts[0]?.input as { situation?: unknown; language?: unknown } | undefined;
+  const fallback =
+    !hasText && !streaming && first && isCareteamSituation(first.situation)
+      ? fixedReply(first.situation, typeof first.language === 'string' ? first.language : 'en')
+      : null;
+
   // Patients see one line while the assistant searches or before the answer starts.
   const searching = searches.some(isRunning);
-  const status = patient && (searching || (streaming && !hasText && careteamParts.length === 0)) ? (searches.length ? t.lookingUp : t.thinking) : null;
+  const status = patient && (searching || (streaming && !hasText)) ? (searches.length ? t.lookingUp : t.thinking) : null;
 
   return (
     <div className="space-y-2">
       {rendered}
+      {fallback && <Markdown text={fallback} linkableHosts={hosts} />}
       {status && (
         <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin shrink-0" />
           {status}
         </p>
       )}
+      {careteamParts.map(careteamCard)}
     </div>
   );
 }
