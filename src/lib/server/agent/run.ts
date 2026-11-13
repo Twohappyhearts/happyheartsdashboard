@@ -222,15 +222,18 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
       } else if (opts.canNotifyCareteam && (await offerWithoutAnswer(result))) {
         // The model sometimes offers the care-team message (rule 2) and stops without writing an
         // answer, so the patient saw only the referral sentence. Ask for the answer in one more
-        // call without tools; its text joins the same reply, and the offer stays pending.
+        // call that may search but cannot offer again; its text joins the same reply, and the
+        // offer stays pending for the user.
         console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer without an answer; asking for the answer`);
         const followUp = streamText({
           model: chatModel(cfg),
-          instructions: `${built.instructions}\n\nYou offered to send the user's message to the care team, but you wrote no answer. Now write your answer to the user's latest message, following every rule above, with the search results you already have. The offer is shown to the user below your answer. Do not call any tool and do not mention tools.`,
-          messages: [...modelMessages, ...withoutPendingOffer(await result.responseMessages)],
+          instructions: `${built.instructions}\n\nYou drafted a message to the care team, and the user now sees that draft below your answer; they decide whether to send it. But you wrote no answer. Now write your answer to the user's latest message, following every rule above. If you have not searched for this question yet, search first. Do not say that you cannot send messages, and do not mention tools.`,
+          messages: [...modelMessages, ...withOfferShown(await result.responseMessages)],
           tools,
-          toolChoice: 'none',
-          stopWhen: isStepCount(1),
+          activeTools: toolNames.filter((n) => n !== 'notifyCareteam'),
+          toolApproval: ({ toolCall }) => (needsApproval.has(toolCall.toolName) ? 'user-approval' : undefined),
+          experimental_toolApprovalSecret: cfg.toolApprovalSecret,
+          stopWhen: isStepCount(3),
           providerOptions: thinkingOptions(cfg, false),
         });
         void followUp.consumeStream({ onError: (e) => console.error('[agent] answer follow-up stream error', e) });
@@ -359,17 +362,32 @@ async function offerWithoutAnswer(result: {
 }
 
 /**
- * The turn's messages without the care-team offer that is still waiting for the user: a tool
- * call with no result cannot be sent back to the model.
+ * The turn's messages with the pending care-team offer marked as shown: a tool call with no
+ * result cannot be sent back to the model, and the model must know that the draft is on screen.
  */
-function withoutPendingOffer(messages: ModelMessage[]): ModelMessage[] {
-  return messages.flatMap((m): ModelMessage[] => {
-    if (m.role !== 'assistant' || typeof m.content === 'string') return [m];
-    const content = m.content.filter(
-      (p) => !(p.type === 'tool-call' && p.toolName === 'notifyCareteam') && p.type !== 'tool-approval-request',
-    );
-    return content.length ? [{ ...m, content }] : [];
-  });
+function withOfferShown(messages: ModelMessage[]): ModelMessage[] {
+  const out: ModelMessage[] = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant' || typeof m.content === 'string') {
+      out.push(m);
+      continue;
+    }
+    const content = m.content.filter((p) => p.type !== 'tool-approval-request');
+    if (content.length) out.push({ ...m, content });
+    const offers = content.filter((p) => p.type === 'tool-call' && p.toolName === 'notifyCareteam');
+    if (offers.length) {
+      out.push({
+        role: 'tool',
+        content: offers.map((p) => ({
+          type: 'tool-result' as const,
+          toolCallId: (p as { toolCallId: string }).toolCallId,
+          toolName: 'notifyCareteam',
+          output: { type: 'text' as const, value: 'The draft is shown to the user below your answer. The user decides whether to send it.' },
+        })),
+      });
+    }
+  }
+  return out;
 }
 
 /**
