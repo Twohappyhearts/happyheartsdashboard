@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
 import Badge from '@/components/ui/Badge';
@@ -104,66 +105,122 @@ function FileIcon({ doc }: { doc: KnowledgeDocument }) {
   return <Icon name="DocumentTextIcon" size={18} variant="outline" className={`${color} shrink-0`} />;
 }
 
-/** "⋯" menu with less frequent actions. */
+/** Where the open "⋯" menu sits in the window: below the button, or above it when there is no room below. */
+type MenuPosition = { right: number; top?: number; bottom?: number };
+
+/**
+ * "⋯" menu with less frequent actions.
+ *
+ * The menu is rendered into <body> with a fixed position. Inside the table it would sit in the
+ * pinned action column (`.sticky-actions`), where the next row's cell covers it, and the table's
+ * scroll container would cut it off on the last rows.
+ */
 function RowMenu({ doc, onDelete, disabled }: { doc: KnowledgeDocument; onDelete: () => void; disabled: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
+  const open = position !== null;
   const T = useStaffT().t.kb.docs;
-  const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setPosition(null), []);
+
+  const toggle = () => {
+    if (open) return close();
+    const r = buttonRef.current?.getBoundingClientRect();
+    if (r) setPosition({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
+  // Open upward when the menu would run past the bottom of the window.
+  useLayoutEffect(() => {
+    if (position?.top === undefined || !menuRef.current || !buttonRef.current) return;
+    if (position.top + menuRef.current.offsetHeight > window.innerHeight - 8) {
+      const r = buttonRef.current.getBoundingClientRect();
+      setPosition({ bottom: window.innerHeight - r.top + 4, right: position.right });
+    }
+  }, [position]);
+
+  // Close on a click elsewhere, Esc, scrolling or resizing (the menu does not follow the row).
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      close();
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open, close]);
+
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={buttonRef}
+        onClick={toggle}
         disabled={disabled}
         aria-label={T.moreActions}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100 disabled:opacity-40 disabled:pointer-events-none"
       >
         <Icon name="EllipsisHorizontalIcon" size={16} variant="outline" />
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-44 bg-card border border-border rounded-lg shadow-modal py-1">
-          <a
-            href={fileUrl(doc.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 text-[12px] text-foreground hover:bg-muted"
+      {position &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ position: 'fixed', top: position.top, bottom: position.bottom, right: position.right }}
+            className="z-40 w-44 bg-card border border-border rounded-lg shadow-modal py-1"
           >
-            <Icon name="ArrowDownTrayIcon" size={14} variant="outline" />
-            {T.downloadOriginal}
-          </a>
-          {doc.hasParsed && (
             <a
-              href={fileUrl(doc.id, 'parsed')}
+              href={fileUrl(doc.id)}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => setOpen(false)}
+              role="menuitem"
+              onClick={close}
               className="flex items-center gap-2 px-3 py-2 text-[12px] text-foreground hover:bg-muted"
             >
-              <Icon name="DocumentTextIcon" size={14} variant="outline" />
-              {T.downloadParsed}
+              <Icon name="ArrowDownTrayIcon" size={14} variant="outline" />
+              {T.downloadOriginal}
             </a>
-          )}
-          <button
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-danger hover:bg-danger/10"
-          >
-            <Icon name="TrashIcon" size={14} variant="outline" />
-            {T.delete}
-          </button>
-        </div>
-      )}
-    </div>
+            {doc.hasParsed && (
+              <a
+                href={fileUrl(doc.id, 'parsed')}
+                target="_blank"
+                rel="noopener noreferrer"
+                role="menuitem"
+                onClick={close}
+                className="flex items-center gap-2 px-3 py-2 text-[12px] text-foreground hover:bg-muted"
+              >
+                <Icon name="DocumentTextIcon" size={14} variant="outline" />
+                {T.downloadParsed}
+              </a>
+            )}
+            <button
+              role="menuitem"
+              onClick={() => {
+                close();
+                onDelete();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-danger hover:bg-danger/10"
+            >
+              <Icon name="TrashIcon" size={14} variant="outline" />
+              {T.delete}
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
