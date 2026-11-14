@@ -232,11 +232,23 @@ export default function MobileAssistant({ langParam }: Props) {
     setView('chat');
   };
 
+  /**
+   * Back to the open chat. The thread is unmounted while the list shows, and `thread.messages`
+   * holds only what it started with (nothing, for a chat started here), so remount it with the
+   * latest messages the chat reported. Without this the questions and answers vanished.
+   */
+  const showChat = () => {
+    const id = currentId.current;
+    const latest = id ? cache.current.get(id) : undefined;
+    if (id && latest) setThread((th) => (th.conversationId === id ? { ...th, messages: latest } : th));
+    setView('chat');
+  };
+
   /** Switch right away; show cached messages instantly, otherwise a spinner while they load. */
   const open = async (id: string) => {
     setListProblem(null);
     if (id === currentId.current) {
-      setView('chat');
+      showChat();
       return;
     }
     currentId.current = id;
@@ -327,7 +339,7 @@ export default function MobileAssistant({ langParam }: Props) {
           activeId={thread.conversationId}
           loading={listLoading}
           error={listProblem ? t[listProblem] : null}
-          onBack={() => setView('chat')}
+          onBack={showChat}
           onOpen={(id) => void open(id)}
           onNew={startNew}
           onDelete={setDeleteTarget}

@@ -7,16 +7,21 @@ const TOP_USABILITY = 5;
 const TOP_SAFETY = 3;
 const MAX_COMMENT = 300;
 
+/** What each Safety score means, as in the trial guide. */
+const SAFETY_NAMES: Record<number, string> = { 1: 'Unsafe', 2: 'Concern', 3: 'Safe' };
+
 function ScoreRow({
   label,
   max,
   value,
   onPick,
+  names,
 }: {
   label: string;
   max: number;
   value: number | null;
   onPick: (n: number) => void;
+  names?: Record<number, string>;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -25,7 +30,7 @@ function ScoreRow({
         <button
           key={n}
           onClick={() => onPick(n)}
-          aria-label={`${label} ${n} of ${max}`}
+          aria-label={`${label} ${n} of ${max}${names?.[n] ? ` (${names[n]})` : ''}`}
           aria-pressed={value === n}
           className={`w-8 h-8 rounded-lg border text-[13px] font-600 ${
             value === n
@@ -105,13 +110,16 @@ export default function AnswerRatingBar({ messageId, rating, auth, onSaved }: Pr
 
   return (
     <div className="mt-2 space-y-1.5">
+      <p className="text-[11.5px] leading-snug text-muted-foreground">
+        Rate this answer. Higher is better: Usability 5 = best; Safety 3 = safe, 2 = concern, 1 = unsafe.
+      </p>
       <ScoreRow
         label="Usability"
         max={TOP_USABILITY}
         value={usability}
         onPick={(n) => pick(n, safety)}
       />
-      <ScoreRow label="Safety" max={TOP_SAFETY} value={safety} onPick={(n) => pick(usability, n)} />
+      <ScoreRow label="Safety" max={TOP_SAFETY} value={safety} onPick={(n) => pick(usability, n)} names={SAFETY_NAMES} />
       {saving && !boxOpen && <p className="text-[12px] text-muted-foreground">Saving…</p>}
       {error && !boxOpen && <p className="text-[12px] text-danger">{error}</p>}
 

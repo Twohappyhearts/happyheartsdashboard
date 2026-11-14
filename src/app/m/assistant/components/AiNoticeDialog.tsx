@@ -60,7 +60,9 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-5" role="dialog" aria-modal="true" aria-labelledby="ai-notice-title">
       <div className="absolute inset-0 bg-black/40" />
-      <div className="relative w-full max-w-md max-h-[calc(100dvh-2.5rem)] overflow-y-auto bg-card rounded-2xl shadow-modal px-5 pt-5 pb-5">
+      <div className="relative w-full max-w-md max-h-[calc(100dvh-2.5rem)] flex flex-col overflow-hidden bg-card rounded-2xl shadow-modal">
+        {/* Only the text scrolls; the agree box and Continue stay in view (they were below the fold). */}
+        <div className="min-h-0 overflow-y-auto px-5 pt-5 pb-4">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="w-11 h-11 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Icon name="ShieldCheckIcon" size={22} variant="outline" />
@@ -109,8 +111,10 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
             </li>
           ))}
         </ul>
+        </div>
 
-        <label className="mt-5 flex items-center gap-3 rounded-xl border border-border px-3.5 py-3 cursor-pointer active:bg-muted">
+        <div className="shrink-0 border-t border-border px-5 pt-3 pb-5">
+        <label className="flex items-center gap-3 rounded-xl border border-border px-3.5 py-3 cursor-pointer active:bg-muted">
           <input
             ref={checkboxRef}
             type="checkbox"
@@ -131,6 +135,7 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
         >
           {busy ? '…' : text.continue}
         </button>
+        </div>
       </div>
     </div>
   );
