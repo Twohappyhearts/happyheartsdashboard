@@ -54,6 +54,24 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
     checkboxRef.current?.focus({ preventScroll: true });
   }, []);
 
+  // On a small screen the last point (call 911) is below the fold: fade the bottom edge and show
+  // an arrow until the text has been scrolled to the end.
+  const textRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    const update = () => setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [lang]);
+
   const [before, link, after] = text.disclaimer;
   const [enBefore, enLink, enAfter] = english.disclaimer;
 
@@ -62,7 +80,8 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
       <div className="absolute inset-0 bg-black/40" />
       <div className="relative w-full max-w-md max-h-[calc(100dvh-2.5rem)] flex flex-col overflow-hidden bg-card rounded-2xl shadow-modal">
         {/* Only the text scrolls; the agree box and Continue stay in view (they were below the fold). */}
-        <div className="min-h-0 overflow-y-auto px-5 pt-5 pb-4">
+        <div className="relative min-h-0 flex flex-col">
+        <div ref={textRef} className="min-h-0 overflow-y-auto overscroll-y-contain px-5 pt-5 pb-4">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="w-11 h-11 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Icon name="ShieldCheckIcon" size={22} variant="outline" />
@@ -111,6 +130,12 @@ export default function AiNoticeDialog({ lang, onLanguageChange, busy, failed, o
             </li>
           ))}
         </ul>
+        </div>
+        {more && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-14 flex items-end justify-center pb-1.5 bg-gradient-to-t from-card from-30% to-transparent">
+            <Icon name="ChevronDownIcon" size={20} variant="outline" className="text-primary animate-bounce" />
+          </div>
+        )}
         </div>
 
         <div className="shrink-0 border-t border-border px-5 pt-3 pb-5">

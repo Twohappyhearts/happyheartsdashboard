@@ -90,6 +90,16 @@ export default function MobileAssistant({ langParam }: Props) {
   const previewRef = useRef(false);
   /** The patient's token from the app; undefined = the session cookie (staff preview). */
   const auth = (): AgentAuth | undefined => (previewRef.current ? undefined : bearerAuth);
+
+  // In the app, iOS moved the whole page when a swipe reached it (a short chat, the message list
+  // already at its end, or a finger on the header or the composer). Only the lists should scroll.
+  useEffect(() => {
+    if (preview) return;
+    const roots = [document.documentElement, document.body];
+    const before = roots.map((el) => el.style.overscrollBehavior);
+    roots.forEach((el) => (el.style.overscrollBehavior = 'none'));
+    return () => roots.forEach((el, i) => (el.style.overscrollBehavior = before[i]));
+  }, [preview]);
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());

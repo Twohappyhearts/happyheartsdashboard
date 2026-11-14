@@ -107,12 +107,46 @@ export default function MobileChatThread({
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages, status]);
 
-  useLayoutEffect(() => {
+  // The list gets shorter when the keyboard opens or the composer grows; stay at the latest
+  // message if that is where the patient was.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Grow the box with the text, up to 120px. Scroll inside it only when the text is longer
+  // than that; otherwise keep the first line (or the placeholder) in place.
+  const fitComposer = () => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-  }, [draft]);
+    const fits = ta.scrollHeight <= 120;
+    ta.style.height = `${fits ? ta.scrollHeight : 120}px`;
+    ta.style.overflowY = fits ? 'hidden' : 'auto';
+    if (fits) ta.scrollTop = 0;
+  };
+  useLayoutEffect(fitComposer, [draft]);
+
+  // In the app the page can first lay out before the web view has its final width, which
+  // measured the empty box as three lines tall. Measure again whenever the width changes.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta || typeof ResizeObserver === 'undefined') return;
+    let width = ta.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (ta.clientWidth === width) return;
+      width = ta.clientWidth;
+      fitComposer();
+    });
+    observer.observe(ta);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tell the app when a care-team request was really sent (it shows its own confirmation).
   const reported = useRef(new Set<string>());
@@ -200,7 +234,7 @@ export default function MobileChatThread({
           const el = scrollRef.current;
           if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="flex-1 overflow-y-auto overscroll-y-contain px-4 py-4"
       >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4">
@@ -292,7 +326,7 @@ export default function MobileChatThread({
             maxLength={MAX_LENGTH}
             placeholder={t.placeholder}
             // 16px: iOS does not zoom into inputs at this size.
-            className="flex-1 resize-none px-3.5 py-2.5 rounded-2xl border border-border bg-background text-[16px] leading-snug placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="flex-1 resize-none overscroll-contain px-3.5 py-2.5 rounded-2xl border border-border bg-background text-[16px] leading-snug placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {busy ? (
             <button
