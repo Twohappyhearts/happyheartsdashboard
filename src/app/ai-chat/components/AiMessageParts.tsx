@@ -295,19 +295,40 @@ export default function AiMessageParts({
     return workPart(part, i);
   });
 
-  // Patients see one line while the assistant searches or before the answer starts.
+  // Patients see one line while the answer is on its way: thinking, then searching trusted
+  // sources, then writing the answer (searches done, no text yet).
   const searching = searches.some(isRunning);
-  const status = patient && (searching || (streaming && !hasText && careteamParts.length === 0)) ? (searches.length ? t.lookingUp : t.thinking) : null;
+  const waiting = streaming && !hasText && careteamParts.length === 0;
+  const status =
+    patient && (searching || waiting) ? (searching ? t.lookingUp : searches.length ? t.writingAnswer : t.thinking) : null;
 
   return (
     <div className="space-y-2">
       {rendered}
-      {status && (
-        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-          <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin shrink-0" />
-          {status}
-        </p>
-      )}
+      {status && <WaitingStatus label={status} />}
+    </div>
+  );
+}
+
+/**
+ * Patient chat: the status line while an answer is on its way. Answers that check sources take
+ * 15-25 s (trial data, Nov 2026), so after 8 s without text it also says how long it can take.
+ * Stays mounted while the label changes, so the 8 s count from the first status line.
+ */
+function WaitingStatus({ label }: { label: string }) {
+  const { t } = usePatientText();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(id);
+  }, []);
+  return (
+    <div className="flex items-start gap-1.5 text-[13px] text-muted-foreground" role="status">
+      <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin shrink-0 mt-[3px]" />
+      <div>
+        <p>{label}</p>
+        {slow && <p className="text-[12px]">{t.waitHint}</p>}
+      </div>
     </div>
   );
 }

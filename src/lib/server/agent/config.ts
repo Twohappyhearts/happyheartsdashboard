@@ -130,7 +130,9 @@ export function agentConfig(): AgentConfig {
     maxSteps: int('AGENT_MAX_STEPS', 5, 1),
     contextUnit: unit,
     // Our own compression budget (not the model's context window). Meaning depends on the unit.
-    contextBudget: int('AGENT_CONTEXT_BUDGET', unit === 'tokens' ? 16000 : 40000, 1000),
+    // 100k chars (was 40k): the prompt alone is ~16.6k, so from about the 5th turn every answer
+    // waited ~9 s for a summary first (trial data, Nov 2026). The model's window is far larger.
+    contextBudget: int('AGENT_CONTEXT_BUDGET', unit === 'tokens' ? 40000 : 100000, 1000),
     trimAt,
     summarizeAt,
     keepRecentTurns: int('AGENT_KEEP_RECENT_TURNS', 4, 1),
