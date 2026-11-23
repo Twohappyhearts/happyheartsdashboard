@@ -12,6 +12,7 @@ import type { Language } from '@/lib/languages';
 import { messageText, pendingApproval, useAgentChat } from '@/lib/use-agent-chat';
 import AiMessageParts from '@/app/ai-chat/components/AiMessageParts';
 import AnswerRatingBar from './AnswerRatingBar';
+import HistoryButton from './HistoryButton';
 
 const MAX_LENGTH = 4000;
 
@@ -218,10 +219,8 @@ export default function MobileChatThread({
     <>
       {/* Header */}
       <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-        <button onClick={onShowList} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
-          <Icon name="Bars3Icon" size={20} variant="outline" />
-        </button>
-        <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+        <HistoryButton label={t.history} ariaLabel={t.yourConversations} onClick={onShowList} />
+        <p className="flex-1 min-w-0 px-1 text-[15px] font-600 truncate">{title}</p>
         <button onClick={onNew} disabled={busy} className="p-2 rounded-lg active:bg-muted disabled:opacity-40" aria-label={t.newConversation}>
           <Icon name="PencilSquareIcon" size={20} variant="outline" />
         </button>
@@ -230,6 +229,10 @@ export default function MobileChatThread({
       {/* Messages */}
       <div
         ref={scrollRef}
+        // A tap or drag on the messages puts the keyboard away (iOS keeps it open otherwise).
+        onPointerDown={() => {
+          if (document.activeElement === textareaRef.current) textareaRef.current?.blur();
+        }}
         onScroll={() => {
           const el = scrollRef.current;
           if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;

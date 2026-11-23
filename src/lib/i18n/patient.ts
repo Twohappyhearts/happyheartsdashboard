@@ -15,6 +15,8 @@ export interface PatientText {
   // Conversation list
   newConversation: string;
   yourConversations: string;
+  /** Label of the button that opens the conversation list. */
+  history: string;
   backToChat: string;
   newChat: string;
   retry: string;
@@ -71,6 +73,7 @@ const en: PatientText = {
   signInAgain: 'Please sign in to the HappyHearts app again.',
   newConversation: 'New conversation',
   yourConversations: 'Your conversations',
+  history: 'History',
   backToChat: 'Back to chat',
   newChat: 'New',
   retry: 'Retry',
@@ -124,6 +127,7 @@ const es: PatientText = {
   signInAgain: 'Vuelva a iniciar sesión en la aplicación HappyHearts.',
   newConversation: 'Nueva conversación',
   yourConversations: 'Sus conversaciones',
+  history: 'Historial',
   backToChat: 'Volver al chat',
   newChat: 'Nueva',
   retry: 'Reintentar',
@@ -176,6 +180,7 @@ const vi: PatientText = {
   signInAgain: 'Vui lòng đăng nhập lại vào ứng dụng HappyHearts.',
   newConversation: 'Cuộc trò chuyện mới',
   yourConversations: 'Các cuộc trò chuyện của bạn',
+  history: 'Lịch sử',
   backToChat: 'Quay lại trò chuyện',
   newChat: 'Mới',
   retry: 'Thử lại',
@@ -228,6 +233,7 @@ const ko: PatientText = {
   signInAgain: 'HappyHearts 앱에 다시 로그인해 주세요.',
   newConversation: '새 대화',
   yourConversations: '내 대화',
+  history: '기록',
   backToChat: '대화로 돌아가기',
   newChat: '새 대화',
   retry: '다시 시도',
@@ -280,6 +286,7 @@ const zhHans: PatientText = {
   signInAgain: '请重新登录 HappyHearts 应用。',
   newConversation: '新对话',
   yourConversations: '我的对话',
+  history: '历史记录',
   backToChat: '返回对话',
   newChat: '新对话',
   retry: '重试',
@@ -328,6 +335,7 @@ const zhHant: PatientText = {
   signInAgain: '請重新登入 HappyHearts 應用程式。',
   newConversation: '新對話',
   yourConversations: '我的對話',
+  history: '歷史記錄',
   backToChat: '返回對話',
   newChat: '新對話',
   retry: '重試',
@@ -376,6 +384,7 @@ const fa: PatientText = {
   signInAgain: 'لطفاً دوباره وارد برنامه HappyHearts شوید.',
   newConversation: 'گفتگوی جدید',
   yourConversations: 'گفتگوهای شما',
+  history: 'تاریخچه',
   backToChat: 'بازگشت به گفتگو',
   newChat: 'جدید',
   retry: 'تلاش دوباره',
@@ -429,6 +438,7 @@ const ar: PatientText = {
   signInAgain: 'يُرجى تسجيل الدخول إلى تطبيق HappyHearts مرة أخرى.',
   newConversation: 'محادثة جديدة',
   yourConversations: 'محادثاتك',
+  history: 'السجل',
   backToChat: 'العودة إلى المحادثة',
   newChat: 'جديدة',
   retry: 'إعادة المحاولة',

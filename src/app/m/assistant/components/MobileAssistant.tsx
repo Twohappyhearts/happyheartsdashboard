@@ -20,6 +20,7 @@ import { PatientTextProvider } from '@/lib/i18n/patient-context';
 import { dirOf, matchLanguage, pickLanguage, type Language } from '@/lib/languages';
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
+import HistoryButton from './HistoryButton';
 import AiNoticeDialog from './AiNoticeDialog';
 
 /** Colors of the Flutter app's AppTheme, mapped onto the dashboard's CSS variables. */
@@ -358,10 +359,8 @@ export default function MobileAssistant({ langParam }: Props) {
       ) : thread.loading ? (
         <>
           <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
-              <Icon name="Bars3Icon" size={20} variant="outline" />
-            </button>
-            <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+            <HistoryButton label={t.history} ariaLabel={t.yourConversations} onClick={() => setView('list')} />
+            <p className="flex-1 min-w-0 px-1 text-[15px] font-600 truncate">{title}</p>
           </div>
           <div className="flex-1 flex items-center justify-center">
             <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
