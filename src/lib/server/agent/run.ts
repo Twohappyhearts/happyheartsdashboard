@@ -9,6 +9,7 @@ import {
   isStepCount,
   isToolUIPart,
   streamText,
+  type ModelMessage,
   type UIMessage,
   type UIMessageChunk,
 } from 'ai';
@@ -218,6 +219,25 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
         });
         void followUp.consumeStream({ onError: (e) => console.error('[agent] care-team follow-up stream error', e) });
         writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
+      } else if (opts.canNotifyCareteam && (await offerWithoutAnswer(result))) {
+        // The model sometimes offers the care-team message (rule 2) and stops without writing an
+        // answer, so the patient saw only the referral sentence. Ask for the answer in one more
+        // call that may search but cannot offer again; its text joins the same reply, and the
+        // offer stays pending for the user.
+        console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer without an answer; asking for the answer`);
+        const followUp = streamText({
+          model: chatModel(cfg),
+          instructions: `${built.instructions}\n\nYou drafted a message to the care team, and the user now sees that draft below your answer; they decide whether to send it. But you wrote no answer. Now write your answer to the user's latest message, following every rule above. If you have not searched for this question yet, search first. Do not say that you cannot send messages, and do not mention tools.`,
+          messages: [...modelMessages, ...withOfferShown(await result.responseMessages)],
+          tools,
+          activeTools: toolNames.filter((n) => n !== 'notifyCareteam'),
+          toolApproval: ({ toolCall }) => (needsApproval.has(toolCall.toolName) ? 'user-approval' : undefined),
+          experimental_toolApprovalSecret: cfg.toolApprovalSecret,
+          stopWhen: isStepCount(3),
+          providerOptions: thinkingOptions(cfg, false),
+        });
+        void followUp.consumeStream({ onError: (e) => console.error('[agent] answer follow-up stream error', e) });
+        writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
       } else {
         writer.write({ type: 'finish' });
       }
@@ -322,6 +342,52 @@ async function compressAfterTurn(
   } catch (e) {
     console.warn('[agent] background summary failed', e);
   }
+}
+
+/**
+ * True when the reply is a rule 2 care-team offer with no answer text in any step. Emergency
+ * offers are left alone: the app shows the fixed 911 / 988 reply for them.
+ */
+async function offerWithoutAnswer(result: {
+  steps: PromiseLike<Array<{ text: string; toolCalls: Array<{ toolName: string; input?: unknown }> }>>;
+}) {
+  try {
+    const steps = await result.steps;
+    if (steps.some((st) => st.text.trim())) return false;
+    const offers = steps.flatMap((st) => st.toolCalls.filter((c) => c.toolName === 'notifyCareteam'));
+    return offers.length > 0 && offers.every((c) => (c.input as { situation?: unknown } | undefined)?.situation === 'personal');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The turn's messages with the pending care-team offer marked as shown: a tool call with no
+ * result cannot be sent back to the model, and the model must know that the draft is on screen.
+ */
+function withOfferShown(messages: ModelMessage[]): ModelMessage[] {
+  const out: ModelMessage[] = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant' || typeof m.content === 'string') {
+      out.push(m);
+      continue;
+    }
+    const content = m.content.filter((p) => p.type !== 'tool-approval-request');
+    if (content.length) out.push({ ...m, content });
+    const offers = content.filter((p) => p.type === 'tool-call' && p.toolName === 'notifyCareteam');
+    if (offers.length) {
+      out.push({
+        role: 'tool',
+        content: offers.map((p) => ({
+          type: 'tool-result' as const,
+          toolCallId: (p as { toolCallId: string }).toolCallId,
+          toolName: 'notifyCareteam',
+          output: { type: 'text' as const, value: 'The draft is shown to the user below your answer. The user decides whether to send it.' },
+        })),
+      });
+    }
+  }
+  return out;
 }
 
 /**

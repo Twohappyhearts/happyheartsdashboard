@@ -15,6 +15,8 @@ export interface PatientText {
   // Conversation list
   newConversation: string;
   yourConversations: string;
+  /** Label of the button that opens the conversation list. */
+  history: string;
   backToChat: string;
   newChat: string;
   retry: string;
@@ -40,6 +42,10 @@ export interface PatientText {
   thinking: string;
   /** While the assistant searches (the search itself is not shown to patients). */
   lookingUp: string;
+  /** Searches are done, the answer has not started yet. */
+  writingAnswer: string;
+  /** Added under the status line after 8 s without text. */
+  waitHint: string;
   chatError: string;
   // Sources under an answer
   sources: (n: number) => string;
@@ -71,6 +77,7 @@ const en: PatientText = {
   signInAgain: 'Please sign in to the HappyHearts app again.',
   newConversation: 'New conversation',
   yourConversations: 'Your conversations',
+  history: 'History',
   backToChat: 'Back to chat',
   newChat: 'New',
   retry: 'Retry',
@@ -96,7 +103,9 @@ const en: PatientText = {
   send: 'Send',
   stop: 'Stop',
   thinking: 'Thinking…',
-  lookingUp: 'Looking this up…',
+  lookingUp: 'Searching trusted sources…',
+  writingAnswer: 'Writing your answer…',
+  waitHint: 'Checking sources can take up to 30 seconds.',
   chatError: 'Something went wrong. Please try again.',
   sources: (n) => (n === 1 ? '1 source' : `${n} sources`),
   openSourceError: 'Could not open this source. Please try again.',
@@ -124,6 +133,7 @@ const es: PatientText = {
   signInAgain: 'Vuelva a iniciar sesión en la aplicación HappyHearts.',
   newConversation: 'Nueva conversación',
   yourConversations: 'Sus conversaciones',
+  history: 'Historial',
   backToChat: 'Volver al chat',
   newChat: 'Nueva',
   retry: 'Reintentar',
@@ -149,7 +159,9 @@ const es: PatientText = {
   send: 'Enviar',
   stop: 'Detener',
   thinking: 'Pensando…',
-  lookingUp: 'Buscando información…',
+  lookingUp: 'Buscando en fuentes confiables…',
+  writingAnswer: 'Escribiendo su respuesta…',
+  waitHint: 'Revisar las fuentes puede tardar hasta 30 segundos.',
   chatError: 'Algo salió mal. Inténtelo de nuevo.',
   sources: (n) => (n === 1 ? '1 fuente' : `${n} fuentes`),
   openSourceError: 'No se pudo abrir esta fuente. Inténtelo de nuevo.',
@@ -176,6 +188,7 @@ const vi: PatientText = {
   signInAgain: 'Vui lòng đăng nhập lại vào ứng dụng HappyHearts.',
   newConversation: 'Cuộc trò chuyện mới',
   yourConversations: 'Các cuộc trò chuyện của bạn',
+  history: 'Lịch sử',
   backToChat: 'Quay lại trò chuyện',
   newChat: 'Mới',
   retry: 'Thử lại',
@@ -201,7 +214,9 @@ const vi: PatientText = {
   send: 'Gửi',
   stop: 'Dừng',
   thinking: 'Đang suy nghĩ…',
-  lookingUp: 'Đang tìm thông tin…',
+  lookingUp: 'Đang tìm trong các nguồn đáng tin cậy…',
+  writingAnswer: 'Đang viết câu trả lời…',
+  waitHint: 'Việc kiểm tra nguồn có thể mất tới 30 giây.',
   chatError: 'Đã xảy ra lỗi. Vui lòng thử lại.',
   sources: (n) => `${n} nguồn`,
   openSourceError: 'Không thể mở nguồn này. Vui lòng thử lại.',
@@ -228,6 +243,7 @@ const ko: PatientText = {
   signInAgain: 'HappyHearts 앱에 다시 로그인해 주세요.',
   newConversation: '새 대화',
   yourConversations: '내 대화',
+  history: '기록',
   backToChat: '대화로 돌아가기',
   newChat: '새 대화',
   retry: '다시 시도',
@@ -253,7 +269,9 @@ const ko: PatientText = {
   send: '보내기',
   stop: '중지',
   thinking: '생각하는 중…',
-  lookingUp: '정보를 찾는 중…',
+  lookingUp: '신뢰할 수 있는 자료를 찾는 중…',
+  writingAnswer: '답변을 작성하는 중…',
+  waitHint: '자료를 확인하는 데 최대 30초가 걸릴 수 있습니다.',
   chatError: '문제가 발생했습니다. 다시 시도해 주세요.',
   sources: (n) => `출처 ${n}개`,
   openSourceError: '이 출처를 열지 못했습니다. 다시 시도해 주세요.',
@@ -280,6 +298,7 @@ const zhHans: PatientText = {
   signInAgain: '请重新登录 HappyHearts 应用。',
   newConversation: '新对话',
   yourConversations: '我的对话',
+  history: '历史记录',
   backToChat: '返回对话',
   newChat: '新对话',
   retry: '重试',
@@ -301,7 +320,9 @@ const zhHans: PatientText = {
   send: '发送',
   stop: '停止',
   thinking: '正在思考…',
-  lookingUp: '正在查找资料…',
+  lookingUp: '正在查找可信来源…',
+  writingAnswer: '正在撰写回答…',
+  waitHint: '查阅资料最多可能需要 30 秒。',
   chatError: '出了点问题，请重试。',
   sources: (n) => `${n} 个来源`,
   openSourceError: '无法打开这个来源，请重试。',
@@ -328,6 +349,7 @@ const zhHant: PatientText = {
   signInAgain: '請重新登入 HappyHearts 應用程式。',
   newConversation: '新對話',
   yourConversations: '我的對話',
+  history: '歷史記錄',
   backToChat: '返回對話',
   newChat: '新對話',
   retry: '重試',
@@ -349,7 +371,9 @@ const zhHant: PatientText = {
   send: '傳送',
   stop: '停止',
   thinking: '正在思考…',
-  lookingUp: '正在查找資料…',
+  lookingUp: '正在查找可信來源…',
+  writingAnswer: '正在撰寫回答…',
+  waitHint: '查閱資料最多可能需要 30 秒。',
   chatError: '發生問題，請再試一次。',
   sources: (n) => `${n} 個來源`,
   openSourceError: '無法開啟這個來源，請再試一次。',
@@ -376,6 +400,7 @@ const fa: PatientText = {
   signInAgain: 'لطفاً دوباره وارد برنامه HappyHearts شوید.',
   newConversation: 'گفتگوی جدید',
   yourConversations: 'گفتگوهای شما',
+  history: 'تاریخچه',
   backToChat: 'بازگشت به گفتگو',
   newChat: 'جدید',
   retry: 'تلاش دوباره',
@@ -401,7 +426,9 @@ const fa: PatientText = {
   send: 'ارسال',
   stop: 'توقف',
   thinking: 'در حال فکر کردن…',
-  lookingUp: 'در حال جستجوی اطلاعات…',
+  lookingUp: 'در حال جستجو در منابع معتبر…',
+  writingAnswer: 'در حال نوشتن پاسخ…',
+  waitHint: 'بررسی منابع ممکن است تا 30 ثانیه طول بکشد.',
   chatError: 'مشکلی پیش آمد. لطفاً دوباره امتحان کنید.',
   sources: (n) => `${n} منبع`,
   openSourceError: 'این منبع باز نشد. لطفاً دوباره امتحان کنید.',
@@ -429,6 +456,7 @@ const ar: PatientText = {
   signInAgain: 'يُرجى تسجيل الدخول إلى تطبيق HappyHearts مرة أخرى.',
   newConversation: 'محادثة جديدة',
   yourConversations: 'محادثاتك',
+  history: 'السجل',
   backToChat: 'العودة إلى المحادثة',
   newChat: 'جديدة',
   retry: 'إعادة المحاولة',
@@ -454,7 +482,9 @@ const ar: PatientText = {
   send: 'إرسال',
   stop: 'إيقاف',
   thinking: 'جارٍ التفكير…',
-  lookingUp: 'جارٍ البحث عن المعلومات…',
+  lookingUp: 'جارٍ البحث في مصادر موثوقة…',
+  writingAnswer: 'جارٍ كتابة الإجابة…',
+  waitHint: 'قد يستغرق التحقق من المصادر حتى 30 ثانية.',
   chatError: 'حدث خطأ ما. يُرجى المحاولة مرة أخرى.',
   sources: (n) => (n === 1 ? 'مصدر واحد' : n === 2 ? 'مصدران' : n <= 10 ? `${n} مصادر` : `${n} مصدرًا`),
   openSourceError: 'تعذّر فتح هذا المصدر. يُرجى المحاولة مرة أخرى.',

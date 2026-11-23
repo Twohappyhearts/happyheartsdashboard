@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
-import { AgentChatError, type AgentAuth } from '@/lib/agent-chat';
+import { AgentChatError, loadAnswerRatings, type AgentAuth, type AnswerRating } from '@/lib/agent-chat';
 import { openAgentDocument, postToApp, requestFreshToken } from '@/lib/agent-bridge';
 import { isEmergencySituation } from '@/lib/agent-fixed-replies';
 import { languageNameIn } from '@/lib/i18n/patient';
@@ -11,6 +11,8 @@ import { usePatientText } from '@/lib/i18n/patient-context';
 import type { Language } from '@/lib/languages';
 import { messageText, pendingApproval, useAgentChat } from '@/lib/use-agent-chat';
 import AiMessageParts from '@/app/ai-chat/components/AiMessageParts';
+import AnswerRatingBar from './AnswerRatingBar';
+import HistoryButton from './HistoryButton';
 
 const MAX_LENGTH = 4000;
 
@@ -80,6 +82,22 @@ export default function MobileChatThread({
     if (conversationId && !busy) onMessagesChange?.(conversationId, messages);
   }, [conversationId, messages, busy, onMessagesChange]);
 
+  // Trial ratings of this conversation's answers (test branch only; a rating made just now wins
+  // over the loaded list). Shown in the app only, not in the staff preview.
+  const [ratings, setRatings] = useState<Record<string, AnswerRating>>({});
+  useEffect(() => {
+    if (!conversationId || !auth) return;
+    let cancelled = false;
+    loadAnswerRatings(conversationId, auth)
+      .then((list) => {
+        if (!cancelled) setRatings((now) => ({ ...Object.fromEntries(list.map((r) => [r.messageId, r])), ...now }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, auth]);
+
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -90,12 +108,46 @@ export default function MobileChatThread({
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages, status]);
 
-  useLayoutEffect(() => {
+  // The list gets shorter when the keyboard opens or the composer grows; stay at the latest
+  // message if that is where the patient was.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Grow the box with the text, up to 120px. Scroll inside it only when the text is longer
+  // than that; otherwise keep the first line (or the placeholder) in place.
+  const fitComposer = () => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-  }, [draft]);
+    const fits = ta.scrollHeight <= 120;
+    ta.style.height = `${fits ? ta.scrollHeight : 120}px`;
+    ta.style.overflowY = fits ? 'hidden' : 'auto';
+    if (fits) ta.scrollTop = 0;
+  };
+  useLayoutEffect(fitComposer, [draft]);
+
+  // In the app the page can first lay out before the web view has its final width, which
+  // measured the empty box as three lines tall. Measure again whenever the width changes.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta || typeof ResizeObserver === 'undefined') return;
+    let width = ta.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (ta.clientWidth === width) return;
+      width = ta.clientWidth;
+      fitComposer();
+    });
+    observer.observe(ta);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tell the app when a care-team request was really sent (it shows its own confirmation).
   const reported = useRef(new Set<string>());
@@ -167,10 +219,8 @@ export default function MobileChatThread({
     <>
       {/* Header */}
       <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-        <button onClick={onShowList} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
-          <Icon name="Bars3Icon" size={20} variant="outline" />
-        </button>
-        <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+        <HistoryButton label={t.history} ariaLabel={t.yourConversations} onClick={onShowList} />
+        <p className="flex-1 min-w-0 px-1 text-[15px] font-600 truncate">{title}</p>
         <button onClick={onNew} disabled={busy} className="p-2 rounded-lg active:bg-muted disabled:opacity-40" aria-label={t.newConversation}>
           <Icon name="PencilSquareIcon" size={20} variant="outline" />
         </button>
@@ -179,11 +229,15 @@ export default function MobileChatThread({
       {/* Messages */}
       <div
         ref={scrollRef}
+        // A tap or drag on the messages puts the keyboard away (iOS keeps it open otherwise).
+        onPointerDown={() => {
+          if (document.activeElement === textareaRef.current) textareaRef.current?.blur();
+        }}
         onScroll={() => {
           const el = scrollRef.current;
           if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="flex-1 overflow-y-auto overscroll-y-contain px-4 py-4"
       >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4">
@@ -232,6 +286,14 @@ export default function MobileChatThread({
                       onOpenCareteam={setOpenedFor}
                       onOpenDocument={(id) => openAgentDocument(id, auth)}
                     />
+                    {auth && !(busy && i === messages.length - 1) && !(pending && i === messages.length - 1) && (
+                      <AnswerRatingBar
+                        messageId={m.id}
+                        rating={ratings[m.id] ?? null}
+                        auth={auth}
+                        onSaved={(r) => setRatings((now) => ({ ...now, [r.messageId]: r }))}
+                      />
+                    )}
                   </div>
                 </div>
               ),
@@ -267,7 +329,7 @@ export default function MobileChatThread({
             maxLength={MAX_LENGTH}
             placeholder={t.placeholder}
             // 16px: iOS does not zoom into inputs at this size.
-            className="flex-1 resize-none px-3.5 py-2.5 rounded-2xl border border-border bg-background text-[16px] leading-snug placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="flex-1 resize-none overscroll-contain px-3.5 py-2.5 rounded-2xl border border-border bg-background text-[16px] leading-snug placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           {busy ? (
             <button

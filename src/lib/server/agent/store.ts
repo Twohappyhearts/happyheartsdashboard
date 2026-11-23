@@ -280,3 +280,47 @@ export async function expirePendingApprovals(admin: SupabaseClient, conversation
     .eq('message_status', 'AWAITING_APPROVAL');
   if (error) throw error;
 }
+
+export interface AnswerRating {
+  messageId: string;
+  usability: number;
+  safety: number;
+  comment: string;
+}
+
+/** The caller's ratings of the answers in one conversation. */
+export async function listAnswerRatings(admin: SupabaseClient, userId: string, conversationId: string): Promise<AnswerRating[]> {
+  const { data, error } = await admin
+    .from('agent_answer_ratings')
+    .select('message_id, usability, safety, comment')
+    .eq('user_id', userId)
+    .eq('conversation_id', conversationId);
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map((r) => ({ messageId: r.message_id, usability: r.usability, safety: r.safety, comment: r.comment }));
+}
+
+/** Save the caller's rating of one of their own assistant answers; rating it again replaces the old one. */
+export async function saveAnswerRating(admin: SupabaseClient, userId: string, rating: AnswerRating) {
+  const { data: message, error: lookupError } = await admin
+    .from('agent_messages')
+    .select('conversation_id')
+    .eq('id', rating.messageId)
+    .eq('user_id', userId)
+    .eq('role', 'assistant')
+    .eq('deleted', false)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!message) throw new ApiError(404, 'Answer not found.');
+  const { error } = await admin.from('agent_answer_ratings').upsert(
+    {
+      message_id: rating.messageId,
+      conversation_id: (message as Row).conversation_id,
+      user_id: userId,
+      usability: rating.usability,
+      safety: rating.safety,
+      comment: rating.comment,
+    },
+    { onConflict: 'message_id,user_id' },
+  );
+  if (error) throw error;
+}

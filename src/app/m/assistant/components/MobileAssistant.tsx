@@ -20,6 +20,7 @@ import { PatientTextProvider } from '@/lib/i18n/patient-context';
 import { dirOf, matchLanguage, pickLanguage, type Language } from '@/lib/languages';
 import MobileConversationList from './MobileConversationList';
 import MobileChatThread from './MobileChatThread';
+import HistoryButton from './HistoryButton';
 import AiNoticeDialog from './AiNoticeDialog';
 
 /** Colors of the Flutter app's AppTheme, mapped onto the dashboard's CSS variables. */
@@ -90,6 +91,16 @@ export default function MobileAssistant({ langParam }: Props) {
   const previewRef = useRef(false);
   /** The patient's token from the app; undefined = the session cookie (staff preview). */
   const auth = (): AgentAuth | undefined => (previewRef.current ? undefined : bearerAuth);
+
+  // In the app, iOS moved the whole page when a swipe reached it (a short chat, the message list
+  // already at its end, or a finger on the header or the composer). Only the lists should scroll.
+  useEffect(() => {
+    if (preview) return;
+    const roots = [document.documentElement, document.body];
+    const before = roots.map((el) => el.style.overscrollBehavior);
+    roots.forEach((el) => (el.style.overscrollBehavior = 'none'));
+    return () => roots.forEach((el, i) => (el.style.overscrollBehavior = before[i]));
+  }, [preview]);
   const currentId = useRef<string | null>(null);
   /** conversationId → its messages, as last seen (loaded, prefetched, or updated by the open chat). */
   const cache = useRef(new Map<string, UIMessage[]>());
@@ -232,11 +243,23 @@ export default function MobileAssistant({ langParam }: Props) {
     setView('chat');
   };
 
+  /**
+   * Back to the open chat. The thread is unmounted while the list shows, and `thread.messages`
+   * holds only what it started with (nothing, for a chat started here), so remount it with the
+   * latest messages the chat reported. Without this the questions and answers vanished.
+   */
+  const showChat = () => {
+    const id = currentId.current;
+    const latest = id ? cache.current.get(id) : undefined;
+    if (id && latest) setThread((th) => (th.conversationId === id ? { ...th, messages: latest } : th));
+    setView('chat');
+  };
+
   /** Switch right away; show cached messages instantly, otherwise a spinner while they load. */
   const open = async (id: string) => {
     setListProblem(null);
     if (id === currentId.current) {
-      setView('chat');
+      showChat();
       return;
     }
     currentId.current = id;
@@ -327,7 +350,7 @@ export default function MobileAssistant({ langParam }: Props) {
           activeId={thread.conversationId}
           loading={listLoading}
           error={listProblem ? t[listProblem] : null}
-          onBack={() => setView('chat')}
+          onBack={showChat}
           onOpen={(id) => void open(id)}
           onNew={startNew}
           onDelete={setDeleteTarget}
@@ -336,10 +359,8 @@ export default function MobileAssistant({ langParam }: Props) {
       ) : thread.loading ? (
         <>
           <div className="h-12 shrink-0 px-2 flex items-center gap-1 border-b border-border bg-card">
-            <button onClick={() => setView('list')} className="p-2 rounded-lg active:bg-muted" aria-label={t.yourConversations}>
-              <Icon name="Bars3Icon" size={20} variant="outline" />
-            </button>
-            <p className="flex-1 min-w-0 text-[15px] font-600 truncate">{title}</p>
+            <HistoryButton label={t.history} ariaLabel={t.yourConversations} onClick={() => setView('list')} />
+            <p className="flex-1 min-w-0 px-1 text-[15px] font-600 truncate">{title}</p>
           </div>
           <div className="flex-1 flex items-center justify-center">
             <Icon name="ArrowPathIcon" size={20} variant="outline" className="animate-spin text-muted-foreground" />
