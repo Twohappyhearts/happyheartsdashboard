@@ -1,7 +1,9 @@
 import { LANGUAGE_NAMES, type Language } from '@/lib/languages';
 
 /**
- * Text of the patient AI chat (/m/assistant) in the app's eight languages.
+ * Text of the patient AI chat in the app's eight languages. The app's native chat takes its
+ * texts from here (happyhearts/tool/gen_ai_chat_strings.mjs); the dashboard's AI Chat preview
+ * uses the English ones (sources, call buttons).
  * The AI notice itself lives in src/lib/agent-consent.ts; fixed safety replies in
  * src/lib/agent-fixed-replies.ts.
  *
@@ -52,24 +54,13 @@ export interface PatientText {
   openSourceError: string;
   // Emergency replies (911 / 988)
   call: (number: string) => string;
-  alsoNotify: string;
-  emergencyBanner: string;
-  // Care-team confirmation sheet
-  sheetTitle: string;
-  sheetSubtitle: string;
-  sheetLabel: string;
-  sheetEmergencyLine: string;
-  /** `language` is already in the patient's language, e.g. "inglés". */
-  sentInLanguage: (language: string) => string;
-  // Care-team card in the chat
-  careteamMessage: string;
-  careteamWaiting: string;
-  careteamSending: string;
-  careteamSent: string;
-  careteamNotSent: string;
-  careteamFailed: string;
-  careteamLapsed: string;
-  editedBeforeSending: string;
+  // Editing a message and its versions (‹ 2/3 ›)
+  edit: string;
+  copy: string;
+  editingMessage: string;
+  previousVersion: string;
+  nextVersion: string;
+  versionFailed: string;
 }
 
 const en: PatientText = {
@@ -110,21 +101,12 @@ const en: PatientText = {
   sources: (n) => (n === 1 ? '1 source' : `${n} sources`),
   openSourceError: 'Could not open this source. Please try again.',
   call: (n) => `Call ${n}`,
-  alsoNotify: 'Also notify my care team',
-  emergencyBanner: 'If this is an emergency, call 911 now. A message to your care team does not replace 911.',
-  sheetTitle: 'Send this to your care team?',
-  sheetSubtitle: 'A team member will see it and follow up with you.',
-  sheetLabel: 'Your message (you can edit it)',
-  sheetEmergencyLine: 'If this is an emergency, call 911 now.',
-  sentInLanguage: (l) => `It will be sent in ${l} so the care team can read it.`,
-  careteamMessage: 'Message to the care team',
-  careteamWaiting: 'Waiting for your answer…',
-  careteamSending: 'Sending…',
-  careteamSent: 'Sent to the care team',
-  careteamNotSent: 'Not sent.',
-  careteamFailed: 'The message could not be sent. Please try again later.',
-  careteamLapsed: 'Care-team message not sent — the conversation moved on.',
-  editedBeforeSending: 'edited before sending',
+  edit: 'Edit',
+  copy: 'Copy',
+  editingMessage: 'Editing message',
+  previousVersion: 'Previous version',
+  nextVersion: 'Next version',
+  versionFailed: 'Could not show that version.',
 };
 
 // Machine translation, pending research-team review.
@@ -166,21 +148,12 @@ const es: PatientText = {
   sources: (n) => (n === 1 ? '1 fuente' : `${n} fuentes`),
   openSourceError: 'No se pudo abrir esta fuente. Inténtelo de nuevo.',
   call: (n) => `Llamar al ${n}`,
-  alsoNotify: 'Avisar también a mi equipo de atención',
-  emergencyBanner: 'Si es una emergencia, llame al 911 ahora. Un mensaje a su equipo de atención no reemplaza al 911.',
-  sheetTitle: '¿Enviar esto a su equipo de atención?',
-  sheetSubtitle: 'Un miembro del equipo lo verá y se comunicará con usted.',
-  sheetLabel: 'Su mensaje (puede editarlo)',
-  sheetEmergencyLine: 'Si es una emergencia, llame al 911 ahora.',
-  sentInLanguage: (l) => `Se enviará en ${l} para que el equipo de atención pueda leerlo.`,
-  careteamMessage: 'Mensaje al equipo de atención',
-  careteamWaiting: 'Esperando su respuesta…',
-  careteamSending: 'Enviando…',
-  careteamSent: 'Enviado al equipo de atención',
-  careteamNotSent: 'No se envió.',
-  careteamFailed: 'No se pudo enviar el mensaje. Inténtelo más tarde.',
-  careteamLapsed: 'El mensaje al equipo de atención no se envió: la conversación siguió.',
-  editedBeforeSending: 'editado antes de enviar',
+  edit: 'Editar',
+  copy: 'Copiar',
+  editingMessage: 'Editando el mensaje',
+  previousVersion: 'Versión anterior',
+  nextVersion: 'Versión siguiente',
+  versionFailed: 'No se pudo mostrar esa versión.',
 };
 
 const vi: PatientText = {
@@ -221,21 +194,12 @@ const vi: PatientText = {
   sources: (n) => `${n} nguồn`,
   openSourceError: 'Không thể mở nguồn này. Vui lòng thử lại.',
   call: (n) => `Gọi ${n}`,
-  alsoNotify: 'Báo thêm cho nhóm chăm sóc của tôi',
-  emergencyBanner: 'Nếu đây là trường hợp khẩn cấp, hãy gọi 911 ngay. Tin nhắn gửi nhóm chăm sóc không thay thế cho việc gọi 911.',
-  sheetTitle: 'Gửi tin nhắn này cho nhóm chăm sóc của bạn?',
-  sheetSubtitle: 'Một thành viên trong nhóm sẽ xem và liên hệ lại với bạn.',
-  sheetLabel: 'Tin nhắn của bạn (bạn có thể sửa)',
-  sheetEmergencyLine: 'Nếu đây là trường hợp khẩn cấp, hãy gọi 911 ngay.',
-  sentInLanguage: (l) => `Tin nhắn sẽ được gửi bằng ${l} để nhóm chăm sóc có thể đọc.`,
-  careteamMessage: 'Tin nhắn gửi nhóm chăm sóc',
-  careteamWaiting: 'Đang chờ bạn trả lời…',
-  careteamSending: 'Đang gửi…',
-  careteamSent: 'Đã gửi cho nhóm chăm sóc',
-  careteamNotSent: 'Chưa gửi.',
-  careteamFailed: 'Không thể gửi tin nhắn. Vui lòng thử lại sau.',
-  careteamLapsed: 'Tin nhắn cho nhóm chăm sóc chưa được gửi vì cuộc trò chuyện đã tiếp tục.',
-  editedBeforeSending: 'đã sửa trước khi gửi',
+  edit: 'Sửa',
+  copy: 'Sao chép',
+  editingMessage: 'Đang sửa tin nhắn',
+  previousVersion: 'Phiên bản trước',
+  nextVersion: 'Phiên bản sau',
+  versionFailed: 'Không thể hiển thị phiên bản đó.',
 };
 
 const ko: PatientText = {
@@ -276,21 +240,12 @@ const ko: PatientText = {
   sources: (n) => `출처 ${n}개`,
   openSourceError: '이 출처를 열지 못했습니다. 다시 시도해 주세요.',
   call: (n) => `${n}에 전화하기`,
-  alsoNotify: '케어팀에도 알리기',
-  emergencyBanner: '응급 상황이라면 지금 바로 911에 전화하세요. 케어팀에 보내는 메시지는 911을 대신하지 않습니다.',
-  sheetTitle: '이 메시지를 케어팀에 보낼까요?',
-  sheetSubtitle: '팀원이 확인한 후 연락드립니다.',
-  sheetLabel: '내 메시지 (수정할 수 있습니다)',
-  sheetEmergencyLine: '응급 상황이라면 지금 바로 911에 전화하세요.',
-  sentInLanguage: (l) => `케어팀이 읽을 수 있도록 ${l}로 보내집니다.`,
-  careteamMessage: '케어팀에 보내는 메시지',
-  careteamWaiting: '답변을 기다리는 중…',
-  careteamSending: '보내는 중…',
-  careteamSent: '케어팀에 보냈습니다',
-  careteamNotSent: '보내지 않았습니다.',
-  careteamFailed: '메시지를 보내지 못했습니다. 나중에 다시 시도해 주세요.',
-  careteamLapsed: '대화가 이어져서 케어팀 메시지를 보내지 않았습니다.',
-  editedBeforeSending: '보내기 전에 수정함',
+  edit: '수정',
+  copy: '복사',
+  editingMessage: '메시지 수정 중',
+  previousVersion: '이전 버전',
+  nextVersion: '다음 버전',
+  versionFailed: '해당 버전을 표시할 수 없습니다.',
 };
 
 const zhHans: PatientText = {
@@ -327,21 +282,12 @@ const zhHans: PatientText = {
   sources: (n) => `${n} 个来源`,
   openSourceError: '无法打开这个来源，请重试。',
   call: (n) => `拨打 ${n}`,
-  alsoNotify: '同时通知我的护理团队',
-  emergencyBanner: '如果是紧急情况，请立即拨打 911。发消息给护理团队不能代替拨打 911。',
-  sheetTitle: '把这条消息发送给您的护理团队？',
-  sheetSubtitle: '团队成员会看到并与您联系。',
-  sheetLabel: '您的消息（可以修改）',
-  sheetEmergencyLine: '如果是紧急情况，请立即拨打 911。',
-  sentInLanguage: (l) => `这条消息将用${l}发送，方便护理团队阅读。`,
-  careteamMessage: '发给护理团队的消息',
-  careteamWaiting: '等待您的回答…',
-  careteamSending: '正在发送…',
-  careteamSent: '已发送给护理团队',
-  careteamNotSent: '未发送。',
-  careteamFailed: '消息无法发送，请稍后再试。',
-  careteamLapsed: '对话已继续，发给护理团队的消息未发送。',
-  editedBeforeSending: '发送前已修改',
+  edit: '编辑',
+  copy: '复制',
+  editingMessage: '正在编辑消息',
+  previousVersion: '上一个版本',
+  nextVersion: '下一个版本',
+  versionFailed: '无法显示该版本。',
 };
 
 const zhHant: PatientText = {
@@ -378,21 +324,12 @@ const zhHant: PatientText = {
   sources: (n) => `${n} 個來源`,
   openSourceError: '無法開啟這個來源，請再試一次。',
   call: (n) => `撥打 ${n}`,
-  alsoNotify: '同時通知我的照護團隊',
-  emergencyBanner: '如果是緊急情況，請立即撥打 911。傳訊息給照護團隊不能取代撥打 911。',
-  sheetTitle: '要把這則訊息傳送給您的照護團隊嗎？',
-  sheetSubtitle: '團隊成員會看到並與您聯絡。',
-  sheetLabel: '您的訊息（可以修改）',
-  sheetEmergencyLine: '如果是緊急情況，請立即撥打 911。',
-  sentInLanguage: (l) => `這則訊息將以${l}傳送，方便照護團隊閱讀。`,
-  careteamMessage: '給照護團隊的訊息',
-  careteamWaiting: '等待您的回答…',
-  careteamSending: '正在傳送…',
-  careteamSent: '已傳送給照護團隊',
-  careteamNotSent: '未傳送。',
-  careteamFailed: '訊息無法傳送，請稍後再試。',
-  careteamLapsed: '對話已繼續，給照護團隊的訊息未傳送。',
-  editedBeforeSending: '傳送前已修改',
+  edit: '編輯',
+  copy: '複製',
+  editingMessage: '正在編輯訊息',
+  previousVersion: '上一個版本',
+  nextVersion: '下一個版本',
+  versionFailed: '無法顯示該版本。',
 };
 
 const fa: PatientText = {
@@ -433,21 +370,12 @@ const fa: PatientText = {
   sources: (n) => `${n} منبع`,
   openSourceError: 'این منبع باز نشد. لطفاً دوباره امتحان کنید.',
   call: (n) => `تماس با ${n}`,
-  alsoNotify: 'به تیم مراقبتم هم اطلاع بده',
-  emergencyBanner: 'اگر وضعیت اضطراری است، همین حالا با 911 تماس بگیرید. پیام به تیم مراقبت جای تماس با 911 را نمی‌گیرد.',
-  sheetTitle: 'این پیام برای تیم مراقبت شما ارسال شود؟',
-  sheetSubtitle: 'یکی از اعضای تیم آن را می‌بیند و با شما تماس می‌گیرد.',
-  sheetLabel: 'پیام شما (می‌توانید آن را ویرایش کنید)',
-  sheetEmergencyLine: 'اگر وضعیت اضطراری است، همین حالا با 911 تماس بگیرید.',
-  sentInLanguage: (l) => `این پیام به زبان ${l} ارسال می‌شود تا تیم مراقبت بتواند آن را بخواند.`,
-  careteamMessage: 'پیام به تیم مراقبت',
-  careteamWaiting: 'در انتظار پاسخ شما…',
-  careteamSending: 'در حال ارسال…',
-  careteamSent: 'برای تیم مراقبت ارسال شد',
-  careteamNotSent: 'ارسال نشد.',
-  careteamFailed: 'پیام ارسال نشد. لطفاً بعداً دوباره امتحان کنید.',
-  careteamLapsed: 'پیام به تیم مراقبت ارسال نشد، چون گفتگو ادامه پیدا کرد.',
-  editedBeforeSending: 'پیش از ارسال ویرایش شد',
+  edit: 'ویرایش',
+  copy: 'کپی',
+  editingMessage: 'در حال ویرایش پیام',
+  previousVersion: 'نسخهٔ قبلی',
+  nextVersion: 'نسخهٔ بعدی',
+  versionFailed: 'نمایش آن نسخه ممکن نشد.',
 };
 
 /** Worded without grammatical gender where Arabic allows it. */
@@ -489,21 +417,12 @@ const ar: PatientText = {
   sources: (n) => (n === 1 ? 'مصدر واحد' : n === 2 ? 'مصدران' : n <= 10 ? `${n} مصادر` : `${n} مصدرًا`),
   openSourceError: 'تعذّر فتح هذا المصدر. يُرجى المحاولة مرة أخرى.',
   call: (n) => `الاتصال بالرقم ${n}`,
-  alsoNotify: 'إبلاغ فريق الرعاية أيضًا',
-  emergencyBanner: 'إذا كانت هذه حالة طارئة، فيُرجى الاتصال بالرقم 911 الآن. الرسالة إلى فريق الرعاية لا تغني عن الاتصال بالرقم 911.',
-  sheetTitle: 'إرسال هذه الرسالة إلى فريق الرعاية؟',
-  sheetSubtitle: 'سيطّلع عليها أحد أعضاء الفريق ويتواصل معك.',
-  sheetLabel: 'رسالتك (يمكن تعديلها)',
-  sheetEmergencyLine: 'إذا كانت هذه حالة طارئة، فيُرجى الاتصال بالرقم 911 الآن.',
-  sentInLanguage: (l) => `ستُرسل الرسالة باللغة ${l} ليتمكّن فريق الرعاية من قراءتها.`,
-  careteamMessage: 'رسالة إلى فريق الرعاية',
-  careteamWaiting: 'في انتظار إجابتك…',
-  careteamSending: 'جارٍ الإرسال…',
-  careteamSent: 'أُرسلت إلى فريق الرعاية',
-  careteamNotSent: 'لم تُرسل.',
-  careteamFailed: 'تعذّر إرسال الرسالة. يُرجى المحاولة لاحقًا.',
-  careteamLapsed: 'لم تُرسل الرسالة إلى فريق الرعاية لأن المحادثة استمرت.',
-  editedBeforeSending: 'عُدّلت قبل الإرسال',
+  edit: 'تعديل',
+  copy: 'نسخ',
+  editingMessage: 'جارٍ تعديل الرسالة',
+  previousVersion: 'الإصدار السابق',
+  nextVersion: 'الإصدار التالي',
+  versionFailed: 'تعذّر عرض هذا الإصدار.',
 };
 
 export const PATIENT_TEXT: Record<Language, PatientText> = { en, es, vi, ko, 'zh-Hans': zhHans, 'zh-Hant': zhHant, fa, ar };

@@ -3,9 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from './config';
 import { isStaffLang, STAFF_LANG_COOKIE, staffTextFor } from '@/lib/i18n/staff';
 
-// '/m' = pages shown inside the mobile app's WebView; they authenticate API calls
-// with the patient's Bearer token, not the dashboard cookie.
-const PUBLIC_PATHS = ['/sign-up-login', '/m'];
+const PUBLIC_PATHS = ['/sign-up-login'];
 
 /**
  * Refreshes the Supabase auth session cookie on each request and sends

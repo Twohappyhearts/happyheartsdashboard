@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import MarkdownIt, { type StateCore, type Token } from 'markdown-it';
 import { getToolName, isToolUIPart, type UIMessage } from 'ai';
 import Icon from '@/components/ui/AppIcon';
@@ -144,28 +144,18 @@ type ToolPart = Extract<Part, { toolCallId: string }>;
 
 interface Props {
   message: UIMessage;
-  /** Approval buttons are live only on the latest message while nothing is streaming. */
-  canRespond: boolean;
   streaming: boolean;
-  onApproval: (approvalId: string, approved: boolean, editedMessage?: string) => void;
-  /**
-   * false: approval buttons are shown elsewhere (the mobile bottom sheet); the
-   * card only says it is waiting. Default true (dashboard: buttons in the card).
-   */
-  inlineApproval?: boolean;
-  /**
-   * "patient" (the app's chat): no search cards or reasoning, only a short "Looking this up…"
-   * while it searches; care-team cards for the phone; text in the patient's language.
-   * Default "staff" (dashboard preview): everything is shown.
-   */
-  audience?: 'staff' | 'patient';
-  /** Patient chat: the patient chose to message the care team after an emergency reply. */
-  onOpenCareteam?: (approvalId: string) => void;
   /** Open the original file of a knowledge-base source that has no web page. */
   onOpenDocument?: (documentId: string) => Promise<void>;
 }
 
 const SEARCH_TOOLS = new Set(['searchKnowledge', 'webSearch']);
+/**
+ * The care-team offer the assistant made until 2026-11-23 (removed: requests go through the
+ * app's side menu). Older replies still contain it: it is not shown, but its situation still
+ * marks an emergency reply, and a reply that was only an offer shows its fixed reply.
+ */
+const OLD_CARETEAM_TOOL = 'notifyCareteam';
 const isRunning = (p: ToolPart) => p.state === 'input-streaming' || p.state === 'input-available';
 
 /** "911" (or "۹۱۱") appears as a number of its own. */
@@ -174,14 +164,14 @@ const mentions = (text: string, number: string) => new RegExp(`(^|\\D)${number}(
 const EMERGENCY_RANK: Record<CareteamSituation, number> = { personal: 0, urgent: 1, crisis: 2, crisis_other: 2 };
 
 /**
- * The emergency (rule 1) a reply is about, from its care-team offer or from the fixed reply in
- * its text, and the language of the reply (for the fixed-reply fallback).
+ * The emergency (rule 1) a reply is about, from the fixed reply in its text (or, in older
+ * replies, from their care-team offer), and the language of the reply (for the fixed-reply fallback).
  */
 function emergencyOf(message: UIMessage): { situation: CareteamSituation; language: string } | null {
   let situation: CareteamSituation | null = null;
   let language = 'en';
   for (const p of message.parts) {
-    if (!isToolUIPart(p) || getToolName(p) !== 'notifyCareteam') continue;
+    if (!isToolUIPart(p) || getToolName(p) !== OLD_CARETEAM_TOOL) continue;
     const input = (p.input as { situation?: unknown; language?: unknown } | undefined) ?? {};
     if (isEmergencySituation(input.situation) && (!situation || EMERGENCY_RANK[input.situation] > EMERGENCY_RANK[situation])) {
       situation = input.situation;
@@ -202,57 +192,33 @@ const textOf = (message: UIMessage) =>
 
 export default function AiMessageParts({
   message,
-  canRespond,
   streaming,
-  onApproval,
-  inlineApproval = true,
-  audience = 'staff',
-  onOpenCareteam,
   onOpenDocument,
 }: Props) {
-  const { t } = usePatientText();
-  const patient = audience === 'patient';
   const searchResults = useMemo(() => collectSearchResults(message), [message]);
   const hosts = useMemo(() => linkableHosts(message), [message]);
   const emergency = useMemo(() => emergencyOf(message), [message]);
-  const lapsed = !canRespond && !streaming;
 
-  const careteamCard = (part: ToolPart) =>
-    patient ? (
-      <PatientCareteamCard
-        key={part.toolCallId}
-        part={part}
-        canRespond={canRespond}
-        lapsed={lapsed}
-        emergency={emergency != null}
-        onOpen={onOpenCareteam}
-      />
-    ) : (
-      <CareteamCard key={part.toolCallId} part={part} canRespond={canRespond} lapsed={lapsed} inline={inlineApproval} onApproval={onApproval} />
-    );
-
-  // Staff see how the assistant worked (reasoning, searches); patients do not.
+  // Staff see how the assistant worked (reasoning, searches).
   const workPart = (part: Part, i: number) => {
-    if (patient) return null;
     if (part.type === 'reasoning') {
       return part.text.trim() ? <Reasoning key={`r-${i}`} text={part.text} active={streaming && i === message.parts.length - 1} /> : null;
     }
     if (!isToolUIPart(part)) return null;
     const name = getToolName(part);
     if (SEARCH_TOOLS.has(name)) return <SearchCard key={part.toolCallId} part={part as ToolPart} web={name === 'webSearch'} />;
-    if (name === 'notifyCareteam') return null;
+    if (name === OLD_CARETEAM_TOOL) return null;
     return <GenericToolCard key={part.toolCallId} name={name} part={part as ToolPart} />;
   };
 
   const tools = message.parts.filter(isToolUIPart) as ToolPart[];
-  const careteamParts = tools.filter((p) => getToolName(p) === 'notifyCareteam');
-  const searches = tools.filter((p) => SEARCH_TOOLS.has(getToolName(p)));
+  const careteamParts = tools.filter((p) => getToolName(p) === OLD_CARETEAM_TOOL);
 
-  // ---- Emergency (rule 1): the reply in a red box with call buttons; the care-team offer below it.
+  // ---- Emergency (rule 1): the reply in a red box with call buttons.
   if (emergency) {
     const body = textOf(message);
-    // Once the text is complete (the offer comes after it, or the turn ended), make sure the
-    // 911 / 988 reply is there whatever the model wrote; show the fixed reply if not.
+    // Once the turn ended, make sure the 911 / 988 reply is there whatever the model wrote;
+    // show the fixed reply if not.
     const complete = careteamParts.length > 0 || !streaming;
     const crisis = emergency.situation !== 'urgent';
     const missing = complete && (!mentions(body, '911') || (crisis && !mentions(body, '988')));
@@ -261,7 +227,6 @@ export default function AiMessageParts({
       <div className="space-y-2">
         {message.parts.map(workPart)}
         {text && <EmergencyReply text={text} crisis={crisis} linkableHosts={hosts} />}
-        {careteamParts.map(careteamCard)}
       </div>
     );
   }
@@ -279,56 +244,21 @@ export default function AiMessageParts({
         </React.Fragment>
       );
     }
-    // Care-team offers go below the answer (see below): when the model offers first, the
-    // server asks for the answer afterwards, and its text arrives after the offer.
-    if (isToolUIPart(part) && getToolName(part) === 'notifyCareteam') return null;
     return workPart(part, i);
   });
 
-  // A reply that ended with an offer and no text (older replies, or the follow-up failed):
-  // show the fixed reply (the referral) from code so it is never missing.
+  // An older reply that was only a care-team offer, with no text: show its fixed reply (the
+  // referral) from code so the message is not empty.
   const first = careteamParts[0]?.input as { situation?: unknown; language?: unknown } | undefined;
   const fallback =
     !hasText && !streaming && first && isCareteamSituation(first.situation)
       ? fixedReply(first.situation, typeof first.language === 'string' ? first.language : 'en')
       : null;
 
-  // Patients see one line while the answer is on its way: thinking, then searching trusted
-  // sources, then writing the answer (searches done, no text yet).
-  const searching = searches.some(isRunning);
-  const waiting = streaming && !hasText;
-  const status =
-    patient && (searching || waiting) ? (searching ? t.lookingUp : searches.length ? t.writingAnswer : t.thinking) : null;
-
   return (
     <div className="space-y-2">
       {rendered}
       {fallback && <Markdown text={fallback} linkableHosts={hosts} />}
-      {status && <WaitingStatus label={status} />}
-      {careteamParts.map(careteamCard)}
-    </div>
-  );
-}
-
-/**
- * Patient chat: the status line while an answer is on its way. Answers that check sources take
- * 15-25 s (trial data, Nov 2026), so after 8 s without text it also says how long it can take.
- * Stays mounted while the label changes, so the 8 s count from the first status line.
- */
-function WaitingStatus({ label }: { label: string }) {
-  const { t } = usePatientText();
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    const id = setTimeout(() => setSlow(true), 8000);
-    return () => clearTimeout(id);
-  }, []);
-  return (
-    <div className="flex items-start gap-1.5 text-[13px] text-muted-foreground" role="status">
-      <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin shrink-0 mt-[3px]" />
-      <div>
-        <p>{label}</p>
-        {slow && <p className="text-[12px]">{t.waitHint}</p>}
-      </div>
     </div>
   );
 }
@@ -438,7 +368,7 @@ function SourceChips({
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-600 text-primary hover:bg-blue-100"
+        className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-600 text-blue-600 hover:bg-blue-100"
       >
         <Icon name="BookOpenIcon" size={14} variant="outline" className="shrink-0" />
         {t.sources(docs.size)}
@@ -454,7 +384,7 @@ function SourceChips({
                 name={opening === key ? 'ArrowPathIcon' : d.kind === 'web' ? 'GlobeAltIcon' : 'DocumentTextIcon'}
                 size={14}
                 variant="outline"
-                className={`shrink-0 mt-[2px] text-primary ${opening === key ? 'animate-spin' : ''}`}
+                className={`shrink-0 mt-[2px] text-blue-500 ${opening === key ? 'animate-spin' : ''}`}
               />
             );
             return (
@@ -601,208 +531,6 @@ function SearchCard({ part, web = false }: { part: ToolPart; web?: boolean }) {
         </ul>
       )}
       {part.state === 'output-error' && <p className="mt-1 text-danger pl-5">{part.errorText}</p>}
-    </div>
-  );
-}
-
-type CareteamOutput = { preview?: boolean; sentMessage?: string; editedByPatient?: boolean };
-
-/**
- * The care-team offer in the patient's chat. The confirmation itself is the bottom sheet
- * (MobileChatThread): it opens by itself for a referral (rule 2); after an emergency reply the
- * patient opens it with "Also notify my care team", so it never covers the 911 / 988 reply.
- */
-function PatientCareteamCard({
-  part,
-  canRespond,
-  lapsed,
-  emergency,
-  onOpen,
-}: {
-  part: ToolPart;
-  canRespond: boolean;
-  lapsed: boolean;
-  emergency: boolean;
-  onOpen?: (approvalId: string) => void;
-}) {
-  const { t } = usePatientText();
-  const draft = (part.input as { message?: string } | undefined)?.message ?? '';
-  const output = part.state === 'output-available' ? (part.output as CareteamOutput | undefined) : undefined;
-
-  if (part.state === 'approval-requested') {
-    if (lapsed) {
-      return (
-        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-          <Icon name="BellAlertIcon" size={14} variant="outline" className="shrink-0" />
-          {t.careteamLapsed}
-        </p>
-      );
-    }
-    if (!canRespond) return null;
-    if (emergency) {
-      return (
-        <button
-          type="button"
-          onClick={() => onOpen?.(part.approval.id)}
-          className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-border bg-card text-[14px] font-600 text-foreground active:bg-muted"
-        >
-          <Icon name="BellAlertIcon" size={17} variant="outline" className="shrink-0 text-primary" />
-          {t.alsoNotify}
-        </button>
-      );
-    }
-    return <p className="text-[13px] text-muted-foreground">{t.careteamWaiting}</p>;
-  }
-  // The offer is still being written.
-  if (isRunning(part)) return null;
-
-  let status: React.ReactNode = null;
-  if (part.state === 'approval-responded') {
-    status = part.approval?.approved ? (
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon name="ArrowPathIcon" size={13} variant="outline" className="animate-spin" /> {t.careteamSending}
-      </span>
-    ) : (
-      <span className="text-muted-foreground">{t.careteamNotSent}</span>
-    );
-  } else if (part.state === 'output-available') {
-    status = (
-      <span className="flex items-center gap-1.5 text-success font-600">
-        <Icon name="CheckCircleIcon" size={15} variant="solid" />
-        {t.careteamSent}
-      </span>
-    );
-  } else if (part.state === 'output-denied') {
-    status = <span className="text-muted-foreground">{t.careteamNotSent}</span>;
-  } else if (part.state === 'output-error') {
-    status = <span className="text-danger">{t.careteamFailed}</span>;
-  }
-  const shown = output?.sentMessage || draft;
-
-  return (
-    <div className="rounded-xl border border-border bg-card px-3.5 py-3 text-[13.5px] shadow-sm">
-      <div className="flex items-center gap-2 font-600 text-foreground">
-        <Icon name="BellAlertIcon" size={16} variant="outline" className="text-primary shrink-0" />
-        {t.careteamMessage}
-      </div>
-      {shown && (
-        <p className="mt-1.5 text-secondary-foreground whitespace-pre-wrap break-words">
-          “{shown}”{output?.editedByPatient && <span className="text-muted-foreground"> · {t.editedBeforeSending}</span>}
-        </p>
-      )}
-      {status && <div className="mt-2">{status}</div>}
-    </div>
-  );
-}
-
-/** The care-team offer in the dashboard's staff preview (buttons inside the card). */
-function CareteamCard({
-  part,
-  canRespond,
-  lapsed,
-  inline,
-  onApproval,
-}: {
-  part: ToolPart;
-  canRespond: boolean;
-  /** An older message: an unanswered offer here can no longer be answered. */
-  lapsed: boolean;
-  inline: boolean;
-  onApproval: Props['onApproval'];
-}) {
-  const draft = (part.input as { message?: string } | undefined)?.message ?? '';
-  const output = part.state === 'output-available' ? (part.output as CareteamOutput | undefined) : undefined;
-  const editing = part.state === 'approval-requested' && canRespond && inline;
-  const [text, setText] = useState(draft);
-  // The card can mount while the draft is still streaming in; follow it until the user edits.
-  const edited = useRef(false);
-  useEffect(() => {
-    if (!edited.current) setText(draft);
-  }, [draft]);
-  const shown = output?.sentMessage || draft;
-
-  // The user sent a new message instead of answering: this offer lapsed (a newer card, if any,
-  // is the live one). One line, so it does not read as a second card for the same concern.
-  if (part.state === 'approval-requested' && lapsed) {
-    return (
-      <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-        <Icon name="BellAlertIcon" size={13} variant="outline" />
-        Care-team message not sent — the conversation moved on.
-      </p>
-    );
-  }
-
-  let status: React.ReactNode = null;
-  if (part.state === 'approval-requested' && canRespond && !inline) {
-    status = <p className="mt-2 text-muted-foreground">Waiting for your answer…</p>;
-  } else if (editing) {
-    status = (
-      <div className="flex items-center gap-2 mt-2.5">
-        <button
-          onClick={() => onApproval(part.approval!.id, true, text)}
-          disabled={!text.trim()}
-          className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-[12px] font-600 hover:opacity-90 disabled:opacity-40"
-        >
-          Send to care team
-        </button>
-        <button
-          onClick={() => onApproval(part.approval!.id, false)}
-          className="px-3 py-1.5 border border-border text-foreground rounded-lg text-[12px] font-600 hover:bg-muted"
-        >
-          Don’t send
-        </button>
-      </div>
-    );
-  } else if (part.state === 'approval-responded') {
-    status = (
-      <p className="mt-2 text-muted-foreground flex items-center gap-1.5">
-        {part.approval?.approved ? (
-          <>
-            <Icon name="ArrowPathIcon" size={12} variant="outline" className="animate-spin" /> Sending…
-          </>
-        ) : (
-          'Declined'
-        )}
-      </p>
-    );
-  } else if (part.state === 'output-available') {
-    status = (
-      <p className="mt-2 text-success font-600 flex items-center gap-1.5">
-        <Icon name="CheckCircleIcon" size={14} variant="solid" />
-        {output?.preview ? 'Approved (preview — staff accounts don’t create a real alert)' : 'Sent to the care team'}
-      </p>
-    );
-  } else if (part.state === 'output-denied') {
-    status = <p className="mt-2 text-muted-foreground">Not sent — declined.</p>;
-  } else if (part.state === 'output-error') {
-    status = <p className="mt-2 text-danger">Not sent: {part.errorText}</p>;
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-card px-3.5 py-3 text-[12.5px] shadow-sm">
-      <div className="flex items-center gap-2 font-600 text-foreground">
-        <Icon name="BellAlertIcon" size={15} variant="outline" className="text-primary" />
-        {editing ? 'Send this message to the care team? You can edit it first.' : 'Message to the care team'}
-      </div>
-      {editing ? (
-        <textarea
-          value={text}
-          onChange={(e) => {
-            edited.current = true;
-            setText(e.target.value);
-          }}
-          maxLength={1000}
-          rows={3}
-          className="mt-2 w-full resize-y px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      ) : (
-        shown && (
-          <p className="mt-1.5 text-secondary-foreground whitespace-pre-wrap break-words">
-            “{shown}”{output?.editedByPatient && <span className="text-muted-foreground"> · edited before sending</span>}
-          </p>
-        )
-      )}
-      {status}
     </div>
   );
 }

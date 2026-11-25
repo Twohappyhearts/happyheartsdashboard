@@ -1,27 +1,19 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport, isToolUIPart, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from 'ai';
-import { AgentChatError, type AgentAuth } from './agent-chat';
+import { AgentChatError, historyToUIMessages, siblingIdsOf, switchAgentBranch } from './agent-chat';
 
 export interface UseAgentChatOptions {
   conversationId: string | null;
   initialMessages: UIMessage[];
-  /** Bearer auth for the mobile WebView; omitted on the dashboard (cookie). */
-  auth?: AgentAuth;
   /** The server created the conversation for a new chat (X-Conversation-Id). */
   onConversationCreated?: (id: string) => void;
   /** After every assistant turn. */
   onTurnFinished?: () => void;
   /** Generated title of a new conversation (transient data event). */
   onTitle?: (conversationId: string, title: string) => void;
-  /** A request was rejected with 401 (e.g. the token expired). */
-  onUnauthorized?: () => void;
-  /** A request was rejected with 403 (e.g. a new AI notice or Terms of Use must be accepted first). */
-  onForbidden?: () => void;
-  /** Batch UI updates while streaming (ms); fewer re-renders on slow phones. */
-  throttleMs?: number;
 }
 
 export const messageText = (m: UIMessage) =>
@@ -33,32 +25,50 @@ export const messageText = (m: UIMessage) =>
 /**
  * useChat wired to /api/agent/chat. Our API takes one new message (or the
  * approval answers), not the whole history: the server rebuilds the context.
+ *
+ * Editing a message: the chat drops it and everything after it, and the next request carries
+ * `editOf`; the server stores the new text as another version (a new branch). The server's id
+ * for the user message comes back in X-User-Message-Id and replaces the local one, so the
+ * message can be edited or switched later.
  */
 export function useAgentChat(opts: UseAgentChatOptions) {
   const convRef = useRef<string | null>(opts.conversationId);
-  /** approvalId → message the user edited in the care-team confirmation. */
-  const edits = useRef(new Map<string, string>());
   const latest = useRef(opts);
   latest.current = opts;
+  /** The message the next request replaces, and the versions it had. */
+  const editRef = useRef<{ id: string; siblingIds: string[] } | null>(null);
+  const setMessagesRef = useRef<((update: (m: UIMessage[]) => UIMessage[]) => void) | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
         api: '/api/agent/chat',
-        credentials: opts.auth ? 'omit' : 'same-origin',
-        headers: async () => (latest.current.auth ? await latest.current.auth() : {}),
+        credentials: 'same-origin',
         fetch: async (input, init) => {
+          // The body (with editOf) is already built; the edit is used up by this request.
+          const edited = editRef.current;
+          editRef.current = null;
           const res = await fetch(input, init);
           const id = res.headers.get('X-Conversation-Id');
           if (id && !convRef.current) {
             convRef.current = id;
             latest.current.onConversationCreated?.(id);
           }
+          const userId = res.headers.get('X-User-Message-Id');
+          if (userId) {
+            // The last user message is the one just sent: give it the server's id and versions.
+            setMessagesRef.current?.((ms) => {
+              const i = ms.map((m) => m.role).lastIndexOf('user');
+              if (i < 0) return ms;
+              const siblingIds = edited ? [...edited.siblingIds, userId] : [userId];
+              const next = [...ms];
+              next[i] = { ...ms[i], id: userId, metadata: { siblingIds } };
+              return next;
+            });
+          }
           if (!res.ok) {
-            if (res.status === 401) latest.current.onUnauthorized?.();
-            if (res.status === 403) latest.current.onForbidden?.();
             const body = (await res.json().catch(() => null)) as { error?: string } | null;
-            // Carries the status, so the patient chat can show its own wording.
             throw new AgentChatError(body?.error ?? `Request failed (${res.status}).`, res.status);
           }
           return res;
@@ -73,14 +83,19 @@ export function useAgentChat(opts: UseAgentChatOptions) {
                       approvalId: p.approval.id,
                       approved: p.approval.approved,
                       ...(p.approval.reason ? { reason: p.approval.reason } : {}),
-                      ...(p.approval.approved && edits.current.get(p.approval.id) ? { editedMessage: edits.current.get(p.approval.id) } : {}),
                     },
                   ]
                 : [],
             );
             return { body: { conversationId: convRef.current, approvals } };
           }
-          return { body: { ...(convRef.current ? { conversationId: convRef.current } : {}), message: last ? messageText(last) : '' } };
+          return {
+            body: {
+              ...(convRef.current ? { conversationId: convRef.current } : {}),
+              message: last ? messageText(last) : '',
+              ...(editRef.current ? { editOf: editRef.current.id } : {}),
+            },
+          };
         },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,7 +103,6 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   );
 
   const chat = useChat({
-    ...(opts.throttleMs ? { throttle: opts.throttleMs } : {}),
     messages: opts.initialMessages,
     transport,
     // After the user answers every waiting approval, continue the turn automatically.
@@ -101,29 +115,40 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     },
   });
 
-  const busy = chat.status === 'submitted' || chat.status === 'streaming';
+  setMessagesRef.current = (update) => chat.setMessages(update);
+  const busy = chat.status === 'submitted' || chat.status === 'streaming' || switching;
 
-  /** Answer a waiting tool call; `editedMessage` replaces the AI's draft (care-team messages). */
-  const answerApproval = (approvalId: string, approved: boolean, editedMessage?: string) => {
-    const text = editedMessage?.trim();
-    if (approved && text) edits.current.set(approvalId, text);
-    else edits.current.delete(approvalId);
-    return chat.addToolApprovalResponse({
-      id: approvalId,
-      approved,
-      ...(approved ? {} : { reason: 'The user chose not to send it.' }),
-    });
+  /** Send `text` as a new version of user message `messageId` (a new branch from there). */
+  const editMessage = (messageId: string, text: string) => {
+    const i = chat.messages.findIndex((m) => m.id === messageId);
+    if (i < 0 || busy || !text.trim()) return;
+    editRef.current = { id: messageId, siblingIds: siblingIdsOf(chat.messages[i]) };
+    chat.setMessages(chat.messages.slice(0, i));
+    void chat.sendMessage({ text: text.trim() });
   };
 
-  return { ...chat, busy, answerApproval };
-}
+  /** Show another version of a message: the branch under it replaces what is on screen. */
+  const switchVersion = async (messageId: string) => {
+    const conversationId = convRef.current;
+    if (!conversationId || busy) return;
+    setSwitching(true);
+    try {
+      chat.setMessages(historyToUIMessages(await switchAgentBranch(conversationId, messageId)));
+    } finally {
+      setSwitching(false);
+    }
+  };
 
-/** The tool call on the last message that waits for the user's answer, if any. */
-export function pendingApproval(messages: UIMessage[]) {
-  const last = messages[messages.length - 1];
-  if (!last || last.role !== 'assistant') return null;
-  for (const p of last.parts) {
-    if (isToolUIPart(p) && p.state === 'approval-requested') return p;
-  }
-  return null;
+  /**
+   * Answer a waiting tool call. No tool needs approval at the moment (the care-team offer was
+   * removed on 2026-11-23); kept for tools that will.
+   */
+  const answerApproval = (approvalId: string, approved: boolean) =>
+    chat.addToolApprovalResponse({
+      id: approvalId,
+      approved,
+      ...(approved ? {} : { reason: 'The user declined.' }),
+    });
+
+  return { ...chat, busy, answerApproval, editMessage, switchVersion };
 }

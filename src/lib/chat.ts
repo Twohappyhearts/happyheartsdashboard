@@ -5,11 +5,19 @@ import { staffText } from '@/lib/i18n/staff';
  * Staff-side chat data access. Mirrors happyhearts/lib/services/chat_service.dart.
  * The database (trigger + RLS) decides sender_id / sender_role / created_at, so
  * clients only ever send { id, conversation_id, content }.
+ *
+ * Editing and deleting go through database functions (migration
+ * happyhearts/supabase/migrations/20261125000100_chat_message_edit_delete.sql): a message keeps
+ * its id and is updated in place; its earlier texts are kept in chat_message_revisions.
  */
 
 export const MAX_MESSAGE_LENGTH = 4000;
 export const PAGE_SIZE = 30;
-const COLUMNS = 'id, conversation_id, sender_id, sender_role, content, created_at';
+const COLUMNS = 'id, conversation_id, sender_id, sender_role, content, created_at, edited_at, deleted_at, deleted_by_role, purged_at';
+
+/** The sender may edit a message for this long after sending (checked again by the database). */
+export const EDIT_WINDOW_MS = 15 * 60 * 1000;
+export const MAX_REASON_LENGTH = 500;
 
 export type SendState = 'sent' | 'pending' | 'failed';
 
@@ -21,6 +29,29 @@ export interface ChatMessage {
   content: string;
   createdAt: string; // ISO (UTC from server)
   state: SendState;
+  /** Last edit by the sender; null if never edited. */
+  editedAt: string | null;
+  /** Deleted (shown as a placeholder; content is empty). */
+  deletedAt: string | null;
+  /** Who deleted it: the patient ('user') or the team ('team'). */
+  deletedByRole: 'user' | 'team' | null;
+  /** Its text was erased from the history too (Admin). */
+  purged: boolean;
+}
+
+export type RevisionAction = 'edit' | 'delete' | 'restore' | 'purge';
+
+/** One earlier version of a message (chat_message_history). */
+export interface MessageRevision {
+  id: number;
+  action: RevisionAction;
+  /** The text just before this action; null for restore/purge or once erased. */
+  content: string | null;
+  actorId: string;
+  actorRole: string;
+  actorName: string | null;
+  reason: string | null;
+  createdAt: string;
 }
 
 export interface Patient {
@@ -61,7 +92,22 @@ export function toMessage(r: Row, state: SendState = 'sent'): ChatMessage {
     content: String(r.content ?? ''),
     createdAt: String(r.created_at),
     state,
+    editedAt: (r.edited_at as string | null) ?? null,
+    deletedAt: (r.deleted_at as string | null) ?? null,
+    deletedByRole: r.deleted_by_role === 'user' || r.deleted_by_role === 'team' ? r.deleted_by_role : null,
+    purged: !!r.purged_at,
   };
+}
+
+/** The sender may still edit this message (the database decides for good). */
+export function canEdit(m: ChatMessage, myId: string | null, now = Date.now()) {
+  return (
+    !!myId &&
+    m.senderId === myId &&
+    m.state === 'sent' &&
+    !m.deletedAt &&
+    now - Date.parse(m.createdAt) < EDIT_WINDOW_MS
+  );
 }
 
 /** Ascending by (createdAt, id) — same stable order as the mobile app. */
@@ -81,6 +127,10 @@ function pgError(e: { code?: string; message?: string } | null, fallback: string
   }
   if (e.code === '42501') return new ChatError(staffText().common.noStaffPermission, e.code);
   if (e.code === '23514') return new ChatError(E().tooLong(MAX_MESSAGE_LENGTH), e.code);
+  if (e.code === 'HC001') return new ChatError(E().editWindow, e.code);
+  if (e.code === 'HC002') return new ChatError(E().alreadyDeleted, e.code);
+  if (e.code === 'HC003') return new ChatError(E().erased, e.code);
+  if (e.code === 'HC004') return new ChatError(E().reasonNeeded(MAX_REASON_LENGTH), e.code);
   return new ChatError(`${fallback}: ${e.message ?? E().unknown}`, e.code);
 }
 
@@ -210,6 +260,51 @@ export async function sendMessage(
   throw pgError(error, E().notSent);
 }
 
+async function messageAction(
+  supabase: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown>,
+  fallback: string
+): Promise<ChatMessage> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw pgError(error, fallback);
+  const row = (Array.isArray(data) ? data[0] : data) as Row | null;
+  if (!row?.id) throw new ChatError(fallback);
+  return toMessage(row);
+}
+
+/** Edit your own message (within EDIT_WINDOW_MS); returns it as saved. */
+export const editMessage = (supabase: SupabaseClient, messageId: string, content: string) =>
+  messageAction(supabase, 'chat_edit_message', { p_message_id: messageId, p_content: content }, E().editFailed);
+
+/** Delete your own message, or remove a patient's message (a reason is required then). */
+export const deleteMessage = (supabase: SupabaseClient, messageId: string, reason?: string) =>
+  messageAction(supabase, 'chat_delete_message', { p_message_id: messageId, p_reason: reason ?? null }, E().deleteFailed);
+
+/** Admin: bring a deleted message back. */
+export const restoreMessage = (supabase: SupabaseClient, messageId: string) =>
+  messageAction(supabase, 'chat_restore_message', { p_message_id: messageId }, E().restoreFailed);
+
+/** Admin: erase a message's text everywhere, its history included. Cannot be undone. */
+export const purgeMessage = (supabase: SupabaseClient, messageId: string, reason: string) =>
+  messageAction(supabase, 'chat_purge_message', { p_message_id: messageId, p_reason: reason }, E().purgeFailed);
+
+/** Earlier versions of a message, oldest first (Careteam/Admin; each read is audit-logged). */
+export async function messageHistory(supabase: SupabaseClient, messageId: string): Promise<MessageRevision[]> {
+  const { data, error } = await supabase.rpc('chat_message_history', { p_message_id: messageId });
+  if (error) throw pgError(error, E().historyFailed);
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: Number(r.revision_id),
+    action: r.action as RevisionAction,
+    content: (r.content as string | null) ?? null,
+    actorId: String(r.actor_id),
+    actorRole: String(r.actor_role),
+    actorName: (r.actor_name as string | null) ?? null,
+    reason: (r.reason as string | null) ?? null,
+    createdAt: String(r.created_at),
+  }));
+}
+
 export async function listPatients(supabase: SupabaseClient): Promise<PatientListItem[]> {
   const { data, error } = await supabase.rpc('staff_list_patients');
   if (error) throw pgError(error, E().loadPatients);
@@ -245,27 +340,29 @@ export async function fetchProfiles(
   return ((data ?? []) as Row[]).map((r) => toPatient(r, String(r.id)));
 }
 
-/** One channel for every conversation; RLS limits delivery to what staff may read. */
+/**
+ * One channel for every conversation; RLS limits delivery to what staff may read.
+ * New messages arrive as INSERT, edits and deletions as UPDATE (same message id).
+ */
 export function subscribeToAllMessages(
   supabase: SupabaseClient,
   key: string,
   onInsert: (m: ChatMessage) => void,
+  onUpdate: (m: ChatMessage) => void,
   onStatus: (connected: boolean) => void
 ): RealtimeChannel {
+  const handle = (cb: (m: ChatMessage) => void) => (payload: { new: unknown }) => {
+    try {
+      const m = toMessage(payload.new as Row);
+      if (m.conversationId && m.conversationId !== 'null') cb(m);
+    } catch {
+      /* ignore malformed payloads */
+    }
+  };
   const channel = supabase
     .channel(`staff-chat:${key}`)
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-      (payload) => {
-        try {
-          const m = toMessage(payload.new as Row);
-          if (m.conversationId && m.conversationId !== 'null') onInsert(m);
-        } catch {
-          /* ignore malformed payloads */
-        }
-      }
-    )
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, handle(onInsert))
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, handle(onUpdate))
     .subscribe((status) => onStatus(status === 'SUBSCRIBED'));
   return channel;
 }

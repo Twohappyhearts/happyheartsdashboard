@@ -16,7 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  *   still ≥ summarizeAt × budget (80%)    → LLM summary of everything but the last `keepRecentTurns`
  *
  * Trimming only changes the request; the database keeps the full parts.
- * A summary is persisted (agent_conversations.summary / summarized_until_seq).
+ * A summary is persisted per branch (agent_summaries, anchored at the last message it covers).
  *
  * The table of translated fixed replies in the instructions does not count toward the budget:
  * it is the same in every request, and counting it would shrink the room left for the conversation.
@@ -160,8 +160,8 @@ const SUMMARY_INSTRUCTIONS = [
 ].join('\n');
 
 /**
- * Summarize every turn except the last `keepRecentTurns` into the stored summary.
- * Returns true if a new summary was saved.
+ * Summarize every turn of the branch except the last `keepRecentTurns` (building on the summary
+ * this branch already has). Returns true if a new summary was saved.
  */
 export async function summarize(admin: SupabaseClient, state: AgentState, cfg: AgentConfig): Promise<boolean> {
   const turns = splitTurns(state.recent);
@@ -171,7 +171,7 @@ export async function summarize(admin: SupabaseClient, state: AgentState, cfg: A
   const old = turns.slice(0, turns.length - keep).flat();
   // Never summarize past a message that still waits for an approval.
   if (old.some((s) => s.status === 'AWAITING_APPROVAL')) return false;
-  const untilSeq = old[old.length - 1].seq;
+  const throughId = old[old.length - 1].message.id;
 
   const previous = state.conversation.summary?.trim();
   const prompt = [
@@ -190,5 +190,5 @@ export async function summarize(admin: SupabaseClient, state: AgentState, cfg: A
   });
   const summary = text.trim();
   if (!summary) return false;
-  return saveSummary(admin, state.conversation, summary, untilSeq);
+  return saveSummary(admin, state.conversation, summary, throughId);
 }

@@ -7,6 +7,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOpenAlerts } from '@/contexts/OpenAlertsContext';
+import { useInbox } from '@/contexts/InboxContext';
 import { useStaffT } from '@/lib/i18n/staff/context';
 import type { StaffText } from '@/lib/i18n/staff';
 
@@ -34,6 +35,7 @@ const navGroups: NavGroup[] = [
       { label: 'content', href: '/content-management', icon: 'BookOpenIcon' },
       { label: 'surveys', href: '/survey-management', icon: 'ClipboardDocumentListIcon' },
       { label: 'alerts', href: '/alerts', icon: 'BellAlertIcon' },
+      { label: 'inbox', href: '/inbox', icon: 'InboxIcon' },
     ],
   },
   {
@@ -41,6 +43,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'analytics', href: '/analytics', icon: 'ChartBarIcon' },
       { label: 'aiNotice', href: '/ai-notice', icon: 'ShieldCheckIcon' },
+      { label: 'aiConversations', href: '/ai-conversations', icon: 'ChatBubbleBottomCenterTextIcon' },
     ],
   },
   {
@@ -76,7 +79,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     .map((g) => ({ ...g, items: g.items.filter((i) => !i.adminOnly || isAdmin) }))
     .filter((g) => g.items.length > 0);
   const { openCount } = useOpenAlerts();
-  const badgeFor = (item: NavItem) => (item.href === '/alerts' ? openCount : item.badge);
+  const { unread: inboxUnread } = useInbox();
+  const badgeFor = (item: NavItem) =>
+    item.href === '/alerts' ? openCount : item.href === '/inbox' ? inboxUnread : item.badge;
 
   const handleSignOut = async () => {
     await signOut();

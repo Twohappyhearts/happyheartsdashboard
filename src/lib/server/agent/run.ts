@@ -5,15 +5,11 @@ import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  getToolName,
   isStepCount,
-  isToolUIPart,
   streamText,
-  type ModelMessage,
   type UIMessage,
   type UIMessageChunk,
 } from 'ai';
-import { fixedReplySituation } from '@/lib/agent-fixed-replies';
 import { ApiError } from '@/lib/server/staff-auth';
 import { applyApprovals, type ApprovalAnswer } from './approval';
 import type { AgentCaller } from './auth';
@@ -26,6 +22,7 @@ import {
   expirePendingApprovals,
   getConversation,
   hasPendingApproval,
+  parentForNewMessage,
   insertUserMessage,
   loadState,
   saveAssistantMessage,
@@ -37,11 +34,11 @@ import { AgentToolError, createAgentTools, SEARCH_TOOL, TOOLS_NEEDING_APPROVAL, 
 import { withWebDomains } from './web-domains';
 import { createWebSearch } from './websearch';
 import { generateConversationTitle } from './title';
-import { languageName, type InstructionOptions } from './prompt';
-import { careTeamLanguage } from './settings';
+import type { InstructionOptions } from './prompt';
 
 export type AgentRequest =
-  | { kind: 'message'; conversationId?: string; text: string }
+  /** `editOf`: the user message this one replaces (a new version of it, on a new branch). */
+  | { kind: 'message'; conversationId?: string; text: string; editOf?: string }
   | { kind: 'approval'; conversationId: string; approvals: ApprovalAnswer[] };
 
 const needsApproval = new Set<string>(TOOLS_NEEDING_APPROVAL);
@@ -52,27 +49,6 @@ const MAX_SEARCHES_PER_TURN = 2;
 const MAX_WEB_SEARCHES_PER_TURN = 2;
 const lastUserId = (messages: UIMessage[]) => [...messages].reverse().find((m) => m.role === 'user')?.id ?? null;
 
-// Recognizes the fixed replies in every language the app supports (agent-fixed-replies.ts).
-export { fixedReplySituation };
-
-/**
- * Situations whose care-team offer the user turned down (pressed Cancel) earlier in the
- * conversation. The prompt tells the model not to offer again for the same concern, so the
- * forced follow-up must not offer it either. An offer that lapsed unanswered does not count.
- */
-export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
-  const declined = new Set<string>();
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (!isToolUIPart(p) || getToolName(p) !== 'notifyCareteam') continue;
-      const cancelled = p.state === 'output-denied' || (p.state === 'approval-responded' && !p.approval.approved);
-      const situation = (p.input as { situation?: unknown } | undefined)?.situation;
-      if (cancelled && typeof situation === 'string') declined.add(situation);
-    }
-  }
-  return declined;
-}
-
 /**
  * One agent turn:
  *   1. restore state (summary + state + messages after the summary)
@@ -82,47 +58,44 @@ export function declinedCareteamSituations(messages: UIMessage[]): Set<string> {
  *   5. onEnd: save the assistant message (full parts), then compress in the background if needed
  */
 export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Promise<Response> {
-  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites), and
-  // care-team drafts are written in the first language the research team reads (Settings).
-  const [cfg, careteamLanguage] = await Promise.all([withWebDomains(agentConfig(), caller.admin), careTeamLanguage(caller.admin)]);
-  // Filled in when the patient edited a care-team message in the confirmation.
-  const careteamEdits = new Map<string, string>();
+  // The sites web search may use are the ones staff set in the dashboard (Trusted Websites).
+  const cfg = await withWebDomains(agentConfig(), caller.admin);
   const searchWeb = createWebSearch(cfg);
-  const tools = createAgentTools(caller, {
-    careteamEdits,
-    searchWeb,
-    webSites: cfg.webSearch?.domains,
-    careteamLanguageName: languageName(careteamLanguage),
-  });
-  const opts: InstructionOptions = { canNotifyCareteam: true, canSearchWeb: searchWeb != null, careteamLanguage };
+  const tools = createAgentTools(caller, { searchWeb, webSites: cfg.webSearch?.domains });
+  const opts: InstructionOptions = { canSearchWeb: searchWeb != null };
   const { admin } = caller;
 
   let conversation: Conversation;
   let durationBefore = 0;
   /** Set only for a brand-new conversation: its title, being generated alongside the reply. */
   let titlePromise: Promise<string> | null = null;
+  /** The user message this turn answers (sent to the client, which only had a local id for it). */
+  let userMessageId: string | null = null;
 
   // ---- 1 + 2
   if (req.kind === 'message') {
     if (req.conversationId) {
       conversation = await getConversation(admin, caller.userId, req.conversationId);
     } else {
+      if (req.editOf) throw new ApiError(400, 'Editing needs the conversation.');
       conversation = await createConversation(admin, caller.userId, null);
       // Starts now and runs alongside the reply; sent to the client at the end of the stream.
       titlePromise = generateConversationTitle(admin, conversation, req.text, cfg);
     }
     // A new message instead of an answer: the old approval request lapses.
     await expirePendingApprovals(admin, conversation);
-    await insertUserMessage(admin, conversation, {
-      id: randomUUID(),
-      role: 'user',
-      parts: [{ type: 'text', text: req.text }],
-    });
+    const parentId = await parentForNewMessage(admin, conversation, req.editOf);
+    userMessageId = randomUUID();
+    await insertUserMessage(
+      admin,
+      conversation,
+      { id: userMessageId, role: 'user', parts: [{ type: 'text', text: req.text }] },
+      parentId,
+    );
   } else {
     const before = await loadState(admin, caller.userId, req.conversationId);
     conversation = before.conversation;
-    const { target, message, stillPending, careteamEdits: edits } = applyApprovals(before.recent, req.approvals);
-    edits.forEach((text, toolCallId) => careteamEdits.set(toolCallId, text));
+    const { target, message, stillPending } = applyApprovals(before.recent, req.approvals);
     const claimed = await claimApprovalMessage(admin, conversation, target.message.id, message.parts, stillPending);
     if (!claimed) throw new ApiError(409, 'This request was already answered.');
     if (stillPending) {
@@ -193,54 +166,7 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
     generateId: randomUUID,
     execute: async ({ writer }) => {
       writer.merge(result.toUIMessageStream({ sendReasoning: true, sendFinish: false, onError: streamError }));
-      // Every emergency reply (rule 1) comes with an offer to message the care team (the user still
-      // has to press Send). If the model wrote the fixed reply but made no offer, ask for the offer
-      // in one more, forced call; its tool call joins the same reply message.
-      // Rule 2 answers now carry general information and the referral sentence can appear in
-      // ordinary answers too, so a missing offer is only forced for emergencies.
-      // Not when the user already cancelled an offer for the same kind of situation.
-      const found = opts.canNotifyCareteam ? await missingCareteamOffer(result) : null;
-      const missing = found === 'personal' ? null : found;
-      const situation = missing && !declinedCareteamSituations(original).has(missing) ? missing : null;
-      if (missing && !situation) console.info(`[agent] ${conversationId.slice(0, 8)} no care-team offer: the user cancelled one for "${missing}" earlier`);
-      if (situation) {
-        console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer missing after a "${situation}" reply; asking for it`);
-        const followUp = streamText({
-          model: chatModel(cfg),
-          instructions: `${built.instructions}\n\nYou just gave the fixed reply for this situation: "${situation}". Now call notifyCareteam with situation "${situation}", the language code of that reply, and a draft in ${languageName(careteamLanguage)} in the user's words that keeps every detail they gave. Write no other text.`,
-          messages: [...modelMessages, ...(await result.responseMessages)],
-          tools,
-          activeTools: ['notifyCareteam'],
-          toolChoice: { type: 'tool', toolName: 'notifyCareteam' },
-          toolApproval: ({ toolCall }) => (needsApproval.has(toolCall.toolName) ? 'user-approval' : undefined),
-          experimental_toolApprovalSecret: cfg.toolApprovalSecret,
-          stopWhen: isStepCount(1),
-          providerOptions: thinkingOptions(cfg, false),
-        });
-        void followUp.consumeStream({ onError: (e) => console.error('[agent] care-team follow-up stream error', e) });
-        writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
-      } else if (opts.canNotifyCareteam && (await offerWithoutAnswer(result))) {
-        // The model sometimes offers the care-team message (rule 2) and stops without writing an
-        // answer, so the patient saw only the referral sentence. Ask for the answer in one more
-        // call that may search but cannot offer again; its text joins the same reply, and the
-        // offer stays pending for the user.
-        console.info(`[agent] ${conversationId.slice(0, 8)} care-team offer without an answer; asking for the answer`);
-        const followUp = streamText({
-          model: chatModel(cfg),
-          instructions: `${built.instructions}\n\nYou drafted a message to the care team, and the user now sees that draft below your answer; they decide whether to send it. But you wrote no answer. Now write your answer to the user's latest message, following every rule above. If you have not searched for this question yet, search first. Do not say that you cannot send messages, and do not mention tools.`,
-          messages: [...modelMessages, ...withOfferShown(await result.responseMessages)],
-          tools,
-          activeTools: toolNames.filter((n) => n !== 'notifyCareteam'),
-          toolApproval: ({ toolCall }) => (needsApproval.has(toolCall.toolName) ? 'user-approval' : undefined),
-          experimental_toolApprovalSecret: cfg.toolApprovalSecret,
-          stopWhen: isStepCount(3),
-          providerOptions: thinkingOptions(cfg, false),
-        });
-        void followUp.consumeStream({ onError: (e) => console.error('[agent] answer follow-up stream error', e) });
-        writer.merge(followUp.toUIMessageStream({ sendStart: false, onError: streamError }));
-      } else {
-        writer.write({ type: 'finish' });
-      }
+      writer.write({ type: 'finish' });
       if (titleFor) {
         const title = await titleFor; // usually long done by now; never longer than TITLE_TIMEOUT_MS
         // transient: delivered to the client only, never stored in the message parts.
@@ -291,7 +217,14 @@ export async function runAgentTurn(caller: AgentCaller, req: AgentRequest): Prom
   return createUIMessageStreamResponse({
     // Patients never receive the model's reasoning; staff see it in the dashboard preview.
     stream: caller.role === 'patient' ? toClient.pipeThrough(withoutReasoning()) : toClient,
-    headers: { 'X-Conversation-Id': conversationId, 'X-Context-Level': built.level },
+    headers: {
+      'X-Conversation-Id': conversationId,
+      ...(userMessageId ? { 'X-User-Message-Id': userMessageId } : {}),
+      'X-Context-Level': built.level,
+      // no-transform: `next start` gzips every response it can, and gzip holds the stream back
+      // until a large block is full, so a reply arrived in a few bursts instead of word by word.
+      'Cache-Control': 'no-cache, no-transform',
+    },
   });
 }
 
@@ -341,65 +274,5 @@ async function compressAfterTurn(
     if (buildContext(state, cfg, opts).needsSummary) await summarize(caller.admin, state, cfg);
   } catch (e) {
     console.warn('[agent] background summary failed', e);
-  }
-}
-
-/**
- * True when the reply is a rule 2 care-team offer with no answer text in any step. Emergency
- * offers are left alone: the app shows the fixed 911 / 988 reply for them.
- */
-async function offerWithoutAnswer(result: {
-  steps: PromiseLike<Array<{ text: string; toolCalls: Array<{ toolName: string; input?: unknown }> }>>;
-}) {
-  try {
-    const steps = await result.steps;
-    if (steps.some((st) => st.text.trim())) return false;
-    const offers = steps.flatMap((st) => st.toolCalls.filter((c) => c.toolName === 'notifyCareteam'));
-    return offers.length > 0 && offers.every((c) => (c.input as { situation?: unknown } | undefined)?.situation === 'personal');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The turn's messages with the pending care-team offer marked as shown: a tool call with no
- * result cannot be sent back to the model, and the model must know that the draft is on screen.
- */
-function withOfferShown(messages: ModelMessage[]): ModelMessage[] {
-  const out: ModelMessage[] = [];
-  for (const m of messages) {
-    if (m.role !== 'assistant' || typeof m.content === 'string') {
-      out.push(m);
-      continue;
-    }
-    const content = m.content.filter((p) => p.type !== 'tool-approval-request');
-    if (content.length) out.push({ ...m, content });
-    const offers = content.filter((p) => p.type === 'tool-call' && p.toolName === 'notifyCareteam');
-    if (offers.length) {
-      out.push({
-        role: 'tool',
-        content: offers.map((p) => ({
-          type: 'tool-result' as const,
-          toolCallId: (p as { toolCallId: string }).toolCallId,
-          toolName: 'notifyCareteam',
-          output: { type: 'text' as const, value: 'The draft is shown to the user below your answer. The user decides whether to send it.' },
-        })),
-      });
-    }
-  }
-  return out;
-}
-
-/**
- * The situation of a fixed reply that came without a care-team offer, or null
- * (no fixed reply, an offer was made, or the turn failed).
- */
-async function missingCareteamOffer(result: { steps: PromiseLike<Array<{ text: string; toolCalls: Array<{ toolName: string }> }>> }) {
-  try {
-    const steps = await result.steps;
-    if (steps.some((st) => st.toolCalls.some((c) => c.toolName === 'notifyCareteam'))) return null;
-    return fixedReplySituation(steps.map((st) => st.text).join('\n'));
-  } catch {
-    return null;
   }
 }

@@ -4,8 +4,17 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import Icon from '@/components/ui/AppIcon';
 import EmptyState from '@/components/ui/EmptyState';
 import { initials } from '@/contexts/AuthContext';
-import { compareMessages, MAX_MESSAGE_LENGTH, patientName, type ChatMessage, type ConversationSummary } from '@/lib/chat';
+import {
+  canEdit,
+  compareMessages,
+  MAX_MESSAGE_LENGTH,
+  patientName,
+  type ChatMessage,
+  type ConversationSummary,
+  type MessageRevision,
+} from '@/lib/chat';
 import type { ThreadState } from './MessagesClient';
+import MessageDialogs, { type MessageDialog } from './MessageDialogs';
 import { dayKey, formatDayLabel, formatMessageTime } from './format';
 import { useStaffT } from '@/lib/i18n/staff/context';
 
@@ -18,8 +27,14 @@ interface Props {
   names: Record<string, string>;
   failReasons: Record<string, string>;
   connected: boolean;
+  isAdmin: boolean;
   onSend: (conversationId: string, text: string) => void;
   onRetry: (m: ChatMessage) => void;
+  onEdit: (m: ChatMessage, text: string) => Promise<boolean>;
+  onDelete: (m: ChatMessage, reason?: string) => Promise<boolean>;
+  onRestore: (m: ChatMessage) => Promise<boolean>;
+  onPurge: (m: ChatMessage, reason: string) => Promise<boolean>;
+  loadHistory: (m: ChatMessage) => Promise<MessageRevision[]>;
   onLoadOlder: (conversationId: string) => void;
   onReload: (conversationId: string) => void;
   onNewChat: () => void;
@@ -34,8 +49,14 @@ export default function ChatThread({
   names,
   failReasons,
   connected,
+  isAdmin,
   onSend,
   onRetry,
+  onEdit,
+  onDelete,
+  onRestore,
+  onPurge,
+  loadHistory,
   onLoadOlder,
   onReload,
   onNewChat,
@@ -47,6 +68,14 @@ export default function ChatThread({
   const prepend = useRef<{ height: number; top: number } | null>(null);
   const [draft, setDraft] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string; saving: boolean } | null>(null);
+  const [dialog, setDialog] = useState<MessageDialog | null>(null);
+  // The edit window closes while the page is open: re-check every 30 s.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const messages = useMemo(
     () => (thread ? Object.values(thread.byId).sort(compareMessages) : []),
@@ -110,6 +139,41 @@ export default function ChatThread({
       onLoadOlder(conversationId);
     }
   };
+
+  /** Placeholder for a deleted message: who deleted it. */
+  const tombstone = (m: ChatMessage) =>
+    m.purged
+      ? T.erased
+      : m.deletedByRole === 'team' && m.senderRole === 'user'
+        ? T.removedByTeam
+        : m.senderId && m.senderId === myId
+          ? T.youDeleted
+          : T.deleted;
+
+  const saveEdit = async (m: ChatMessage) => {
+    if (!editing) return;
+    const text = editing.text.trim();
+    if (!text || text.length > MAX_MESSAGE_LENGTH) return;
+    if (text === m.content) {
+      setEditing(null);
+      return;
+    }
+    setEditing({ ...editing, saving: true });
+    const ok = await onEdit(m, text);
+    setEditing((e) => (e && e.id === m.id ? (ok ? null : { ...e, saving: false }) : e));
+  };
+
+  const actionButton = (icon: string, label: string, onClick: () => void) => (
+    <button
+      key={label}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+    >
+      <Icon name={icon} size={14} variant="outline" />
+    </button>
+  );
 
   const authorLabel = (m: ChatMessage) => {
     if (m.senderRole === 'user') return null;
@@ -189,16 +253,79 @@ export default function ChatThread({
                           {mine ? label : name} · {formatMessageTime(m.createdAt)}
                         </span>
                       )}
-                      <div
-                        className={`px-3.5 py-2 rounded-2xl text-[13.5px] leading-relaxed whitespace-pre-wrap break-words ${
-                          mine
-                            ? `bg-primary text-primary-foreground rounded-br-md ${m.state !== 'sent' ? 'opacity-70' : ''}`
-                            : 'bg-card text-foreground border border-border rounded-bl-md'
-                        }`}
-                        title={new Date(m.createdAt).toLocaleString(locale)}
-                      >
-                        {m.content}
-                      </div>
+                      {editing?.id === m.id ? (
+                        <div className="w-[min(520px,60vw)] space-y-2">
+                          <textarea
+                            value={editing.text}
+                            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                e.preventDefault();
+                                void saveEdit(m);
+                              }
+                              if (e.key === 'Escape') setEditing(null);
+                            }}
+                            rows={Math.min(8, Math.max(2, editing.text.split('\n').length))}
+                            autoFocus
+                            className="w-full resize-none px-3.5 py-2.5 border border-border rounded-xl text-[13.5px] text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => setEditing(null)}
+                              disabled={editing.saving}
+                              className="h-8 px-3 border border-border rounded-lg text-[12.5px] font-600 text-foreground hover:bg-muted"
+                            >
+                              {t.common.cancel}
+                            </button>
+                            <button
+                              onClick={() => void saveEdit(m)}
+                              disabled={editing.saving || !editing.text.trim() || editing.text.trim().length > MAX_MESSAGE_LENGTH}
+                              className="h-8 px-3 bg-primary text-primary-foreground rounded-lg text-[12.5px] font-600 hover:opacity-90 disabled:opacity-40"
+                            >
+                              {t.common.save}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`group flex items-center gap-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                          {m.deletedAt ? (
+                            <div
+                              className="px-3.5 py-2 rounded-2xl border border-dashed border-border text-[13px] italic text-muted-foreground"
+                              title={new Date(m.createdAt).toLocaleString(locale)}
+                            >
+                              {tombstone(m)}
+                            </div>
+                          ) : (
+                            <div
+                              className={`px-3.5 py-2 rounded-2xl text-[13.5px] leading-relaxed whitespace-pre-wrap break-words ${
+                                mine
+                                  ? `bg-primary text-primary-foreground rounded-br-md ${m.state !== 'sent' ? 'opacity-70' : ''}`
+                                  : 'bg-card text-foreground border border-border rounded-bl-md'
+                              }`}
+                              title={new Date(m.createdAt).toLocaleString(locale)}
+                            >
+                              {m.content}
+                            </div>
+                          )}
+                          {m.state === 'sent' && (
+                            <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                              {canEdit(m, myId, now) &&
+                                actionButton('PencilSquareIcon', T.edit, () => setEditing({ id: m.id, text: m.content, saving: false }))}
+                              {!m.deletedAt && m.senderId === myId && actionButton('TrashIcon', t.common.delete, () => setDialog({ kind: 'delete', message: m }))}
+                              {!m.deletedAt && m.senderRole === 'user' && actionButton('NoSymbolIcon', t.common.remove, () => setDialog({ kind: 'remove', message: m }))}
+                              {(m.editedAt || m.deletedAt) && actionButton('ClockIcon', T.history, () => setDialog({ kind: 'history', message: m }))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {m.editedAt && !m.deletedAt && editing?.id !== m.id && (
+                        <button
+                          onClick={() => setDialog({ kind: 'history', message: m })}
+                          className="text-[10.5px] text-muted-foreground mt-0.5 px-1 hover:underline"
+                        >
+                          {T.edited}
+                        </button>
+                      )}
                       {m.state === 'pending' && (
                         <span className="text-[10.5px] text-muted-foreground mt-1 px-1">{T.sending}</span>
                       )}
@@ -219,6 +346,20 @@ export default function ChatThread({
           </div>
         )}
       </div>
+
+      {dialog && (
+        <MessageDialogs
+          key={`${dialog.kind}-${dialog.message.id}`}
+          dialog={{ ...dialog, message: thread?.byId[dialog.message.id] ?? dialog.message }}
+          isAdmin={isAdmin}
+          tombstone={tombstone}
+          onClose={() => setDialog(null)}
+          onDelete={onDelete}
+          onRestore={onRestore}
+          onPurge={onPurge}
+          loadHistory={loadHistory}
+        />
+      )}
 
       {/* Composer */}
       <div className="shrink-0 border-t border-border bg-card px-4 py-3">

@@ -3,7 +3,7 @@ import { es } from './es';
 
 /**
  * Language of the staff dashboard: English or Spanish (Spanish is a machine translation,
- * pending research-team review). The patient chat (/m/assistant) has its own eight languages in
+ * pending research-team review). The patient AI chat (in the app) has its own eight languages in
  * src/lib/i18n/patient.ts and does not use this.
  *
  * The choice is kept in the hh_staff_lang cookie: server components read it with getStaffText()

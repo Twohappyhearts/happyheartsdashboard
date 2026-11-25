@@ -1,5 +1,5 @@
 import 'server-only';
-import { getToolName, isToolUIPart, type UIMessage } from 'ai';
+import { isToolUIPart, type UIMessage } from 'ai';
 import { ApiError } from '@/lib/server/staff-auth';
 import { hasPendingApproval, type StoredMessage } from './store';
 
@@ -7,8 +7,6 @@ export interface ApprovalAnswer {
   approvalId: string;
   approved: boolean;
   reason?: string;
-  /** notifyCareteam only: the message as the patient edited it before pressing Send. */
-  editedMessage?: string;
 }
 
 /**
@@ -20,7 +18,7 @@ export interface ApprovalAnswer {
 export function applyApprovals(
   recent: StoredMessage[],
   answers: ApprovalAnswer[],
-): { target: StoredMessage; message: UIMessage; stillPending: boolean; careteamEdits: Map<string, string> } {
+): { target: StoredMessage; message: UIMessage; stillPending: boolean } {
   const target = recent[recent.length - 1];
   if (!target || target.message.role !== 'assistant' || target.status !== 'AWAITING_APPROVAL') {
     throw new ApiError(409, 'Nothing is waiting for approval in this conversation.');
@@ -28,14 +26,11 @@ export function applyApprovals(
 
   const byId = new Map(answers.map((a) => [a.approvalId, a]));
   const used = new Set<string>();
-  const careteamEdits = new Map<string, string>();
   const parts = target.message.parts.map((p) => {
     if (!isToolUIPart(p) || p.state !== 'approval-requested') return p;
     const answer = byId.get(p.approval.id);
     if (!answer) return p;
     used.add(answer.approvalId);
-    const edited = answer.editedMessage?.trim();
-    if (answer.approved && edited && getToolName(p) === 'notifyCareteam') careteamEdits.set(p.toolCallId, edited);
     return {
       ...p,
       state: 'approval-responded' as const,
@@ -51,5 +46,5 @@ export function applyApprovals(
   if (unknown.length) throw new ApiError(409, 'This request was already answered or has expired.');
 
   const message = { ...target.message, parts };
-  return { target, message, stillPending: hasPendingApproval(message), careteamEdits };
+  return { target, message, stillPending: hasPendingApproval(message) };
 }

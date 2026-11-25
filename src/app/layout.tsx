@@ -5,6 +5,7 @@ import '../styles/tailwind.css';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { OpenAlertsProvider } from '@/contexts/OpenAlertsContext';
+import { InboxProvider } from '@/contexts/InboxContext';
 import { StaffLangProvider } from '@/lib/i18n/staff/context';
 import { getStaffLang, getStaffText } from '@/lib/i18n/staff/server';
 
@@ -37,14 +38,15 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Staff dashboard language (English / Spanish), from the hh_staff_lang cookie.
-  // The patient chat (/m/assistant) sets its own lang and dir on its page.
   const lang = await getStaffLang();
   return (
     <html lang={lang} className={plusJakartaSans.variable}>
       <body className={plusJakartaSans.className}>
         <StaffLangProvider initialLang={lang}>
           <AuthProvider>
-            <OpenAlertsProvider>{children}</OpenAlertsProvider>
+            <OpenAlertsProvider>
+              <InboxProvider>{children}</InboxProvider>
+            </OpenAlertsProvider>
           </AuthProvider>
         </StaffLangProvider>
         <Toaster

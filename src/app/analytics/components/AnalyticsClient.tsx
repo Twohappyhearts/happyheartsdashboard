@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
 
 import OverallAnalytics from './OverallAnalytics';
 import IndividualAnalytics from './IndividualAnalytics';
+import AiFeedbackAnalytics from './AiFeedbackAnalytics';
 import { useStaffT } from '@/lib/i18n/staff/context';
 
-type Tab = 'overall' | 'individual';
+type Tab = 'overall' | 'individual' | 'aiFeedback';
 
 /** Each tab registers how to export what it is currently showing. */
 export type ExportFn = (() => void) | null;
@@ -15,7 +17,10 @@ export type ExportFn = (() => void) | null;
 export default function AnalyticsClient() {
   const { t, locale } = useStaffT();
   const T = t.analytics;
-  const [activeTab, setActiveTab] = useState<Tab>('overall');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // AI Feedback keeps its tab and filters in the URL (?tab=ai-feedback&…), so its pages link back to it.
+  const [activeTab, setActiveTab] = useState<Tab>(searchParams.get('tab') === 'ai-feedback' ? 'aiFeedback' : 'overall');
   const [refreshKey, setRefreshKey] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [canExport, setCanExport] = useState(false);
@@ -32,6 +37,7 @@ export default function AnalyticsClient() {
     exportRef.current = null;
     setCanExport(false);
     setActiveTab(tab);
+    router.replace(tab === 'aiFeedback' ? '/analytics?tab=ai-feedback' : '/analytics', { scroll: false });
   };
 
   return (
@@ -80,6 +86,7 @@ export default function AnalyticsClient() {
         {([
           { key: 'overall', label: T.tabOverall },
           { key: 'individual', label: T.tabIndividual },
+          { key: 'aiFeedback', label: T.tabAiFeedback },
         ] as { key: Tab; label: string }[]).map((tab) => (
           <button
             key={`tab-${tab.key}`}
@@ -96,8 +103,10 @@ export default function AnalyticsClient() {
 
       {activeTab === 'overall' ? (
         <OverallAnalytics refreshKey={refreshKey} onLoaded={handleLoaded} onExportReady={handleExportReady} />
-      ) : (
+      ) : activeTab === 'individual' ? (
         <IndividualAnalytics refreshKey={refreshKey} onLoaded={handleLoaded} onExportReady={handleExportReady} />
+      ) : (
+        <AiFeedbackAnalytics refreshKey={refreshKey} onLoaded={handleLoaded} onExportReady={handleExportReady} />
       )}
     </div>
   );

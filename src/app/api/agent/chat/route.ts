@@ -11,6 +11,8 @@ const Body = z.union([
   z.object({
     conversationId: z.uuid().optional(),
     message: z.string().trim().min(1).max(4000),
+    // Edit: the user message this one replaces (a new version of it, on a new branch).
+    editOf: z.uuid().optional(),
   }),
   z.object({
     conversationId: z.uuid(),
@@ -20,8 +22,6 @@ const Body = z.union([
           approvalId: z.string().min(1).max(200),
           approved: z.boolean(),
           reason: z.string().max(500).optional(),
-          // notifyCareteam: the patient's edited message (replaces the AI's draft when sent).
-          editedMessage: z.string().trim().min(1).max(1000).optional(),
         }),
       )
       .min(1)
@@ -33,11 +33,13 @@ const Body = z.union([
  * POST /api/agent/chat — one agent turn, streamed as an AI SDK UI message stream (SSE).
  *
  *   New message:     { conversationId?, message }            (no conversationId = new conversation)
- *   Approve/deny:    { conversationId, approvals: [{ approvalId, approved, reason?, editedMessage? }] }
+ *   Edit a message:  { conversationId, message, editOf }     (a new version of user message editOf)
+ *   Approve/deny:    { conversationId, approvals: [{ approvalId, approved, reason? }] }
  *
  * Auth: `Authorization: Bearer <Supabase access token>` (mobile app) or the dashboard session cookie.
  * 403 for a patient who has not accepted the AI assistant notice yet (POST /api/agent/consent).
- * The response header X-Conversation-Id carries the conversation id.
+ * The response headers X-Conversation-Id and X-User-Message-Id carry the conversation id and the
+ * id the server gave the user's message.
  * 202 JSON { status: 'awaiting_approval' } when other tool calls in the same message still wait for an answer.
  */
 export async function POST(request: Request) {
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     return await runAgentTurn(
       caller,
       'message' in body
-        ? { kind: 'message', conversationId: body.conversationId, text: body.message }
+        ? { kind: 'message', conversationId: body.conversationId, text: body.message, editOf: body.editOf }
         : { kind: 'approval', conversationId: body.conversationId, approvals: body.approvals },
     );
   } catch (e) {

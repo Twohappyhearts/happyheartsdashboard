@@ -180,7 +180,13 @@ export default function ConversationList({
                         </span>
                       </div>
                       <p className={`text-[12.5px] truncate mt-0.5 ${awaiting ? 'text-foreground' : 'text-muted-foreground'}`}>
-                        {last ? prefix + last.content : <span className="italic">{T.noMessagesYet}</span>}
+                        {!last ? (
+                          <span className="italic">{T.noMessagesYet}</span>
+                        ) : last.deletedAt ? (
+                          <span className="italic">{prefix + (last.deletedByRole === 'team' && last.senderRole === 'user' ? T.removedByTeam : T.deleted)}</span>
+                        ) : (
+                          prefix + last.content
+                        )}
                       </p>
                     </div>
                   </button>

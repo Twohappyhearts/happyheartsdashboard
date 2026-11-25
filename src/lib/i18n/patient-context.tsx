@@ -1,18 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useMemo } from 'react';
 import type { Language } from '@/lib/languages';
 import { PATIENT_TEXT, type PatientText } from './patient';
 
 /**
- * The patient chat's language. /m/assistant provides it; components shared with the dashboard's
- * staff preview (AiMessageParts) get English when there is no provider.
+ * Patient chat texts for the dashboard's AI Chat preview (English). The app's native chat has
+ * its own copy of these texts in all eight languages (generated from patient.ts).
  */
-const PatientTextContext = createContext<{ lang: Language; t: PatientText }>({ lang: 'en', t: PATIENT_TEXT.en });
+const ENGLISH = { lang: 'en' as Language, t: PATIENT_TEXT.en as PatientText };
 
-export function PatientTextProvider({ lang, children }: { lang: Language; children: React.ReactNode }) {
-  const value = useMemo(() => ({ lang, t: PATIENT_TEXT[lang] }), [lang]);
-  return <PatientTextContext.Provider value={value}>{children}</PatientTextContext.Provider>;
-}
-
-export const usePatientText = () => useContext(PatientTextContext);
+export const usePatientText = () => ENGLISH;

@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import AppLayout from '@/components/AppLayout';
 import AnalyticsClient from './components/AnalyticsClient';
 
 export default function AnalyticsPage() {
   return (
     <AppLayout>
-      <AnalyticsClient />
+      <Suspense fallback={null}>
+        <AnalyticsClient />
+      </Suspense>
     </AppLayout>
   );
 }

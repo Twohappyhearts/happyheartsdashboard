@@ -9,16 +9,22 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   ChatError,
   compareMessages,
+  deleteMessage,
+  editMessage,
   fetchPage,
   fetchProfiles,
   fetchSince,
   getConversation,
   listConversations,
+  messageHistory,
   newMessageId,
+  purgeMessage,
+  restoreMessage,
   sendMessage,
   subscribeToAllMessages,
   type ChatMessage,
   type ConversationSummary,
+  type MessageRevision,
 } from '@/lib/chat';
 import ConversationList from './ConversationList';
 import ChatThread from './ChatThread';
@@ -253,8 +259,25 @@ export default function MessagesClient() {
     [updateThread, bumpSummary, addConversation, ensureNames]
   );
 
+  /** An edited or deleted message (Realtime UPDATE, or our own action): replace it by id. */
+  const handleUpdated = useCallback(
+    (m: ChatMessage) => {
+      if (threadsRef.current[m.conversationId]?.loaded) {
+        updateThread(m.conversationId, (s) => ({ ...s, byId: { ...s.byId, [m.id]: m } }));
+      }
+      setConversations((all) => {
+        const c = all[m.conversationId];
+        if (!c || c.lastMessage?.id !== m.id) return all;
+        return { ...all, [c.id]: { ...c, lastMessage: m } };
+      });
+    },
+    [updateThread]
+  );
+
   const handleIncomingRef = useRef(handleIncoming);
   handleIncomingRef.current = handleIncoming;
+  const handleUpdatedRef = useRef(handleUpdated);
+  handleUpdatedRef.current = handleUpdated;
   const wasConnected = useRef(false);
 
   useEffect(() => {
@@ -264,6 +287,7 @@ export default function MessagesClient() {
       supabase,
       `${user.id}:${Date.now()}`,
       (m) => handleIncomingRef.current(m),
+      (m) => handleUpdatedRef.current(m),
       (ok) => {
         setConnected(ok);
         if (ok && wasConnected.current === false) {
@@ -335,6 +359,10 @@ export default function MessagesClient() {
         content,
         createdAt: new Date().toISOString(),
         state: 'pending',
+        editedAt: null,
+        deletedAt: null,
+        deletedByRole: null,
+        purged: false,
       };
       updateThread(conversationId, (s) => ({ ...s, byId: mergeInto(s.byId, [pending]) }));
       void deliver(pending);
@@ -349,6 +377,42 @@ export default function MessagesClient() {
       void deliver(again);
     },
     [updateThread, deliver]
+  );
+
+  // ---- Editing and deleting (database functions; Realtime echoes the same change) ------
+  const act = useCallback(
+    async (run: () => Promise<ChatMessage>, fallback: string): Promise<boolean> => {
+      try {
+        handleUpdated(await run());
+        return true;
+      } catch (e) {
+        toast.error(e instanceof ChatError ? e.message : fallback);
+        return false;
+      }
+    },
+    [handleUpdated]
+  );
+
+  const E = staffText().messages.errors;
+  const onEdit = useCallback(
+    (m: ChatMessage, text: string) => act(() => editMessage(supabase, m.id, text), E.editFailed),
+    [act, supabase, E]
+  );
+  const onDelete = useCallback(
+    (m: ChatMessage, reason?: string) => act(() => deleteMessage(supabase, m.id, reason), E.deleteFailed),
+    [act, supabase, E]
+  );
+  const onRestore = useCallback(
+    (m: ChatMessage) => act(() => restoreMessage(supabase, m.id), E.restoreFailed),
+    [act, supabase, E]
+  );
+  const onPurge = useCallback(
+    (m: ChatMessage, reason: string) => act(() => purgeMessage(supabase, m.id, reason), E.purgeFailed),
+    [act, supabase, E]
+  );
+  const loadHistory = useCallback(
+    (m: ChatMessage): Promise<MessageRevision[]> => messageHistory(supabase, m.id),
+    [supabase]
   );
 
   const select = useCallback(
@@ -404,8 +468,14 @@ export default function MessagesClient() {
           names={names}
           failReasons={failReasons}
           connected={connected}
+          isAdmin={profile?.role === 'admin'}
           onSend={send}
           onRetry={retry}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onRestore={onRestore}
+          onPurge={onPurge}
+          loadHistory={loadHistory}
           onLoadOlder={loadOlder}
           onReload={(id) => void loadThread(id, true)}
           onNewChat={() => setNewChatOpen(true)}
