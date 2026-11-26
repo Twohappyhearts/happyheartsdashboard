@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
@@ -106,15 +107,13 @@ export default function SurveyParticipantLinks({ surveys }: SurveyParticipantLin
       <div className="flex items-center gap-3 flex-wrap">
         <div>
           <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{T.survey}</label>
-          <select
+          <Select
+            aria-label={T.survey}
             value={selectedSurvey?.id || ''}
-            onChange={e => setSelectedId(e.target.value)}
-            className="px-3 py-2 border border-border rounded-lg text-[13px] text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {surveys.map(s => (
-              <option key={`survey-opt-${s.id}`} value={s.id}>{s.title}</option>
-            ))}
-          </select>
+            onValueChange={setSelectedId}
+            options={surveys.map((s) => ({ value: s.id, label: s.title }))}
+            className="min-w-[220px] max-w-[360px]"
+          />
         </div>
         <div className="flex-1">
           <label className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">{T.searchPatient}</label>

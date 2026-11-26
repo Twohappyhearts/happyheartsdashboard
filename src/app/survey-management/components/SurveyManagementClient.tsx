@@ -2,33 +2,35 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import Toggle from '@/components/ui/Toggle';
 import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { toast } from 'sonner';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { createClient } from '@/lib/supabase/client';
 import {
-  CODE_RE,
   REDCAP_PREFIX,
-  SURVEY_CATEGORIES,
+  SURVEY_COMPLETE_URL,
   SURVEY_FREQUENCIES,
   SURVEY_PLACEMENTS,
   SurveyError,
   completionCounts,
-  completionRedirect,
   createSurvey,
   deleteSurvey,
+  listCategories,
   listSurveys,
   setSurveyActive,
   updateSurvey,
+  type SurveyCategory,
   type SurveyInput,
   type SurveyLink,
   type SurveyPlacement,
 } from '@/lib/surveys';
 import SurveyParticipantLinks from './SurveyParticipantLinks';
+import SurveySectionsModal from './SurveySectionsModal';
 import { useStaffT } from '@/lib/i18n/staff/context';
 
 export type Survey = SurveyLink;
@@ -52,6 +54,8 @@ export default function SurveyManagementClient() {
   const [activeTab, setActiveTab] = useState<Tab>('links');
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [completions, setCompletions] = useState<Map<string, number>>(new Map());
+  const [categories, setCategories] = useState<SurveyCategory[]>([]);
+  const [sectionsOpen, setSectionsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -63,9 +67,14 @@ export default function SurveyManagementClient() {
 
   const load = useCallback(async () => {
     try {
-      const [list, counts] = await Promise.all([listSurveys(supabase), completionCounts(supabase).catch(() => new Map<string, number>())]);
+      const [list, counts, sections] = await Promise.all([
+        listSurveys(supabase),
+        completionCounts(supabase).catch(() => new Map<string, number>()),
+        listCategories(supabase).catch(() => [] as SurveyCategory[]),
+      ]);
       setSurveys(list);
       setCompletions(counts);
+      setCategories(sections);
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof SurveyError ? e.message : T.errors.load);
@@ -83,13 +92,13 @@ export default function SurveyManagementClient() {
     handleSubmit,
     reset,
     setValue,
+    control,
     formState: { errors },
     watch,
   } = useForm<SurveyInput>();
 
   const redcapUrlVal = watch('url', '') ?? '';
   const isValidRedcapUrl = redcapUrlVal.startsWith(REDCAP_PREFIX) && redcapUrlVal.length > REDCAP_PREFIX.length;
-  const codeVal = (watch('code', '') ?? '').toUpperCase();
   const placementVal = watch('placement');
 
   // The form as it was when the dialog opened (after reset), so closing can ask before discarding edits.
@@ -105,7 +114,6 @@ export default function SurveyManagementClient() {
     setEditingSurvey(null);
     reset({
       title: '',
-      code: '',
       url: '',
       description: '',
       category: '',
@@ -122,7 +130,6 @@ export default function SurveyManagementClient() {
     setEditingSurvey(survey);
     reset({
       title: survey.title,
-      code: survey.code,
       url: survey.url,
       description: survey.description,
       category: survey.category,
@@ -138,7 +145,7 @@ export default function SurveyManagementClient() {
   const onSubmit = async (data: SurveyInput) => {
     setSaving(true);
     try {
-      const input: SurveyInput = { ...data, code: editingSurvey ? editingSurvey.code : data.code.toUpperCase() };
+      const input: SurveyInput = data;
       if (editingSurvey) {
         await updateSurvey(supabase, editingSurvey.id, input);
         toast.success(T.updated);
@@ -186,6 +193,11 @@ export default function SurveyManagementClient() {
   };
 
   const activeVal = watch('active');
+  const sectionUsage = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of surveys) if (s.category) m.set(s.category, (m.get(s.category) ?? 0) + 1);
+    return m;
+  }, [surveys]);
   const visibleSurveys = placementFilter === 'all' ? surveys : surveys.filter((s) => s.placement === placementFilter);
 
   const copy = (text: string, msg: string) => {
@@ -202,13 +214,22 @@ export default function SurveyManagementClient() {
           <p className="text-[13px] text-muted-foreground mt-0.5">{T.subtitle}</p>
         </div>
         {activeTab === 'links' && (
-          <button
-            onClick={handleOpenNew}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
-          >
-            <Icon name="PlusIcon" size={16} variant="outline" />
-            {T.addLink}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSectionsOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 border border-border bg-card text-foreground rounded-lg text-[13px] font-600 hover:bg-muted transition-all duration-150 active:scale-95 whitespace-nowrap"
+            >
+              <Icon name="Squares2X2Icon" size={16} variant="outline" />
+              {T.manageSections}
+            </button>
+            <button
+              onClick={handleOpenNew}
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-[13px] font-600 hover:opacity-90 transition-all duration-150 active:scale-95 shadow-sm whitespace-nowrap"
+            >
+              <Icon name="PlusIcon" size={16} variant="outline" />
+              {T.addLink}
+            </button>
+          </div>
         )}
       </div>
 
@@ -306,7 +327,6 @@ export default function SurveyManagementClient() {
                           <Icon name={survey.placement === 'survey' ? 'ClipboardDocumentListIcon' : 'BookOpenIcon'} size={11} variant="outline" />
                           {placementLabel(survey.placement)}
                         </span>
-                        <span className="text-[10px] text-foreground font-mono bg-muted px-1.5 py-0.5 rounded">{survey.code}</span>
                         <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
                           {T.order(survey.sortOrder)}
                         </span>
@@ -317,7 +337,7 @@ export default function SurveyManagementClient() {
                       {(survey.category || survey.frequency || survey.duration) && (
                         <p className="text-[11px] text-muted-foreground mb-2">
                           {[
-                            survey.category && (T.categories[survey.category] ?? survey.category),
+                            survey.category,
                             survey.frequency && (T.frequencies[survey.frequency] ?? survey.frequency),
                             survey.duration,
                           ]
@@ -339,9 +359,9 @@ export default function SurveyManagementClient() {
                       <div className="flex items-center gap-2 bg-muted/30 rounded-lg px-3 py-1.5 mt-1.5">
                         <Icon name="ArrowUturnLeftIcon" size={12} variant="outline" className="text-muted-foreground shrink-0" />
                         <span className="text-[10px] text-muted-foreground shrink-0">{T.redirectLabel}</span>
-                        <span className="text-[10px] font-mono text-muted-foreground truncate flex-1">{completionRedirect(survey.code)}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground truncate flex-1">{SURVEY_COMPLETE_URL}</span>
                         <button
-                          onClick={() => copy(completionRedirect(survey.code), T.redirectCopied)}
+                          onClick={() => copy(SURVEY_COMPLETE_URL, T.redirectCopied)}
                           className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors duration-100 shrink-0"
                           title={T.copyRedirect}
                         >
@@ -350,8 +370,6 @@ export default function SurveyManagementClient() {
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1.5">
                         {T.addedOn(fmtDate(survey.createdAt, locale), completions.get(survey.id) ?? 0)}
-                        <code className="bg-muted px-1 rounded text-[10px]">&participant_code=username</code>
-                        {T.appendsAutomatically}
                       </p>
                     </div>
                   </div>
@@ -412,41 +430,21 @@ export default function SurveyManagementClient() {
         )}
       >
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <label className="block text-[13px] font-500 text-foreground mb-1">
-                {T.fieldTitle} <span className="text-danger">*</span>
-              </label>
-              <input
-                {...register('title', {
-                  required: T.titleRequired,
-                  validate: v => v.trim().length > 0 || T.titleRequired,
-                  maxLength: { value: 200, message: T.maxChars(200) },
-                })}
-                type="text"
-                placeholder={T.titlePlaceholder}
-                className={inputClass}
-              />
-              {errors.title && <p className="text-[11px] text-danger mt-1">{errors.title.message}</p>}
-            </div>
-            <div>
-              <label className="block text-[13px] font-500 text-foreground mb-1">
-                {T.code} <span className="text-danger">*</span>
-              </label>
-              <input
-                {...register('code', {
-                  required: T.codeRequired,
-                  validate: v => CODE_RE.test(v.trim().toUpperCase()) || T.codeFormat,
-                })}
-                type="text"
-                readOnly={!!editingSurvey}
-                placeholder="FOLLOWUP_24H"
-                onChange={e => setValue('code', e.target.value.toUpperCase().replace(/\s+/g, '_'), { shouldValidate: !!errors.code })}
-                className={`${inputClass} font-mono ${editingSurvey ? 'bg-muted/50 text-muted-foreground cursor-not-allowed' : ''}`}
-              />
-              {errors.code && <p className="text-[11px] text-danger mt-1">{errors.code.message}</p>}
-              {editingSurvey && <p className="text-[10px] text-muted-foreground mt-1">{T.codeLocked}</p>}
-            </div>
+          <div>
+            <label className="block text-[13px] font-500 text-foreground mb-1">
+              {T.fieldTitle} <span className="text-danger">*</span>
+            </label>
+            <input
+              {...register('title', {
+                required: T.titleRequired,
+                validate: v => v.trim().length > 0 || T.titleRequired,
+                maxLength: { value: 200, message: T.maxChars(200) },
+              })}
+              type="text"
+              placeholder={T.titlePlaceholder}
+              className={inputClass}
+            />
+            {errors.title && <p className="text-[11px] text-danger mt-1">{errors.title.message}</p>}
           </div>
 
           <div>
@@ -517,23 +515,47 @@ export default function SurveyManagementClient() {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-[13px] font-500 text-foreground mb-1">{T.section}</label>
-              <div className="relative">
-                <select {...register('category')} className={`${inputClass} appearance-none pr-8`}>
-                  <option value="">{T.noSection}</option>
-                  {SURVEY_CATEGORIES.map(c => <option key={`cat-${c}`} value={c}>{T.categories[c] ?? c}</option>)}
-                </select>
-                <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
+              <Controller
+                name="category"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    ref={field.ref}
+                    variant="field"
+                    aria-label={T.section}
+                    value={field.value ?? ''}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    options={[
+                      { value: '', label: T.noSection },
+                      ...categories.map((c) => ({ value: c.name, label: c.name })),
+                    ]}
+                    className="w-full"
+                  />
+                )}
+              />
             </div>
             <div>
               <label className="block text-[13px] font-500 text-foreground mb-1">{T.frequency}</label>
-              <div className="relative">
-                <select {...register('frequency')} className={`${inputClass} appearance-none pr-8`}>
-                  <option value="">—</option>
-                  {SURVEY_FREQUENCIES.map(f => <option key={`freq-${f}`} value={f}>{T.frequencies[f] ?? f}</option>)}
-                </select>
-                <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
+              <Controller
+                name="frequency"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    ref={field.ref}
+                    variant="field"
+                    aria-label={T.frequency}
+                    value={field.value ?? ''}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    options={[
+                      { value: '', label: '—' },
+                      ...SURVEY_FREQUENCIES.map((f) => ({ value: f, label: T.frequencies[f] ?? f })),
+                    ]}
+                    className="w-full"
+                  />
+                )}
+              />
             </div>
             <div>
               <label className="block text-[13px] font-500 text-foreground mb-1">{T.duration}</label>
@@ -569,16 +591,23 @@ export default function SurveyManagementClient() {
             </div>
           </div>
 
-          {codeVal && CODE_RE.test(codeVal) && (
-            <div className="p-3 bg-info/5 border border-info/20 rounded-lg">
-              <p className="text-[11px] text-foreground font-500">{T.redirectTitle}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{T.redirectHelp}</p>
-              <p className="text-[10px] font-mono text-foreground mt-1 break-all">{completionRedirect(codeVal)}</p>
-            </div>
-          )}
+          <div className="p-3 bg-info/5 border border-info/20 rounded-lg">
+            <p className="text-[11px] text-foreground font-500">{T.redirectTitle}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{T.redirectHelp}</p>
+            <p className="text-[10px] font-mono text-foreground mt-1 break-all">{SURVEY_COMPLETE_URL}</p>
+          </div>
           <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
         </form>
       </Modal>
+
+      <SurveySectionsModal
+        open={sectionsOpen}
+        onClose={() => setSectionsOpen(false)}
+        supabase={supabase}
+        categories={categories}
+        usage={sectionUsage}
+        onChanged={load}
+      />
 
       {/* Delete Confirm */}
       {deleteConfirmId && (

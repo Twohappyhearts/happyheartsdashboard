@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import { downloadCsv, todayStamp } from '@/lib/analytics';
 import {
   FEEDBACK_BUCKETS,
@@ -44,8 +45,6 @@ const DIMENSIONS: FeedbackDimension[] = ['source', 'model', 'language'];
 const pct = (v: number | null | undefined) => (v == null ? '—' : `${Math.round(v * 100)}%`);
 const fixed = (v: number | null | undefined, digits = 2) => (v == null ? '—' : v.toFixed(digits));
 
-const SELECT =
-  'h-9 min-w-[150px] px-2.5 border border-border rounded-lg bg-card text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 const LABEL = 'flex flex-col gap-1 text-[11.5px] font-600 text-muted-foreground';
 const CARD = 'bg-card rounded-xl border border-border shadow-card';
 
@@ -171,38 +170,48 @@ export default function AiFeedbackAnalytics({ refreshKey, onLoaded, onExportRead
 
   const filterBar = (
     <div className={`${CARD} px-4 py-3.5 flex flex-wrap items-end gap-3`}>
-      <label className={LABEL}>
+      <div className={LABEL}>
         {T.dateRange}
-        <select value={filters.range} onChange={(e) => setParams({ range: e.target.value === '30d' ? null : e.target.value })} className={SELECT}>
-          {FEEDBACK_RANGES.map((r) => (
-            <option key={r} value={r}>
-              {T.ranges[r]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className={LABEL}>
+        <Select
+          aria-label={T.dateRange}
+          value={filters.range}
+          onValueChange={(v) => setParams({ range: v === '30d' ? null : v })}
+          options={FEEDBACK_RANGES.map((r) => ({ value: r, label: T.ranges[r] }))}
+          className="min-w-[160px]"
+        />
+      </div>
+      <div className={LABEL}>
         {T.language}
-        <select value={filters.language ?? ''} onChange={(e) => setParams({ language: e.target.value || null })} className={SELECT}>
-          <option value="">{T.allLanguages}</option>
-          {(stats?.options.languages ?? (filters.language ? [filters.language] : [])).map((l) => (
-            <option key={l} value={l}>
-              {languageName(l)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className={LABEL}>
+        <Select
+          aria-label={T.language}
+          value={filters.language ?? ''}
+          onValueChange={(v) => setParams({ language: v || null })}
+          options={[
+            { value: '', label: T.allLanguages },
+            ...(stats?.options.languages ?? (filters.language ? [filters.language] : [])).map((l) => ({
+              value: l,
+              label: languageName(l),
+            })),
+          ]}
+          className="min-w-[160px]"
+        />
+      </div>
+      <div className={LABEL}>
         {T.model}
-        <select value={filters.model ?? ''} onChange={(e) => setParams({ model: e.target.value || null })} className={`${SELECT} max-w-[260px]`}>
-          <option value="">{T.allModels}</option>
-          {(stats?.options.models ?? (filters.model ? [filters.model] : [])).map((m) => (
-            <option key={m} value={m}>
-              {m === 'unknown' ? T.notSet : m}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Select
+          aria-label={T.model}
+          value={filters.model ?? ''}
+          onValueChange={(v) => setParams({ model: v || null })}
+          options={[
+            { value: '', label: T.allModels },
+            ...(stats?.options.models ?? (filters.model ? [filters.model] : [])).map((m) => ({
+              value: m,
+              label: m === 'unknown' ? T.notSet : m,
+            })),
+          ]}
+          className="min-w-[160px] max-w-[260px]"
+        />
+      </div>
       <div className={`${LABEL} ml-auto`}>
         {T.countBy}
         <Segmented

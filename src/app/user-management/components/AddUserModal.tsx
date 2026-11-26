@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Modal from '@/components/ui/Modal';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import {
   EMAIL_RE,
   USERNAME_RE,
@@ -222,25 +223,26 @@ export default function AddUserModal({ open, onClose, onCreated, callerIsAdmin }
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="nu-role" className="block text-[13px] font-500 text-foreground mb-1">{T.role}</label>
-            <div className="relative">
-              <select
-                id="nu-role"
-                value={form.role}
-                onChange={(e) => set('role', e.target.value as AccountRole)}
-                className={`${inputClass} appearance-none pr-8`}
-              >
-                <option value="patient">{t.users.roleNames.patient}</option>
-                <option value="staff" disabled={!callerIsAdmin}>
-                  {t.users.roleNames.staff}
-                  {callerIsAdmin ? '' : T.adminsOnly}
-                </option>
-                <option value="admin" disabled={!callerIsAdmin}>
-                  {t.users.roleNames.admin}
-                  {callerIsAdmin ? '' : T.adminsOnly}
-                </option>
-              </select>
-              <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            </div>
+            <Select
+              id="nu-role"
+              variant="field"
+              value={form.role}
+              onValueChange={(v) => set('role', v as AccountRole)}
+              options={[
+                { value: 'patient', label: t.users.roleNames.patient },
+                {
+                  value: 'staff',
+                  label: `${t.users.roleNames.staff}${callerIsAdmin ? '' : T.adminsOnly}`,
+                  disabled: !callerIsAdmin,
+                },
+                {
+                  value: 'admin',
+                  label: `${t.users.roleNames.admin}${callerIsAdmin ? '' : T.adminsOnly}`,
+                  disabled: !callerIsAdmin,
+                },
+              ]}
+              className="w-full"
+            />
           </div>
           <div>
             <label htmlFor="nu-display" className="block text-[13px] font-500 text-foreground mb-1">{T.displayId}</label>

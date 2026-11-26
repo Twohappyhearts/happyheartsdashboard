@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
+import DatePicker from '@/components/ui/DatePicker';
 import Toggle from '@/components/ui/Toggle';
 import { useSlideOverClose } from '@/components/ui/SlideOver';
 import {
@@ -149,26 +151,16 @@ export default function ResourceForm({ item, onSave, onDirtyChange }: ResourceFo
           </div>
           <div>
             {label(T.category, true)}
-            <div className="relative">
-              <select
-                value={values.category}
-                onChange={(e) => set('category', e.target.value as ResourceInput['category'])}
-                className={`${inputClass} appearance-none pr-9 cursor-pointer`}
-              >
-                <option value="">{T.chooseCategory}</option>
-                {RESOURCE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {t.resources.categories[c]}
-                  </option>
-                ))}
-              </select>
-              <Icon
-                name="ChevronDownIcon"
-                size={16}
-                variant="outline"
-                className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground"
-              />
-            </div>
+            <Select
+              variant="field"
+              aria-label={T.category}
+              placeholder={T.chooseCategory}
+              value={values.category}
+              onValueChange={(v) => set('category', v as ResourceInput['category'])}
+              invalid={!!errors.category}
+              options={RESOURCE_CATEGORIES.map((c) => ({ value: c, label: t.resources.categories[c] }))}
+              className="w-full"
+            />
             {error('category')}
           </div>
         </div>
@@ -216,31 +208,28 @@ export default function ResourceForm({ item, onSave, onDirtyChange }: ResourceFo
           <div className="grid grid-cols-2 gap-4">
             <div>
               {label(T.isFree)}
-              <div className="relative">
-                <select
-                  value={values.isFree === null ? '' : values.isFree ? 'yes' : 'no'}
-                  onChange={(e) => set('isFree', e.target.value === '' ? null : e.target.value === 'yes')}
-                  className={`${inputClass} appearance-none pr-9 cursor-pointer`}
-                >
-                  <option value="">{T.freeUnknown}</option>
-                  <option value="yes">{T.freeYes}</option>
-                  <option value="no">{T.freeNo}</option>
-                </select>
-                <Icon
-                  name="ChevronDownIcon"
-                  size={16}
-                  variant="outline"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground"
-                />
-              </div>
+              <Select
+                variant="field"
+                aria-label={T.isFree}
+                value={values.isFree === null ? '' : values.isFree ? 'yes' : 'no'}
+                onValueChange={(v) => set('isFree', v === '' ? null : v === 'yes')}
+                options={[
+                  { value: '', label: T.freeUnknown },
+                  { value: 'yes', label: T.freeYes },
+                  { value: 'no', label: T.freeNo },
+                ]}
+                className="w-full"
+              />
             </div>
             <div>
               {label(T.lastVerified)}
-              <input
-                type="date"
+              <DatePicker
+                variant="field"
+                aria-label={T.lastVerified}
                 value={values.lastVerifiedOn ?? ''}
-                onChange={(e) => set('lastVerifiedOn', e.target.value || null)}
-                className={inputClass}
+                onChange={(v) => set('lastVerifiedOn', v || null)}
+                invalid={!!errors.lastVerifiedOn}
+                className="w-full"
               />
               {errors.lastVerifiedOn ? error('lastVerifiedOn') : <p className="text-[11px] text-muted-foreground mt-1">{T.lastVerifiedHint}</p>}
             </div>

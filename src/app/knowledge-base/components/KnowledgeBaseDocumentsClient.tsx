@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import Toggle from '@/components/ui/Toggle';
 import SlideOver from '@/components/ui/SlideOver';
@@ -552,22 +553,19 @@ export default function KnowledgeBaseDocumentsClient({ knowledgeBaseId }: { know
                 className="w-[220px] pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-            <select
+            <Select
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as StatusFilter);
+              onValueChange={(v) => {
+                setStatusFilter(v as StatusFilter);
                 setPage(1);
               }}
               aria-label={T.filterLabel}
-              className="px-3 py-2 border border-border rounded-lg text-[13px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              {STATUS_FILTERS.map((f) => (
-                <option key={`sf-${f.value}`} value={f.value}>
-                  {T.filters[f.value]}
-                  {f.value !== 'all' ? ` (${docs.filter(f.match).length})` : ''}
-                </option>
-              ))}
-            </select>
+              options={STATUS_FILTERS.map((f) => ({
+                value: f.value,
+                label: `${T.filters[f.value]}${f.value !== 'all' ? ` (${docs.filter(f.match).length})` : ''}`,
+              }))}
+              className="min-w-[170px]"
+            />
             <button
               onClick={() => {
                 setRefreshing(true);

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import EmptyState from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
@@ -194,18 +195,16 @@ export default function NoticeAcceptance() {
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <p className="text-[11px] font-600 uppercase tracking-wider text-muted-foreground">{T.translation}</p>
-                <select
+                <Select
+                  variant="compact"
                   value={previewLang}
-                  onChange={(e) => setPreviewLang(e.target.value as Language)}
+                  onValueChange={(v) => setPreviewLang(v as Language)}
                   aria-label={T.language}
-                  className="h-7 pl-2 pr-7 rounded-md border border-border bg-card text-[12px] text-foreground"
-                >
-                  {LANGUAGES.filter((l) => l !== 'en').map((l) => (
-                    <option key={l} value={l}>
-                      {t.languageNames[l]} · {LANGUAGE_NAMES[l].native}
-                    </option>
-                  ))}
-                </select>
+                  options={LANGUAGES.filter((l) => l !== 'en').map((l) => ({
+                    value: l,
+                    label: `${t.languageNames[l]} · ${LANGUAGE_NAMES[l].native}`,
+                  }))}
+                />
                 <span className="text-[11px] text-muted-foreground">{T.machineTranslation}</span>
               </div>
               {renderNotice(previewLang)}

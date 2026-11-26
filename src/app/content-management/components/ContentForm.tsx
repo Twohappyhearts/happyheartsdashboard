@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import RichTextEditor from '@/components/ui/RichTextEditor';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import Toggle from '@/components/ui/Toggle';
 import { useSlideOverClose } from '@/components/ui/SlideOver';
 import type { ContentCategory, ContentInput, ContentItem, LessonAttachment, ReferenceLink } from '@/lib/content';
@@ -353,28 +354,28 @@ export default function ContentForm({
                 </button>
               </div>
               <p className="text-[11px] text-muted-foreground mb-1">{T.categoryHint}</p>
-              <div className="relative">
-                <select
-                  {...register('categoryId', {
-                    validate: (v) => !!v || T.chooseCategory,
-                  })}
-                  className="w-full appearance-none pl-3 pr-9 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
-                >
-                  <option value="">{T.selectCategory}</option>
-                  {categoryOptions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.isActive ? '' : T.inactiveSuffix}
-                    </option>
-                  ))}
-                </select>
-                <Icon
-                  name="ChevronDownIcon"
-                  size={16}
-                  variant="outline"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground"
-                />
-              </div>
+              <Controller
+                name="categoryId"
+                control={control}
+                rules={{ validate: (v) => !!v || T.chooseCategory }}
+                render={({ field }) => (
+                  <Select
+                    ref={field.ref}
+                    variant="field"
+                    aria-label={T.selectCategory}
+                    placeholder={T.selectCategory}
+                    value={field.value ?? ''}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    invalid={!!errors.categoryId}
+                    options={categoryOptions.map((c) => ({
+                      value: c.id,
+                      label: `${c.name}${c.isActive ? '' : T.inactiveSuffix}`,
+                    }))}
+                    className="w-full"
+                  />
+                )}
+              />
               {errors.categoryId && <p className="text-[11px] text-danger mt-1">{errors.categoryId.message}</p>}
             </div>
           )}

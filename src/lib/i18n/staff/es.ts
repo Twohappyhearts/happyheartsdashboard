@@ -39,6 +39,9 @@ export const es: StaffText = {
     no: 'No',
     all: 'Todos',
     none: 'Ninguno',
+    today: 'Hoy',
+    clear: 'Borrar',
+    pickDate: 'Elegir una fecha',
     active: 'Activo',
     inactive: 'Inactivo',
     unknown: 'Desconocido',
@@ -616,6 +619,7 @@ export const es: StaffText = {
     subtitle:
       'Administre los enlaces de REDCap que se muestran en la pestaña Recursos y en el menú Evaluaciones integrales de la app, y vea las URL personalizadas de cada participante.',
     addLink: 'Agregar enlace de encuesta',
+    manageSections: 'Administrar secciones',
     tabLinks: 'Enlaces de encuestas',
     tabParticipants: 'Enlaces de participantes',
     shownInApp: 'Se muestra en la app:',
@@ -623,10 +627,6 @@ export const es: StaffText = {
     placements: {
       resource: { label: 'Recursos', hint: 'Pestaña Recursos (navegación inferior)' },
       survey: { label: 'Evaluaciones integrales', hint: 'Evaluaciones integrales, en el menú lateral' },
-    },
-    categories: {
-      'Emotional Assessment': 'Evaluación emocional',
-      'Basic Needs Assessment': 'Evaluación de necesidades básicas',
     },
     frequencies: {
       Daily: 'Diaria',
@@ -650,9 +650,7 @@ export const es: StaffText = {
     redirectLabel: 'Redirección al terminar en REDCap:',
     copyRedirect: 'Copiar la URL para pegarla en REDCap > Survey Settings > Redirect to a URL',
     redirectCopied: 'URL de redirección copiada',
-    addedOn: (date, completions) =>
-      `Agregada el ${date} · ${completions} finalizaciones registradas · La app agrega `,
-    appendsAutomatically: ' automáticamente',
+    addedOn: (date, completions) => `Agregada el ${date} · ${completions} finalizaciones registradas`,
     editSurvey: 'Editar encuesta',
     deleteHint: 'Eliminar encuesta: no se puede deshacer',
     editTitle: 'Editar enlace de encuesta',
@@ -664,10 +662,6 @@ export const es: StaffText = {
     titleRequired: 'El título es obligatorio',
     maxChars: (n) => `Máximo ${n} caracteres`,
     titlePlaceholder: 'p. ej., Seguimiento a las 24 horas',
-    code: 'Código',
-    codeRequired: 'El código es obligatorio',
-    codeFormat: 'Letras mayúsculas, números y _ (debe empezar con una letra)',
-    codeLocked: 'El código no se puede cambiar (lo usa la redirección de REDCap).',
     showInApp: 'Se muestra en la app',
     publicLink: 'Enlace público de REDCap',
     mustStartWith: 'Debe empezar con',
@@ -700,6 +694,35 @@ export const es: StaffText = {
     nowVisible: (title) => `“${title}” ahora se ve en la app`,
     nowHidden: (title) => `“${title}” ahora está oculta en la app`,
 
+    sections: {
+      title: 'Secciones',
+      namePlaceholder: 'Nombre de la nueva sección',
+      add: 'Agregar',
+      rename: 'Cambiar nombre',
+      save: 'Guardar',
+      cancel: 'Cancelar',
+      delete: 'Eliminar',
+      moveUp: 'Subir',
+      moveDown: 'Bajar',
+      surveys: (n) => `${n} encuesta${n === 1 ? '' : 's'}`,
+      deleteConfirm: (name, n) =>
+        n > 0 ? `¿Eliminar “${name}”? ${n} encuesta${n === 1 ? '' : 's'} quedará${n === 1 ? '' : 'n'} sin sección.` : `¿Eliminar “${name}”?`,
+      empty: 'Todavía no hay secciones',
+      added: (name) => `Se agregó la sección “${name}”`,
+      renamed: 'Se cambió el nombre de la sección',
+      deleted: (name) => `Se eliminó la sección “${name}”`,
+      nameRequired: 'Escriba un nombre para la sección',
+      errors: {
+        taken: 'Ya existe una sección con ese nombre.',
+        tooLong: 'El nombre de la sección puede tener como máximo 60 caracteres.',
+        load: 'No se pudieron cargar las secciones.',
+        add: 'No se pudo agregar la sección.',
+        rename: 'No se pudo cambiar el nombre de la sección.',
+        delete: 'No se pudo eliminar la sección.',
+        reorder: 'No se pudo cambiar el orden.',
+      },
+    },
+
     participants: {
       noActive: 'No hay encuestas activas',
       noActiveBody: 'Active una encuesta en la pestaña Enlaces de encuestas para ver aquí los enlaces de los participantes.',
@@ -729,7 +752,6 @@ export const es: StaffText = {
     },
 
     errors: {
-      codeTaken: 'Otra encuesta ya usa este código.',
       tooLong: 'Algunos campos son demasiado largos o tienen un formato incorrecto.',
       missingColumns: 'Ejecute primero la migración de encuestas (faltan columnas).',
       load: 'No se pudieron cargar los enlaces de encuestas.',

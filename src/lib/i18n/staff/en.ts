@@ -35,6 +35,9 @@ export const en = {
     no: 'No',
     all: 'All',
     none: 'None',
+    today: 'Today',
+    clear: 'Clear',
+    pickDate: 'Pick a date',
     active: 'Active',
     inactive: 'Inactive',
     unknown: 'Unknown',
@@ -630,6 +633,7 @@ export const en = {
     subtitle:
       'Manage REDCap links shown in the app’s Resources tab and Holistic Assessments menu, and view per-participant personalized URLs.',
     addLink: 'Add Survey Link',
+    manageSections: 'Manage Sections',
     tabLinks: 'Survey Links',
     tabParticipants: 'Participant Links',
     shownInApp: 'Shown in app:',
@@ -638,11 +642,6 @@ export const en = {
       resource: { label: 'Resources', hint: 'Resources tab (bottom navigation)' },
       survey: { label: 'Holistic Assessments', hint: 'Holistic Assessments, in the side menu' },
     },
-    /** Stored values stay in English (the app reads them); these are only the labels. */
-    categories: {
-      'Emotional Assessment': 'Emotional Assessment',
-      'Basic Needs Assessment': 'Basic Needs Assessment',
-    } as Record<string, string>,
     frequencies: {
       Daily: 'Daily',
       Weekly: 'Weekly',
@@ -665,8 +664,7 @@ export const en = {
     redirectLabel: 'REDCap completion redirect:',
     copyRedirect: 'Copy the URL to paste into REDCap > Survey Settings > Redirect to a URL',
     redirectCopied: 'Completion redirect URL copied',
-    addedOn: (date: string, completions: number) => `Added ${date} · ${completions} completions recorded · App appends `,
-    appendsAutomatically: ' automatically',
+    addedOn: (date: string, completions: number) => `Added ${date} · ${completions} completions recorded`,
     editSurvey: 'Edit survey',
     deleteHint: 'Delete survey — this cannot be undone',
     editTitle: 'Edit Survey Link',
@@ -678,10 +676,6 @@ export const en = {
     titleRequired: 'Title is required',
     maxChars: (n: number) => `Max ${n} characters`,
     titlePlaceholder: 'e.g. 24-Hour Follow-Up',
-    code: 'Code',
-    codeRequired: 'Code is required',
-    codeFormat: 'Uppercase letters, numbers and _ (start with a letter)',
-    codeLocked: 'Codes can’t change (REDCap redirect uses it).',
     showInApp: 'Show in app',
     publicLink: 'REDCap Public Link',
     mustStartWith: 'Must start with',
@@ -713,6 +707,36 @@ export const en = {
     nowVisible: (title: string) => `“${title}” is now visible in the app`,
     nowHidden: (title: string) => `“${title}” is now hidden from the app`,
 
+    /** Sections the app groups survey links under (Manage Sections dialog). */
+    sections: {
+      title: 'Sections',
+      namePlaceholder: 'New section name',
+      add: 'Add',
+      rename: 'Rename',
+      save: 'Save',
+      cancel: 'Cancel',
+      delete: 'Delete',
+      moveUp: 'Move up',
+      moveDown: 'Move down',
+      surveys: (n: number) => `${n} survey${n === 1 ? '' : 's'}`,
+      deleteConfirm: (name: string, n: number) =>
+        n > 0 ? `Delete “${name}”? ${n} survey${n === 1 ? '' : 's'} will have no section.` : `Delete “${name}”?`,
+      empty: 'No sections yet',
+      added: (name: string) => `Section “${name}” added`,
+      renamed: 'Section renamed',
+      deleted: (name: string) => `Section “${name}” deleted`,
+      nameRequired: 'Enter a section name',
+      errors: {
+        taken: 'A section with this name already exists.',
+        tooLong: 'Section names can be at most 60 characters.',
+        load: 'Could not load sections.',
+        add: 'Could not add the section.',
+        rename: 'Could not rename the section.',
+        delete: 'Could not delete the section.',
+        reorder: 'Could not change the order.',
+      },
+    },
+
     participants: {
       noActive: 'No active surveys',
       noActiveBody: 'Activate a survey in the Survey Links tab to view participant links here.',
@@ -743,7 +767,6 @@ export const en = {
 
     /** Errors from src/lib/surveys.ts. */
     errors: {
-      codeTaken: 'Another survey already uses this code.',
       tooLong: 'Some fields are too long or in the wrong format.',
       missingColumns: 'Run the surveys migration first (missing columns).',
       load: 'Could not load survey links.',
@@ -2100,11 +2123,11 @@ export const en = {
 type Widen<T> = T extends string
   ? string
   : T extends (...args: infer A) => infer R
-    ? (...args: A) => Widen<R>
-    : T extends readonly (infer U)[]
-      ? Widen<U>[]
-      : T extends object
-        ? { [K in keyof T]: Widen<T[K]> }
-        : T;
+  ? (...args: A) => Widen<R>
+  : T extends readonly (infer U)[]
+  ? Widen<U>[]
+  : T extends object
+  ? { [K in keyof T]: Widen<T[K]> }
+  : T;
 
 export type StaffText = Widen<typeof en>;

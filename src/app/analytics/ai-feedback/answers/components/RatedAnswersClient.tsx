@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import {
   FEEDBACK_RANGES,
@@ -23,8 +24,6 @@ import type { StaffText } from '@/lib/i18n/staff';
 
 type FeedbackText = StaffText['analytics']['aiFeedback'];
 
-const SELECT =
-  'h-9 min-w-[130px] px-2.5 border border-border rounded-lg bg-card text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 const LABEL = 'flex flex-col gap-1 text-[11.5px] font-600 text-muted-foreground';
 const CARD = 'bg-card rounded-xl border border-border shadow-card';
 const PREVIEW_CHARS = 260;
@@ -264,36 +263,41 @@ export default function RatedAnswersClient() {
             />
           </span>
         </label>
-        <label className={LABEL}>
+        <div className={LABEL}>
           {T.safety}
-          <select value={filters.safety ?? ''} onChange={(e) => setParams({ safety: e.target.value || null })} className={SELECT}>
-            <option value="">{T.answers.all}</option>
-            <option value="3">{T.safe}</option>
-            <option value="2">{T.concern}</option>
-            <option value="1">{T.unsafe}</option>
-          </select>
-        </label>
-        <label className={LABEL}>
+          <Select
+            aria-label={T.safety}
+            value={filters.safety ? String(filters.safety) : ''}
+            onValueChange={(v) => setParams({ safety: v || null })}
+            options={[
+              { value: '', label: T.answers.all },
+              { value: '3', label: T.safe },
+              { value: '2', label: T.concern },
+              { value: '1', label: T.unsafe },
+            ]}
+            className="min-w-[130px]"
+          />
+        </div>
+        <div className={LABEL}>
           {T.language}
-          <select value={filters.language ?? ''} onChange={(e) => setParams({ language: e.target.value || null })} className={SELECT}>
-            <option value="">{T.allLanguages}</option>
-            {languages.map((l) => (
-              <option key={l} value={l}>
-                {languageName(l)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={LABEL}>
+          <Select
+            aria-label={T.language}
+            value={filters.language ?? ''}
+            onValueChange={(v) => setParams({ language: v || null })}
+            options={[{ value: '', label: T.allLanguages }, ...languages.map((l) => ({ value: l, label: languageName(l) }))]}
+            className="min-w-[140px]"
+          />
+        </div>
+        <div className={LABEL}>
           {T.dateRange}
-          <select value={filters.range} onChange={(e) => setParams({ range: e.target.value === '30d' ? null : e.target.value })} className={SELECT}>
-            {FEEDBACK_RANGES.map((r) => (
-              <option key={r} value={r}>
-                {T.ranges[r]}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Select
+            aria-label={T.dateRange}
+            value={filters.range}
+            onValueChange={(v) => setParams({ range: v === '30d' ? null : v })}
+            options={FEEDBACK_RANGES.map((r) => ({ value: r, label: T.ranges[r] }))}
+            className="min-w-[150px]"
+          />
+        </div>
         {filters.model && (
           <span className="h-9 inline-flex items-center gap-1.5 pl-3 pr-1.5 rounded-lg bg-muted text-[12.5px] text-foreground">
             {T.model}: {filters.model === 'unknown' ? T.notSet : filters.model}

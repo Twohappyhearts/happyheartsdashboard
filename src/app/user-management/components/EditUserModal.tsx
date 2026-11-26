@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import Modal from '@/components/ui/Modal';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import {
   UsersError,
   formatPhone,
@@ -178,20 +179,19 @@ export default function EditUserModal({ user, callerId, callerIsAdmin, onClose, 
             </div>
             <div>
               <label htmlFor="eu-role" className="block text-[13px] font-500 text-foreground mb-1">{T.role}</label>
-              <div className="relative">
-                <select
-                  id="eu-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as AccountRole)}
-                  disabled={roleDisabled}
-                  className={`${inputClass} appearance-none pr-8 disabled:opacity-60`}
-                >
-                  <option value="patient">{t.users.roleNames.patient}</option>
-                  <option value="staff" disabled={!callerIsAdmin}>{t.users.roleNames.staff}</option>
-                  <option value="admin" disabled={!callerIsAdmin}>{t.users.roleNames.admin}</option>
-                </select>
-                <Icon name="ChevronDownIcon" size={14} variant="outline" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
+              <Select
+                id="eu-role"
+                variant="field"
+                value={role}
+                onValueChange={(v) => setRole(v as AccountRole)}
+                disabled={roleDisabled}
+                options={[
+                  { value: 'patient', label: t.users.roleNames.patient },
+                  { value: 'staff', label: t.users.roleNames.staff, disabled: !callerIsAdmin },
+                  { value: 'admin', label: t.users.roleNames.admin, disabled: !callerIsAdmin },
+                ]}
+                className="w-full"
+              />
               {isSelf && <p className="text-[11px] text-muted-foreground mt-1">{T.ownRole}</p>}
             </div>
           </div>

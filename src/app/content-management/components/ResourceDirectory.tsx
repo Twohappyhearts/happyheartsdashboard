@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import Toggle from '@/components/ui/Toggle';
 import SlideOver from '@/components/ui/SlideOver';
 import Modal from '@/components/ui/Modal';
@@ -219,23 +220,16 @@ export default function ResourceDirectory({ onCountChange }: { onCountChange?: (
             className="pl-8 pr-3 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring w-72"
           />
         </div>
-        <div className="relative">
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as ResourceCategory | 'all')}
-            className="appearance-none pl-3 pr-9 py-2 border border-border rounded-lg text-[13px] bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
-          >
-            <option value="all">
-              {L.allCategories} ({items.length})
-            </option>
-            {RESOURCE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {t.resources.categories[c]} ({countBy(c)})
-              </option>
-            ))}
-          </select>
-          <Icon name="ChevronDownIcon" size={16} variant="outline" className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
-        </div>
+        <Select
+          aria-label={L.allCategories}
+          value={category}
+          onValueChange={(v) => setCategory(v as ResourceCategory | 'all')}
+          options={[
+            { value: 'all', label: `${L.allCategories} (${items.length})` },
+            ...RESOURCE_CATEGORIES.map((c) => ({ value: c, label: `${t.resources.categories[c]} (${countBy(c)})` })),
+          ]}
+          className="min-w-[200px]"
+        />
         <span className="text-[12px] text-muted-foreground ml-auto">{L.countOf(filtered.length, items.length)}</span>
       </div>
 

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import DatePicker from '@/components/ui/DatePicker';
 import Badge from '@/components/ui/Badge';
 import EmptyState from '@/components/ui/EmptyState';
 import SlideOver from '@/components/ui/SlideOver';
@@ -346,26 +347,24 @@ export default function AlertsClient() {
           <label htmlFor="alert-from" className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">
             {T.from}
           </label>
-          <input
+          <DatePicker
             id="alert-from"
-            type="date"
             value={fromDate}
             max={toDate || undefined}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="px-3 py-[7px] border border-border rounded-lg text-[13px] text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={setFromDate}
+            className="w-[160px]"
           />
         </div>
         <div>
           <label htmlFor="alert-to" className="block text-[11px] font-600 text-muted-foreground uppercase tracking-wider mb-1">
             {T.to}
           </label>
-          <input
+          <DatePicker
             id="alert-to"
-            type="date"
             value={toDate}
             min={fromDate || undefined}
-            onChange={(e) => setToDate(e.target.value)}
-            className="px-3 py-[7px] border border-border rounded-lg text-[13px] text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-ring"
+            onChange={setToDate}
+            className="w-[160px]"
           />
         </div>
         {searching && (

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
@@ -158,27 +159,15 @@ export default function SettingsClient() {
               <label htmlFor="ai-draft-language" className="block text-[12px] font-600 text-foreground mb-1">
                 {L.primaryLabel}
               </label>
-              <div className="relative w-64">
-                <select
-                  id="ai-draft-language"
-                  value={primary ?? ''}
-                  onChange={(e) => setPrimary(e.target.value as Language)}
-                  disabled={checked.size === 0}
-                  className="w-full appearance-none pl-3 pr-9 py-2 border border-border rounded-lg text-[13px] text-foreground bg-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
-                >
-                  {LANGUAGES.filter((l) => checked.has(l)).map((l) => (
-                    <option key={l} value={l}>
-                      {t.languageNames[l]}
-                    </option>
-                  ))}
-                </select>
-                <Icon
-                  name="ChevronDownIcon"
-                  size={16}
-                  variant="outline"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground"
-                />
-              </div>
+              <Select
+                id="ai-draft-language"
+                value={primary ?? ''}
+                onValueChange={(v) => setPrimary(v as Language)}
+                disabled={checked.size === 0}
+                options={LANGUAGES.filter((l) => checked.has(l)).map((l) => ({ value: l, label: t.languageNames[l] }))}
+                variant="field"
+                className="w-64"
+              />
             </div>
 
             <div className="flex items-center justify-between gap-3 pt-1 flex-wrap">

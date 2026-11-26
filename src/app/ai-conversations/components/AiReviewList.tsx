@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Icon from '@/components/ui/AppIcon';
+import Select from '@/components/ui/Select';
 import { reviewUserName, type ReviewConversation, type ReviewRole } from '@/lib/ai-review';
 import { formatListTime } from '@/app/messages/components/format';
 import { useStaffT } from '@/lib/i18n/staff/context';
@@ -59,17 +60,18 @@ export default function AiReviewList({
             className="w-full pl-8 pr-3 py-2 bg-muted rounded-lg text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
-        <select
+        <Select
           value={role ?? ''}
-          onChange={(e) => onRole((e.target.value || null) as ReviewRole | null)}
+          onValueChange={(v) => onRole((v || null) as ReviewRole | null)}
           aria-label={t.users.roleFilters.all}
-          className="w-full h-9 px-2.5 bg-card border border-border rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">{t.users.roleFilters.all}</option>
-          <option value="patient">{t.users.roleFilters.patient}</option>
-          <option value="staff">{t.users.roleFilters.staff}</option>
-          <option value="admin">{t.users.roleFilters.admin}</option>
-        </select>
+          options={[
+            { value: '', label: t.users.roleFilters.all },
+            { value: 'patient', label: t.users.roleFilters.patient },
+            { value: 'staff', label: t.users.roleFilters.staff },
+            { value: 'admin', label: t.users.roleFilters.admin },
+          ]}
+          className="w-full"
+        />
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
